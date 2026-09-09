@@ -54,13 +54,12 @@ export function renderPeople() {
 
   const links = container.querySelectorAll(".evidence-count-link");
   for (let l = 0; l < links.length; l++) {
-    links[l].addEventListener("click", function (e) {
+    // demo 10: click-callback + setTimeout-callback als arrows (lesen e.target, kein `this`)
+    links[l].addEventListener("click", (e) => {
       const personId = e.target.getAttribute("data-person-id");
       document.getElementById("filterPerson").value = personId;
       navigateTo("evidence");
-      setTimeout(function () {
-        renderEvidenceList();
-      }, 0);
+      setTimeout(() => renderEvidenceList(), 0);
     });
   }
 }

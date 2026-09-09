@@ -26,11 +26,13 @@ export function findLocationById(id) {
 }
 
 // evidence-daten sind inkonsistent: mal personId, mal name -> beides pruefen
-export function evidenceMentionsPerson(ev, person) {
+// demo 10: pur, kein `this` -> arrow
+export const evidenceMentionsPerson = (ev, person) => {
   if (!ev.personIds) return false;
   return ev.personIds.indexOf(person.id) !== -1 || ev.personIds.indexOf(person.name) !== -1;
-}
+};
 
+// bleibt bewusst function declaration (schleife + wird in mehreren modulen genutzt)
 export function countEvidenceForPerson(person) {
   let count = 0;
   for (let i = 0; i < state.allEvidence.length; i++) {

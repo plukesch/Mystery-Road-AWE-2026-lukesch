@@ -62,7 +62,8 @@ function setupEventListeners() {
   document.getElementById("timelineLocationFilter").addEventListener("change", renderTimeline);
   document.getElementById("timelineTypeFilter").addEventListener("change", renderTimeline);
 
-  document.getElementById("hypConfidence").addEventListener("input", function (e) {
+  // demo 10: anonymer addEventListener-callback -> arrow (nutzt e.target, kein `this`)
+  document.getElementById("hypConfidence").addEventListener("input", (e) => {
     document.getElementById("hypConfidenceValue").textContent = e.target.value;
   });
 }
@@ -76,7 +77,7 @@ function initApp() {
   loadNotesFromStorage();
   setupEventListeners();
 
-  loadAllData().then(function () {
+  loadAllData().then(() => {
     handleHashChange();
     // demo 4 fix: hier stand
     //   var firstNote = loadNoteAsync("E01");

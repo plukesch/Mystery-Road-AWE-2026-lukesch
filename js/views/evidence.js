@@ -109,14 +109,15 @@ export function renderEvidenceList() {
 // allEvidence wird nicht angefasst (siehe demo-2-fix).
 function sortEvidenceInPlace(list) {
   const sortValue = document.getElementById("sortEvidence").value;
+  // demo 10: die comparator-callbacks sind reine (a,b)-funktionen ohne `this` -> arrows
   if (sortValue === "title-asc") {
-    list.sort(function (a, b) { return a.title.localeCompare(b.title); });
+    list.sort((a, b) => a.title.localeCompare(b.title));
   } else if (sortValue === "title-desc") {
-    list.sort(function (a, b) { return b.title.localeCompare(a.title); });
+    list.sort((a, b) => b.title.localeCompare(a.title));
   } else if (sortValue === "date-asc") {
-    list.sort(function (a, b) { return new Date(a.timestamp) - new Date(b.timestamp); });
+    list.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
   } else {
-    list.sort(function (a, b) { return new Date(b.timestamp) - new Date(a.timestamp); });
+    list.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
   }
 }
 
@@ -170,9 +171,7 @@ function handleBookmarkClick(evidenceId) {
     state.bookmarks.push(evidenceId);
     ev.bookmarked = true;
   } else {
-    state.bookmarks = state.bookmarks.filter(function (id) {
-      return id !== evidenceId;
-    });
+    state.bookmarks = state.bookmarks.filter((id) => id !== evidenceId);
     ev.bookmarked = false;
   }
   saveBookmarksToStorage();
@@ -298,12 +297,15 @@ function renderEvidenceDetail(ev) {
 
   section.innerHTML = html;
 
-  document.getElementById("detailStatusSelect").addEventListener("change", function (e) {
+  // demo 10: addEventListener-callbacks als arrows. sie lesen e.target, nicht `this`
+  // -> die fehlende `this`-bindung von arrows stoert hier nicht, im gegenteil:
+  // ev/renderEvidenceDetail/state werden lexikalisch aus renderEvidenceDetail geerbt.
+  document.getElementById("detailStatusSelect").addEventListener("change", (e) => {
     ev.status = e.target.value; // direct mutation of the loaded evidence object
     renderEvidenceDetail(ev);
     if (state.viewRendered.evidence) renderEvidenceList();
   });
-  document.getElementById("detailRelevanceSelect").addEventListener("change", function (e) {
+  document.getElementById("detailRelevanceSelect").addEventListener("change", (e) => {
     ev.relevance = e.target.value;
     renderEvidenceDetail(ev);
     if (state.viewRendered.evidence) renderEvidenceList();

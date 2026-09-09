@@ -392,3 +392,45 @@ Live: Breakpoint auf die erste Zeile von `loadCorePeopleAndLocations` (`const ca
 - Alle Views: 18 Evidenz-Karten, 6 Personen, 15 Timeline-Events, Dashboard `18/6/6/0/1`, Konsole leer.
 - `loadAllData() instanceof Promise` → `true`.
 - **Fehlerpfad** (mit umbenanntem `evidence.json` getestet): `try/catch` fängt wie vorher — `console.error("Failed to load evidence.json", …)` + `alert(...)`, `evidenceViewLoading` wird `false`, Liste zeigt „No evidence matches…" (kein hängender Spinner), core + timeline laden unabhängig weiter, Overlay verschwindet.
+
+---
+
+## Demo 10 — Arrow Functions
+
+Kein `this`, kein `arguments`, kein `new`-Konstruktor irgendwo im Code (`grep` bestätigt) → alle Kandidaten waren technisch konvertierbar; ausgewählt wurden die, wo eine Arrow *besser liest*.
+
+### Task 1 — benannte / Expression-Funktionen → Arrow
+
+- **`js/utils.js`**: `formatDate`, `getStatusBadgeClass`, `getRelevanceBadgeClass` → `export const … = (x) => { … }`. Pure Helfer ohne `this`, werden nur zur Laufzeit aus anderen Funktionen aufgerufen (Hoisting egal).
+- **`js/lookup.js`**: `evidenceMentionsPerson` → `export const evidenceMentionsPerson = (ev, person) => { … }`. (`findXById` + `countEvidenceForPerson` bewusst als `function`-Declarations gelassen — siehe Task 3.)
+- **Comparator-/Callback-Expressions** (als Argument übergeben):
+  - `js/views/evidence.js` `sortEvidenceInPlace`: 4× `.sort(function (a, b) { … })` → `.sort((a, b) => …)`.
+  - `js/views/evidence.js` `handleBookmarkClick`: `.filter(function (id) { return id !== evidenceId; })` → `.filter((id) => id !== evidenceId)`.
+  - `js/views/timeline.js` `renderTimeline`: `.sort(function (a, b) { … })` → `.sort((a, b) => { … })` (Block-Body wegen `diff`).
+  - `js/views/workspace.js` `renderBookmarksList`: `.filter(function (ev) { return ev.bookmarked; })` → `.filter((ev) => ev.bookmarked)`.
+  - diverse `setTimeout(function () { … }, N)` → `setTimeout(() => …, N)`.
+
+### Task 2 — anonyme `function(e)`-Callbacks in `addEventListener` → Arrow
+
+- `js/views/evidence.js` `renderEvidenceDetail`: die zwei `addEventListener("change", function (e) { … })` (Status- und Relevanz-Select) → `(e) => { … }`.
+- `js/main.js` `setupEventListeners`: `hypConfidence` `addEventListener("input", function (e) { … })` → `(e) => { … }`.
+- `js/views/people.js` / `timeline.js` / `workspace.js`: die `click`-Listener `function (e) { … }` → `(e) => { … }`.
+- `js/main.js` `initApp`: `loadAllData().then(function () { … })` → `.then(() => { … })`.
+
+Alle diese Callbacks lesen `e.target`, **nicht `this`** → die fehlende `this`-Bindung von Arrows stört nicht; im Gegenteil erben sie `ev` / `state` / `renderEvidenceDetail` sauber lexikalisch.
+
+### Task 3 — bewusst NICHT konvertiert
+
+**Alle Top-Level-`function`-Declarations der Modul-API** (`renderDashboard`, `renderEvidenceList`, `handleHashChange`, `renderTimeline`, `renderPeople`, `renderLocations`, `openEvidenceDetail`, `findEvidenceById`/`findPersonById`/`findLocationById`, `countEvidenceForPerson`, die `async`-Data-Loader …) bleiben `function`-Declarations. Begründung:
+1. **Hoisting-Freiheit** — man ordnet eine Datei nach Wichtigkeit statt nach „erst definieren, dann benutzen". Bsp: `evidence.js` `renderEvidenceList` steht oben und ruft `sortEvidenceInPlace` / `renderEvidenceCardHTML`, die *darunter* stehen; `data.js` `loadAllData` steht unten und ruft die Loader darüber.
+2. **Echter Name im Stack-Trace / Debugger** — `function renderTimeline` zeigt immer `renderTimeline`; wichtig für die Debugging-Demos.
+3. **Kein Gewinn** — keine nutzt `this`, keine ist ein Callback. Umbauen wäre reiner Diff-Lärm.
+
+**„Würde ich ablehnen":** ein Event-Handler, der `this === das Element` braucht, z. B.
+```js
+modal.addEventListener("click", function () { this.innerHTML = ""; });
+```
+Als **Arrow** hätte `this` keinen eigenen Wert, sondern den des umgebenden Modul-Scopes (`undefined`) → `this.innerHTML` würde werfen. Genau deshalb ist `handleModalClick` *als Arrow konvertierbar* — es benutzt `document.getElementById(...)` statt `this`. Sobald man `this` = das Element will, ist die reguläre `function` Pflicht. Gleiches gilt für Objekt-Methoden mit dynamischem `this` und für Funktionen, die ihr eigenes `arguments` brauchen.
+
+### Verifikation
+Frischer Server, voller Durchlauf: Daten `6/18/15`; **konvertierter Comparator** → Sort E12/E03/E10; **`.filter`-Arrow** in `handleBookmarkClick` → Bookmark an/aus; **Detail-`change`-Arrow** → Status „reviewed" übernommen; **People-Cross-Link-Arrow + `setTimeout`-Arrow** → 3 Karten für signal-scholar; **Timeline-Link-Arrow + Modal-`setTimeout`-Arrow** → „Open full evidence" öffnet Detail; **Workspace-`.filter`-Arrow + `saveHypothesis`-`setTimeout`-Arrow** → „Saved"-Meldung erscheint und verschwindet nach 2 s. Konsole leer.

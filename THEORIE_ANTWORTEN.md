@@ -346,3 +346,55 @@ Vergisst man es: die Rejection propagiert aus der `async`-Funktion heraus → **
 Beispiel: `state.caseData = await caseRes.json();` → `state.caseData = caseRes.json();` (ohne `await`). Jetzt ist `state.caseData` eine **Promise**, kein geparstes Objekt. `renderDashboard()` liest später `state.caseData.title` → `undefined` (eine Promise hat kein `.title`), `state.caseData.status` → `undefined`. Im Browser nachgestellt: das Dashboard zeigt Titel **„Case"** (Fallback), Badge **„UNKNOWN"**, Summary **leer** — kein Absturz, nur still falsch. (Entfernt man stattdessen das `await` vor `fetch`, ist `caseRes` eine Promise und `caseRes.json()` wirft `TypeError: caseRes.json is not a function`.)
 
 Das ist **exakt die Kategorie aus Demo 3 und Demo 4**: eine Promise wird behandelt, als wäre sie schon der fertige Wert. Demo 3: `evidenceViewLoading` wurde geprüft, bevor der async-Callback es gesetzt hat. Demo 4: `console.log("First note preview:", loadNoteAsync("E01"))` loggte die Promise-Hülle statt den `await`eten Wert. Ein `await` zu entfernen bringt genau diese Bug-Form zurück — der Code liest einen Wert „zu früh", bevor die Promise, in der er sitzt, gesettlet ist.
+
+---
+
+## Demo 10 — Arrow Functions
+
+Konvertiert: `utils.js` (3 Helfer), `evidenceMentionsPerson`, alle Comparator-/`.filter`-/`setTimeout`-/`addEventListener`-Callbacks. Nicht konvertiert: die Top-Level-`function`-Declarations der Modul-API. Details in `CHANGES.md`.
+
+### F1: Wie behandeln Arrow Functions `this` anders als reguläre Funktionen? Warum macht das Arrows riskant als Objekt-Methoden, aber oft besser als Callbacks?
+
+Eine **reguläre Funktion** bekommt ihr `this` davon, *wie sie aufgerufen wird*: als Methode `obj.f()` → `obj`; als freier Aufruf `f()` → `undefined` (strict/Modul); mit `new` → die neue Instanz; als Event-Handler → das Element; mit `call`/`apply`/`bind` → explizit gesetzt. `this` ist also *dynamisch*.
+
+Eine **Arrow Function** hat **kein eigenes `this`** — sie nimmt lexikalisch das `this` des umgebenden Scopes zum Definitionszeitpunkt und behält es, egal wie sie später aufgerufen wird (`call`/`bind` ändern es nicht).
+
+- **Riskant als Objekt-Methode:** `const obj = { x: 1, getX: () => this.x }` — `this` ist hier *nicht* `obj`, sondern das `this` des Scopes, in dem das Objektliteral steht (im Modul: `undefined`) → `this.x` wirft bzw. ist falsch. Auch `class`-Methoden als Arrows lösen `obj.method()` nicht korrekt auf.
+- **Besser als Callback:** Ein Callback läuft später in einem *unbekannten* Aufrufkontext. `arr.forEach(() => this.render())` innerhalb einer Methode behält `this` = das Objekt der Methode — ohne `.bind(this)` oder `const self = this`. Und man bekommt keine *Überraschung* durch ein plötzlich anderes `this`.
+
+In diesem Codebase gibt es keine Klassen/Methoden, also schlug die „riskante" Seite nie zu — aber jeder konvertierte Callback profitiert davon, kein Überraschungs-`this` zu haben.
+
+### F2: Arrows können nicht als Konstruktor (`new`) dienen und haben kein eigenes `arguments`. Hat eine der beiden Einschränkungen beeinflusst, welche Funktionen du konvertieren konntest?
+
+**Nein, keine von beiden.** `grep` über `js/` zeigt: nichts wird mit `new` konstruiert außer `new Date()` — und `new Date()` darf eine Arrow problemlos *aufrufen*, sie kann nur selbst nicht `new`-bar sein. Und `arguments` kommt nirgends vor — der Code benennt seine Parameter immer explizit (`(a, b)`, `(e)`, `(ev)`, `(id)`). Beide Einschränkungen waren hier also irrelevant; jede Funktion war auf diesen Punkten konvertierbar. Die Auswahl lief allein nach „liest sich als Arrow besser".
+
+### F3: `function foo() {}` ist gehoistet, eine `const`-Arrow nicht. Hat das irgendwo im Refactor eine Rolle gespielt?
+
+**In der Praxis nein.** Der Code ruft *nirgends* eine Funktion vor ihrer Definition **zur Modul-Auswertungszeit** auf — jeder Aufruf steckt in einer anderen Funktion, die erst später läuft (Event-Handler, `initApp` bei `DOMContentLoaded`, die Render-Funktionen). Bis eine davon feuert, ist das ganze Modul (inkl. aller `const`-Arrows) fertig initialisiert, die TDZ also längst vorbei.
+
+Beispiel, das *so aussieht*, als bräuchte es Hoisting: `evidence.js` `renderEvidenceList` steht oben und ruft `sortEvidenceInPlace` / `renderEvidenceCardHTML` / `handleEvidenceListClick`, die *darunter* definiert sind. Mit `function`-Declarations geht das dank Hoisting — es würde aber **genauso** mit `const`-Arrows gehen, weil `renderEvidenceList` erst zur Laufzeit aufgerufen wird. Ich habe die Top-Level-Funktionen als Declarations gelassen aus **Lesbarkeits-/Stack-Trace-Gründen**, nicht weil Hoisting es erzwungen hätte.
+
+### F4: Konkretes Vorher/Nachher einer konvertierten Funktion. Gibt es einen Laufzeit-Unterschied, oder ist es reine Stil-/Lesbarkeitssache?
+
+Der Sort-Comparator in `sortEvidenceInPlace`:
+```js
+// vorher
+list.sort(function (a, b) { return a.title.localeCompare(b.title); });
+// nachher
+list.sort((a, b) => a.title.localeCompare(b.title));
+```
+Laufzeitverhalten: **identisch**. `Array.prototype.sort` ruft den Comparator mit zwei Argumenten auf und setzt `this` auf nichts Sinnvolles (im Strict-Mode/Modul `undefined`); der Comparator nutzt weder `this` noch `arguments` und wird nie `new`-t. Der einzige Unterschied ist ~20 Zeichen weniger und weniger visuelles Rauschen um die eigentliche Logik (`localeCompare`). **Reine Stilsache.** (Hätte der Comparator `this` oder `arguments` benutzt — tut er nicht —, wäre die Antwort anders.)
+
+### F5: Der Codebase mischt Declarations, Function Expressions und (jetzt) Arrows ohne feste Regel. Schlage eine Team-Regel vor für „wann was" und begründe sie.
+
+**Regel:**
+1. **Benannte Bausteine der Modul-API → `function`-Declaration.** (`renderTimeline`, `loadAllData`, `findPersonById` …)
+2. **Alles, was inline als Argument übergeben wird — Callbacks für `.map`/`.filter`/`.sort`/`.then`/`addEventListener`/`setTimeout` → Arrow Function.**
+3. **Objekt-/Klassen-Methoden → Method-Shorthand (`{ foo() {} }` bzw. `class`), niemals Arrow.**
+
+**Begründung:**
+- *Declarations für die API:* Hoisting erlaubt, eine Datei nach Wichtigkeit statt nach Abhängigkeitsreihenfolge zu ordnen; Stack-Trace und Debugger zeigen immer einen echten Namen; es ist die grep-freundlichste Form (`function renderTimeline`).
+- *Arrows für Callbacks:* kürzer (weniger Drumherum um die eigentliche Logik) und sie erben `this` lexikalisch — man bekommt nie ein Überraschungs-`this` und braucht kein `.bind(this)`. Genau das will man in einem Callback, der später in unbekanntem Kontext läuft.
+- *Method-Shorthand statt Arrow für Methoden:* eine Methode braucht `this` = das Objekt, auf dem sie aufgerufen wird; eine Arrow würde `this` auf den Definitionsort einfrieren und jeden `obj.method()`-Aufruf brechen.
+
+Die Regel gibt für jede Situation genau eine Antwort, ohne Ermessensspielraum.

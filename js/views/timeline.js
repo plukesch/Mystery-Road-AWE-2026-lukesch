@@ -51,7 +51,8 @@ export function renderTimeline() {
     events.push(evt);
   }
 
-  events = events.slice().sort(function (a, b) {
+  // demo 10: comparator ohne `this` -> arrow (block-body wegen der diff-zwischenvariable)
+  events = events.slice().sort((a, b) => {
     const diff = new Date(a.time) - new Date(b.time);
     return order === "desc" ? -diff : diff;
   });
@@ -88,7 +89,7 @@ export function renderTimeline() {
 
   const linkButtons = container.querySelectorAll(".evidence-link-btn");
   for (let b = 0; b < linkButtons.length; b++) {
-    linkButtons[b].addEventListener("click", function (e) {
+    linkButtons[b].addEventListener("click", (e) => {
       openEvidenceModal(e.target.getAttribute("data-evidence-id"));
     });
   }
@@ -138,8 +139,6 @@ function handleModalClick(e) {
   if (e.target.getAttribute && e.target.getAttribute("data-open-full")) {
     modal.innerHTML = "";
     navigateTo("evidence");
-    setTimeout(function () {
-      openEvidenceDetail(e.target.getAttribute("data-open-full"));
-    }, 0);
+    setTimeout(() => openEvidenceDetail(e.target.getAttribute("data-open-full")), 0);
   }
 }

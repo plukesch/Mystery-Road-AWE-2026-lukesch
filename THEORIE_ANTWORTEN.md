@@ -199,3 +199,49 @@ Der Demo-2-Bug. Mit `console.log` hätte ich `state.allEvidence` vor und nach `.
 3. **Call Stack** bewies, dass wirklich das Dropdown-`onchange` der Auslöser war und kein anderer Codepfad.
 4. **Live-Test ohne Redeploy:** `state.filteredEvidence = state.allEvidence.slice()` in der Console eingegeben, weiterlaufen lassen, gesehen dass `allEvidence` heil bleibt → Fix bewiesen, bevor eine Zeile Quellcode geändert wurde. Mit `console.log` müsste ich editieren, neu laden, hoffen.
 5. Beim Komparator, der ~55× läuft, hätte `console.log` darin die Konsole geflutet; der **Conditional Breakpoint** hielt exakt einmal beim gesuchten Element.
+
+---
+
+## Demo 7 — DevTools-Tour (Console / Network / Application / Elements)
+
+Tour-Ablauf in `DEMO7_DEVTOOLS.md`.
+
+### F1: Praktischer Unterschied `console.log` / `console.warn` / `console.error` — über die Farbe hinaus?
+
+- **Log-Level & Filter:** Die Console hat ein Level-Dropdown (Verbose / Info / Warnings / Errors). `console.log` = Info, `console.warn` = Warnings, `console.error` = Errors. Filtert man auf „Errors only", verschwinden alle `console.log`-Zeilen — nur so findet man in einer lauten Konsole die echten Fehler.
+- **Stack-Trace:** `console.error` (in Chrome auch `console.warn`) hängt automatisch einen aufklappbaren **Stack-Trace** an — man sieht sofort, *von wo* die Meldung kam. `console.log` nicht.
+- **Fehlerzähler / Tooling:** `console.error` erhöht den roten Fehlerzähler am DevTools-Icon und wird von Fehler-Tracking-Tools (Sentry & Co.) gezielt abgegriffen. Warnungen/Logs nicht.
+- **Node / Streams:** in Node gehen `warn`/`error` auf **stderr**, `log` auf **stdout** — relevant beim Umleiten/Pipen. (Im Browser landet alles am selben Ort.)
+- **Semantik:** `log` = Ablauf-/Debug-Info, `warn` = „verdächtig, aber nicht fatal", `error` = „etwas ist schiefgelaufen". Das richtige Level zu wählen macht die Konsole *filterbar* nach Schweregrad — sonst ist alles ein grauer Brei.
+
+### F2: Was sagen „Status", „Type" und „Time" über einen `fetch()`-Request? Wie würde die App auf 404 statt 200 reagieren?
+
+- **Status:** der HTTP-Statuscode der Antwort. `200` = OK, der Body ist das Angeforderte. `304` = aus dem Cache, unverändert. `404` = nicht gefunden. `500` = Serverfehler. Für `evidence.json` sehen wir `200`.
+- **Type:** wie der Browser den Request einordnet. Unsere JSON-Ladevorgänge sind `fetch` (von der `fetch()`-API gestartet). Andere Zeilen: `document` (index.html), `stylesheet`, `script` (die Module), `png`. Sagt, *welcher Mechanismus* den Request ausgelöst hat.
+- **Time:** die gesamte Dauer des Requests (Queueing + Stalled + Request sent + **Waiting/TTFB** + **Content Download**). Im Waterfall-Balken sieht man die Aufschlüsselung. Auf localhost ~1–5 ms; mit „Slow 3G" Sekunden, dominiert von Waiting und Download.
+- **Bei 404 auf `evidence.json`:** `fetch()` **rejectet nicht** bei HTTP-Fehlern — es löst mit `res.ok === false`, `res.status === 404` auf. Der Code prüft `res.ok` nicht, sondern ruft direkt `res.json()`; das versucht, die 404-HTML-Fehlerseite als JSON zu parsen → `SyntaxError`. Den fängt `loadEvidenceData`'s `.catch` → `console.error("Failed to load evidence.json", err)` + blockierendes `alert("Evidence could not be loaded…")`, und (seit Demo 3) `evidenceViewLoading = false` + `renderEvidenceList()` zeigt den Leer-Zustand. Dashboard: „0 Evidence items". Die App läuft sonst weiter.
+- **Bei 404 auf `case.json` / `people.json` / `locations.json`:** in dieser Kette gibt es **kein `.catch`**. Die Rejection läuft ungefangen durch bis `initApp` → `Uncaught (in promise) SyntaxError`, `handleHashChange()` läuft nie, `hideLoadingStep()` wird nie erreicht → das Overlay „Loading case file…" **bleibt für immer**, die ganze App bleibt leer. (Live nachgestellt mit umbenanntem `people.json`.)
+
+### F3: Die `localStorage`-Keys der App + was passiert beim manuellen Korrumpieren + warum (laut Lese-Code)?
+
+| Key | Form | wofür | geschrieben / gelesen |
+|---|---|---|---|
+| `remotion_bookmarks` | JSON-**Array** von Evidence-IDs, z. B. `["E14"]` | die gebookmarkten Beweisstücke | `saveBookmarksToStorage` / `loadBookmarksFromStorage` |
+| `remotion_notes` | JSON-**Objekt** `{evidenceId: text}`, z. B. `{"E14":"check the timestamp drift"}` | die privaten Notizen pro Beweisstück | `saveNoteForEvidence` / `loadNotesFromStorage` |
+| `remotion_hypothesis` | JSON-**Objekt**: `suspectId`, `nature`, `evidenceIds[]`, `confidence` (String), `explanation`, `alternative`, `savedAt` (ISO) | der gespeicherte Hypothesen-Entwurf | `saveHypothesis` / `loadHypothesisFromStorage` |
+
+**Korrumpieren + Reload (aktueller Stand):** Alle drei Leser umschließen `JSON.parse` mit `try/catch`. Ein Nicht-JSON-Wert → `JSON.parse` wirft → der `catch` loggt `console.warn("Could not read stored …, starting empty", err)` und fällt zurück (`[]` / `{}` / Draft ignorieren). Die App lädt normal, das Feature startet nur leer.
+
+**Warum — und was vorher passierte:** Genau das war der Demo-5.5-Bug. **Vor** dem Fix hatten `loadNotesFromStorage` und `loadHypothesisFromStorage` **kein** `try/catch`. `loadNotesFromStorage` läuft synchron in `initApp`, **vor** `loadAllData()`. Ein kaputter `remotion_notes`-Wert → `JSON.parse` wirft eine `SyntaxError`, die ungefangen aus `initApp` fliegt → `setupEventListeners()` und `loadAllData()` laufen nie → **komplette App leer**. `remotion_bookmarks` war schon immer robust, weil `loadBookmarksFromStorage` das `try/catch` von Anfang an hatte — das ist die Inkonsistenz, die den Bug verraten hat.
+
+### F4: Nach Drosseln + Reload — was populiert zuerst / zuletzt / zeigt kurz falsche/leere Werte? Warum ist die Reihenfolge hier wichtig?
+
+Ladeablauf (aus `js/data.js`): **strikt sequenziell** `case.json → people.json → locations.json` (verschachtelte `.then`), danach `evidence.json` + `timeline.json` zusammen. Das Vollbild-Overlay verschwindet erst nach **zwei** `hideLoadingStep()`-Aufrufen — einer nach `locations.json`, einer im `.finally` von `timeline.json`. `evidence.json` hat **keinen** Step.
+
+Mit „Slow 3G" beobachtet:
+- Overlay „Loading case file…" hängt lange.
+- `renderDashboard()` läuft **3×** mit wachsenden Daten. Zwischendurch zeigt das Dashboard kurz **`People 6 / Locations 6`, aber `Evidence items 0`**, **„0% of evidence reviewed"** und leere Panels „Recent evidence" / „Recent timeline".
+- `timeline.json` ist kleiner als `evidence.json` → oft ist Timeline zuerst fertig → das **Overlay verschwindet, während `evidence.json` noch lädt**: für einen Moment sieht man Timeline-Einträge, aber „Evidence items: 0" und ein leeres „Recent evidence"-Panel — eine sichtbar **falsche Zahl**, nicht nur fehlender Inhalt.
+- Dann springt der Zähler auf 18, die Panels füllen sich.
+
+**Warum die Reihenfolge zählt:** `renderDashboard` berechnet **abgeleitete Werte** (Anzahlen, „% reviewed") aus den Arrays, die *in genau diesem Moment* gefüllt sind. Rendert man es, bevor alle Daten da sind, entstehen selbstbewusst falsche Zahlen (`0`, `0%`). Zusätzlich ist der 2-Schritt-Zähler des Overlays von den 3 Datendateien entkoppelt — „Overlay weg" heißt also **nicht** „alles geladen". Auf einer schnellen Verbindung sieht man davon nichts; das Drosseln macht die Zwischenzustände erst sichtbar.

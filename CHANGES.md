@@ -256,3 +256,16 @@ Step out, Conditional Breakpoint `a.title.startsWith("Legacy")`, Call Stack
 (`handleSortChange` ← inline `onchange` des `<select>` ← `change`-Event), und zum Schluss
 `state.filteredEvidence = state.allEvidence.slice()` **live in der Console** eingeben, um den
 `.slice()`-Fix im laufenden Programm zu beweisen, bevor er in den Quellcode wandert.
+
+---
+
+## Demo 7 — DevTools-Tour
+
+**Keine Code-Änderung.** Werkzeug-Tour durch Console / Network / Application / Elements.
+Vollständiges Skript in [`DEMO7_DEVTOOLS.md`](DEMO7_DEVTOOLS.md).
+
+Im Browser überprüft:
+- **Network:** Ladereihenfolge `case → people → locations → evidence → timeline` (5 `fetch`-Requests, alle `200`), `evidence.json` Response = JSON-Array mit 18 Objekten.
+- **404-Verhalten** (mit umbenanntem `data/people.json` getestet): Overlay „Loading case file…" **hängt für immer**, alle Views leer, Konsole `Failed to load resource: 404` + `Uncaught (in promise) SyntaxError: … is not valid JSON`. Ursache: `fetch()` wirft bei 404 nicht → `res.json()` parst die 404-HTML-Seite → `SyntaxError`, und in der `case/people/locations`-Kette gibt es kein `.catch`. (404 auf `evidence.json` dagegen → `.catch` mit `console.error` + `alert`; 404 auf `timeline.json` → nur `console.log`.)
+- **localStorage-Keys** (Werte live ausgelesen): `remotion_bookmarks` = `["E14"]` (Array), `remotion_notes` = `{"E14":"…"}` (Objekt), `remotion_hypothesis` = voller Draft-Objekt inkl. `savedAt`.
+- **Elements:** `renderEvidenceCardHTML` → `.evidence-card[data-id]` mit `.bookmark-btn`/`.bookmark-icon`, `.evidence-meta`, Badges; `renderPeople` → `.person-card` mit `.person-avatar`/`.person-role`/`.person-statement`.

@@ -58,7 +58,12 @@ function loadEvidenceData() {
     .then(function (data) {
       state.allEvidence = data;
       applyStoredBookmarkFlags();
-      state.filteredEvidence = state.allEvidence; // gleiche referenz, keine kopie (bug bleibt drin)
+      // demo 2 fix: KOPIE statt gleicher referenz.
+      // vorher war filteredEvidence === allEvidence -> handleSortChange sortiert
+      // filteredEvidence in-place und hat damit die master-liste mitzerlegt
+      // (dashboard "Recent evidence" zeigte danach muell). .slice() macht eine
+      // flache kopie des arrays -> eigenes array, gleiche item-objekte.
+      state.filteredEvidence = state.allEvidence.slice();
       renderDashboard();
       populateAllDropdowns();
       if (state.currentPage === "evidence") renderEvidenceList();

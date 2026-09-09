@@ -45,3 +45,41 @@ Laufendes Änderungsprotokoll für Exercise 1 (Refactoring).
 
 ### Verifikation
 Lokaler Server, alle 12 Module + 5 JSON-Dateien laden mit `200`, alle 5 Views rendern identisch zum Original, Ladereihenfolge (case → people → locations → evidence → timeline) unverändert.
+
+---
+
+## Demo 2 — Mutation-/Referenz-Bug
+
+### Datei
+[`js/data.js`](js/data.js), Funktion `loadEvidenceData`.
+
+### Der Bug
+```js
+state.filteredEvidence = state.allEvidence;   // vorher
+```
+`filteredEvidence` und `allEvidence` sind danach **dasselbe Array-Objekt** (nur zwei Namen dafür), nicht zwei Listen. Kein Kopiervorgang, nur eine zweite Referenz.
+
+`handleSortChange` (in `js/views/evidence.js`) macht `state.filteredEvidence.sort(...)`. `Array.prototype.sort` sortiert **in-place** — es verändert das Array, auf dem es aufgerufen wird. Da beide Namen aufs selbe Array zeigen, wird damit auch `allEvidence` dauerhaft umsortiert.
+
+### Reproduktion (kalt, im Browser bestätigt)
+1. Seite frisch laden. `allEvidence`-Reihenfolge = `E01 … E18`.
+2. Im Evidence-View das Sort-Dropdown auf „Title (A–Z)" stellen (`onchange="handleSortChange()"`).
+3. `allEvidence` ist danach `E12,E03,E10,E16,…` — die **Master-Liste** wurde durch das Sortieren der „gefilterten Ansicht" zerlegt.
+4. Sichtbare Folge: Dashboard-Panel „Recent evidence" (`allEvidence.slice(-5).reverse()`) zeigt danach `E18, E02, E09, E14, E15` statt korrekt `E18, E17, E16, E15, E14`.
+
+> Anmerkung: `filteredEvidence` bleibt hier ausnahmsweise dauerhaft `=== allEvidence`, weil der Evidence-View wegen des Demo-3-Bugs (`evidenceViewLoading` nie `false`) nie `getFilteredEvidence()` erreicht, das sonst ein frisches Array zuweisen würde. Die beiden Bugs verstärken sich → Thema für Demo 5.
+
+### Fix
+```js
+state.filteredEvidence = state.allEvidence.slice();   // flache kopie
+```
+`.slice()` ohne Argumente gibt ein **neues** Array mit denselben Elementen zurück. Sortieren von `filteredEvidence` fasst `allEvidence` jetzt nicht mehr an.
+
+### Verifikation des Fixes
+- Nach dem Fix: `filteredEvidence === allEvidence` → `false` direkt beim Laden.
+- Sort nach Titel **und** nach Datum ausgelöst → `allEvidence` bleibt `E01 … E18`.
+- Dashboard „Recent evidence" bleibt korrekt (`E18, E17, E16, E15, E14`).
+- Regressions-Sweep: People (6 Karten), Timeline (15 Events), Workspace, Dashboard-Stats (`18/6/6/0/1`) unverändert. Console nur der bekannte `First note preview: Promise`-Log, nichts Neues.
+
+### Folgebefund (NICHT hier gefixt, gehört zu Demo 5 / später)
+Der „Sort" sortierte die sichtbare Liste vorher nur, *weil* er über die geteilte Referenz `allEvidence` umbaute und `getFilteredEvidence` danach in dieser neuen Reihenfolge iterierte. Mit dem Fix ist Sort faktisch ein No-op, sobald die Liste wirklich rendert (`getFilteredEvidence` baut `filteredEvidence` jedes Mal frisch aus `allEvidence` auf). Das Sortier-Feature *richtig* zu machen ist ein eigenes Thema und nicht Teil von Demo 2 (= Mutationsbug beseitigen).

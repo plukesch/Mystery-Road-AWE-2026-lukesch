@@ -83,3 +83,20 @@ Der Kern in async-Worten: eine Zustandsvariable wird **vor** der Operation geset
 2. Network-Tab: `evidence.json` → `200`. Der `fetch` ist also nicht fehlgeschlagen; es ist kein Netzwerk-/Parse-Problem.
 3. `grep evidenceViewLoading` über den ganzen `js/`-Ordner: **zwei** Treffer — der Initializer (`: true`) und der Lese-Check in `renderEvidenceList`. **Null** Zuweisungen auf `false`. Damit ist bewiesen, dass kein Codepfad das Flag je zurücksetzt.
 4. Gegenprobe nach dem Fix: gleiche Konsolen-Checks → `evidenceViewLoading === false`, 18 Karten im DOM, Filter/Suche/Sort erreichen jetzt `getFilteredEvidence`.
+
+---
+
+## Demo 4 — Stiller Bug
+
+Gefundener Bug: `initApp` in `js/main.js` loggt `console.log("First note preview:", loadNoteAsync("E01"))` — `loadNoteAsync` gibt ein Promise zurück, nicht den Notiz-String. Konsole zeigt bei jedem Load `First note preview: Promise {<fulfilled>: ''}`, in der UI passiert nichts. Fix: der Log war ein Debug-Rest ohne Zweck → ersatzlos entfernt.
+
+### F1: Wie ist dir der Bug überhaupt aufgefallen, wenn nichts kaputt aussah? Warum ist „nichts sieht kaputt aus" nicht dasselbe wie „nichts ist kaputt"?
+
+**Wie aufgefallen:** DevTools war von Anfang an offen, Console-Tab sichtbar — so wie es die Angabe verlangt. Direkt nach dem Laden, noch bevor ich irgendwo geklickt habe, stand da eine Zeile: `First note preview: Promise {<fulfilled>: ''}`. Zwei Dinge waren daran verdächtig: (1) ein `console.log` mit „preview" im Text klingt nach vergessenem Debug-Code, und (2) der geloggte Wert ist ein `Promise`-Objekt, kein Text — d. h. hier wird ein Promise behandelt, als wäre es schon der fertige Wert. Nachgeprüft mit `loadNoteAsync("E01") instanceof Promise` (→ `true`) und `await loadNoteAsync("E01")` (→ `""`), plus `grep`, dass der Aufruf nur an dieser einen Stelle steht.
+
+**Warum „sieht ok aus" ≠ „ist ok":** Die UI zeigt nur, was gerendert wird. Ein falscher Wert, der nirgends angezeigt wird, ist trotzdem ein Fehler — er sagt, dass jemand die Semantik missverstanden hat (`loadNoteAsync` liefert kein `string`). Solche stillen Fehler sind gefährlicher als sichtbare:
+- Niemand meldet sie, weil auf dem Screen alles normal aussieht — sie bleiben monatelang liegen.
+- Dieselbe falsche Annahme („async-Funktion gibt direkt den Wert zurück") steckt hier harmlos in einem Log, kann aber woanders in echter Logik stecken und dort echten Schaden anrichten (genau die Fehlklasse aus Demo 3).
+- Die Konsole ist eine echte Fehler-Oberfläche. Wenn dort dauernd Rauschen steht, gewöhnt man sich dran und übersieht die *nächste*, ernste Meldung. „Konsole sauber halten" ist deshalb Teil von „funktioniert", nicht Kosmetik.
+
+Konkret in dieser App: derselbe Bug-Typ hält den Evidence-View auf „Loading" fest (Demo 3) und (in einer anderen Ausprägung — `var`-Closure) wirft bei jedem Nav-Button-Klick eine `TypeError` in die Konsole, während die Navigation optisch normal weiterläuft.

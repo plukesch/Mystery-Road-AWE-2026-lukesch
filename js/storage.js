@@ -41,6 +41,7 @@ export function loadNotesFromStorage() {
 }
 
 // gibt ein Promise zurueck obwohl daten schon da sind (fake-async)
+// TODO demo 8: seit dem demo-4-fix nirgends mehr aufgerufen -> toter code, kann weg
 export function loadNoteAsync(evidenceId) {
   return new Promise(function (resolve) {
     resolve(state.notesStore[evidenceId] || "");

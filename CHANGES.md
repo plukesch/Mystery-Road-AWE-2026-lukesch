@@ -124,3 +124,34 @@ Kein Delay, kein Retry, kein Polling — nur das fehlende State-Update an der ri
 
 ### Wechselwirkung mit Demo 2 (→ Demo 5)
 Jetzt wo die Liste wirklich rendert, ist sichtbar: das **Sort-Dropdown bewirkt nichts** (`getFilteredEvidence` baut `filteredEvidence` jedes Mal frisch aus `allEvidence` auf, die Sortierung wird sofort überschrieben). Vorher „funktionierte" Sort nur als Nebeneffekt des Referenz-Bugs aus Demo 2. Das Beheben von Demo 2 + Demo 3 hat also einen dritten Defekt *freigelegt* (Sort ist nie korrekt implementiert worden). Nicht hier gefixt — Eintrag für Demo 5.
+
+---
+
+## Demo 4 — Stiller Bug (nur Konsole, keine sichtbare UI-Änderung)
+
+### Datei
+[`js/main.js`](js/main.js) → `initApp` (die Funktion in [`js/storage.js`](js/storage.js) → `loadNoteAsync`).
+
+### Konsolen-Output (vorher, exakt)
+```
+First note preview: Promise {<fulfilled>: ''}
+```
+Erscheint bei **jedem Seiten-Load**, ohne jede Interaktion. In der UI passiert nichts — nirgends wird eine „first note preview" angezeigt.
+
+### Ursache
+```js
+var firstNote = loadNoteAsync("E01");        // main.js
+console.log("First note preview:", firstNote);
+```
+`loadNoteAsync` ist `return new Promise(function (resolve) { resolve(state.notesStore[id] || ""); })` — gibt also ein **Promise** zurück, keinen String. `firstNote` ist die Promise-Hülle, wird nie ausgepackt (`await` / `.then` fehlt). `console.log` druckt die Hülle: `Promise {<fulfilled>: ''}`. Der eigentlich gemeinte Wert wäre `""` (für E01 ist keine Notiz gespeichert). Gleiche Fehlklasse wie Demo 3: ein Promise wird behandelt, als wäre es schon der fertige Wert.
+
+Bestätigt: `loadNoteAsync("E01") instanceof Promise === true`, `await loadNoteAsync("E01") === ""`. Der Aufruf steht app-weit nur an dieser einen Stelle (`grep loadNoteAsync`).
+
+### Fix
+Die zwei Zeilen (`var firstNote = …` + `console.log`) ersatzlos aus `initApp` entfernt und `loadNoteAsync` aus dem `import` in `main.js` gestrichen. Es ist ein Debug-Rest ohne Zweck (rendert nirgends). `loadNoteAsync` in `storage.js` ist damit toter Code → mit `TODO demo 8` markiert.
+
+### Verifikation
+Seite laden + durch alle 5 Views navigieren → **Konsole komplett leer** („No console logs"). Vorher/nachher-Diff ist eindeutig.
+
+### Zweiter stiller Bug gefunden (NICHT hier gefixt → Demo 8 / Demo 5)
+Klick auf einen **Nav-Button** wirft `Uncaught TypeError: Cannot read properties of undefined (reading 'getAttribute')` (`js/main.js`, im `setupEventListeners`-Nav-Loop). Ursache: `for (var i …)` + Closure — beim Klick ist `i === navButtons.length`, also `navButtons[i] === undefined`. Navigation funktioniert trotzdem (Inline-`onclick`/hashchange). Das ist genau das `var`-Scoping-Beispiel für Demo 8, daher dort gefixt.

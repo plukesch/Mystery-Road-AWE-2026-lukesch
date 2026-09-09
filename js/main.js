@@ -5,7 +5,7 @@
 // ---------------------------------------------------------------------
 import { navigateTo, handleHashChange } from "./navigation.js";
 import { loadAllData } from "./data.js";
-import { loadBookmarksFromStorage, loadNotesFromStorage, loadNoteAsync } from "./storage.js";
+import { loadBookmarksFromStorage, loadNotesFromStorage } from "./storage.js";
 import {
   renderEvidenceList,
   handleSearchInput,
@@ -81,8 +81,12 @@ function initApp() {
 
   loadAllData().then(function () {
     handleHashChange();
-    var firstNote = loadNoteAsync("E01");
-    console.log("First note preview:", firstNote);
+    // demo 4 fix: hier stand
+    //   var firstNote = loadNoteAsync("E01");
+    //   console.log("First note preview:", firstNote);
+    // loadNoteAsync gibt ein Promise zurueck, kein string -> die konsole hat
+    // "First note preview: Promise {<fulfilled>: ''}" geloggt statt des notiz-textes.
+    // der log rendert nirgends etwas, ist reiner debug-rest -> ersatzlos raus.
   });
 }
 

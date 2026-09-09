@@ -21,7 +21,7 @@ const state = {
   currentPeopleTab: "people",
   loadingStepsRemaining: 2,
 
-  // wird nirgends auf false gesetzt (bug bleibt fuer demo 1 drin!)
+  // demo 3: wird jetzt im .then/.catch von loadEvidenceData auf false gesetzt
   evidenceViewLoading: true,
 
   viewRendered: {
@@ -32,10 +32,7 @@ const state = {
     workspace: false
   },
 
-  notesStore: {},
-
-  // race-guard fuer die such-eingabe
-  latestSearchRequestId: 0
+  notesStore: {}
 };
 
 export default state;

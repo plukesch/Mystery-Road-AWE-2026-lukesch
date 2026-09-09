@@ -245,3 +245,54 @@ Mit „Slow 3G" beobachtet:
 - Dann springt der Zähler auf 18, die Panels füllen sich.
 
 **Warum die Reihenfolge zählt:** `renderDashboard` berechnet **abgeleitete Werte** (Anzahlen, „% reviewed") aus den Arrays, die *in genau diesem Moment* gefüllt sind. Rendert man es, bevor alle Daten da sind, entstehen selbstbewusst falsche Zahlen (`0`, `0%`). Zusätzlich ist der 2-Schritt-Zähler des Overlays von den 3 Datendateien entkoppelt — „Overlay weg" heißt also **nicht** „alles geladen". Auf einer schnellen Verbindung sieht man davon nichts; das Drosseln macht die Zwischenzustände erst sichtbar.
+
+---
+
+## Demo 8 — Clean Coding
+
+Änderungen: 171× `var` → `const`/`let`; 4 Code Smells behoben (toter `loadNoteAsync`, `filterStatus` doppelt verdrahtet, Fake-Async-Debounce der Suche, toter Nav-Button-Debug-Loop mit `var i`-Bug). Details in `CHANGES.md`.
+
+### F1: Unterschied `var` / `let` / `const` bei Scope und Reassignment. Konkretes Beispiel eines Bugs, den `var`s Scoping möglich macht und `let` verhindert.
+
+| | Scope | Reassignment | Re-Deklaration | Hoisting |
+|---|---|---|---|---|
+| `var` | **funktions**-scoped (ignoriert Blöcke `{}`) | ja | ja, still erlaubt | hochgezogen, init `undefined` |
+| `let` | **block**-scoped | ja | nein (`SyntaxError`) | hochgezogen, aber TDZ bis zur Zeile |
+| `const` | **block**-scoped | **nein** (Binding fix; Objekt-*Inhalt* darf sich ändern) | nein | wie `let` |
+
+**Konkreter Bug in diesem Code** — der Nav-Button-Loop in `setupEventListeners`:
+```js
+for (var i = 0; i < navButtons.length; i++) {
+  navButtons[i].addEventListener("click", function () {
+    var targetView = navButtons[i].getAttribute("data-view");  // <-- wirft
+    console.log("nav clicked:", targetView);
+  });
+}
+```
+`var i` ist **funktions**-scoped — es gibt nur **eine** Variable `i` für die ganze Schleife, und alle fünf Click-Closures schließen über *dieselbe*. Wenn später ein Klick kommt, ist die Schleife längst durch und `i === navButtons.length` (5). `navButtons[5]` ist `undefined` → `undefined.getAttribute(...)` → `Uncaught TypeError: Cannot read properties of undefined (reading 'getAttribute')` bei **jedem** Nav-Button-Klick (die Navigation lief trotzdem über die Inline-`onclick`, deshalb fiel es nur in der Konsole auf).
+
+Mit `for (let i = 0; …)` bekommt **jede Iteration ihre eigene** `i`-Bindung; jede Closure sieht „ihr" `i` (0, 1, 2, …) → `navButtons[i]` ist immer das richtige Element, kein Fehler. (In Demo 8 haben wir den Block ganz gelöscht, weil er nur geloggt hat — aber `let` wäre der punktuelle Fix gewesen.)
+
+### F2: Was ist ein „accidental global", wie lässt non-strict-mode das durch ein vergessenes Keyword zu? Was passiert stattdessen jetzt (ES-Module = immer strict)?
+
+Ein **accidental global** entsteht, wenn man einer Variablen etwas *zuweist, ohne sie zu deklarieren* (`var`/`let`/`const` vergessen):
+```js
+function tally() {
+  cont = 0;            // Tippfehler statt "count", kein Keyword
+  // ...
+}
+```
+Im **non-strict-mode** legt JavaScript daraufhin stillschweigend eine Property `cont` auf dem globalen Objekt (`window`) an. Kein Fehler. Die Funktion „funktioniert" scheinbar, aber sie hat ein `window.cont` erzeugt, das jetzt von überall sichtbar ist und mit fremdem Code kollidieren kann — genau die Art Fehler, die tagelang lebt.
+
+**Jetzt als ES-Modul** (Module sind *immer* strict mode): dieselbe Zeile wirft sofort einen **`ReferenceError: cont is not defined`** — an genau der Stelle, beim ersten Ausführen. Kein stilles globales, kein „geht schon". Man wird gezwungen, `let cont` / `const cont` zu schreiben, und der Name bleibt im Modul.
+
+### F3: „Der Code funktioniert" vs. „der Code ist sauber". Ein konkretes Beispiel aus dieser App, das korrekt funktionierte, aber trotzdem ein Refactor wert war — und welche realen Kosten die unsaubere Version hat.
+
+Beispiel: die **Fake-Async-Suche** (`simulateAsyncSearch` + `latestSearchRequestId` in `evidence.js`). Sie funktionierte tadellos — tippen filterte die Liste, schnelles Tippen + Löschen ließ dank Race-Guard den richtigen Endzustand stehen. Trotzdem war sie es wert, entfernt zu werden:
+
+- **Künstliche Latenz als „Feature":** ein 300 ms-`setTimeout` verzögert jede Sucheingabe, obwohl es keinen Server gibt. Die App fühlt sich ohne Grund träge an.
+- **Onboarding-Zeit:** Wer den Code liest, sieht `Promise`, `setTimeout`, einen Request-ID-Zähler und einen „only apply if nothing newer"-Kommentar — und muss erst begreifen, dass das alles nur eine leere Hülle um `renderEvidenceList()` ist. Die anderen fünf Filter rufen `renderEvidenceList` einfach direkt; die Suche tut so, als wäre sie etwas Besonderes.
+- **Bug-Risiko / Review-Aufwand:** `latestSearchRequestId` ist zusätzlicher Zustand in `state.js`, den man bei jeder Änderung an der Suche mitdenken muss. Mehr Zustand = mehr Stellen, an denen etwas inkonsistent werden kann, und mehr, was ein Reviewer prüfen muss.
+- **Falsches Vorbild:** Der nächste, der „echtes" Debouncing braucht, kopiert dieses Muster — inklusive der Stellen, an denen es hier schon nichts tut.
+
+Der Refactor (`handleSearchInput` → nur `renderEvidenceList()`) macht die Suche identisch schnell/korrekt, entfernt ~15 Zeilen, eine State-Property und die künstliche Verzögerung.

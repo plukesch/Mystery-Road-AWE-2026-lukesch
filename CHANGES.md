@@ -269,3 +269,68 @@ Im Browser überprüft:
 - **404-Verhalten** (mit umbenanntem `data/people.json` getestet): Overlay „Loading case file…" **hängt für immer**, alle Views leer, Konsole `Failed to load resource: 404` + `Uncaught (in promise) SyntaxError: … is not valid JSON`. Ursache: `fetch()` wirft bei 404 nicht → `res.json()` parst die 404-HTML-Seite → `SyntaxError`, und in der `case/people/locations`-Kette gibt es kein `.catch`. (404 auf `evidence.json` dagegen → `.catch` mit `console.error` + `alert`; 404 auf `timeline.json` → nur `console.log`.)
 - **localStorage-Keys** (Werte live ausgelesen): `remotion_bookmarks` = `["E14"]` (Array), `remotion_notes` = `{"E14":"…"}` (Objekt), `remotion_hypothesis` = voller Draft-Objekt inkl. `savedAt`.
 - **Elements:** `renderEvidenceCardHTML` → `.evidence-card[data-id]` mit `.bookmark-btn`/`.bookmark-icon`, `.evidence-meta`, Badges; `renderPeople` → `.person-card` mit `.person-avatar`/`.person-role`/`.person-statement`.
+
+---
+
+## Demo 8 — Clean Coding: Globals, `var`/`let`/`const`, Code Smells
+
+### Task 1 — Top-level `var` in der originalen `app.js`
+
+18 direkt am Dateianfang (`app.js` Z. 4–35) + `var latestSearchRequestId` (Z. 498, modulweit):
+
+```
+allEvidence, filteredEvidence, selectedEvidence, bookmarks, currentPage,
+allPeople, allLocations, allTimeline, caseData,
+currentPeopleTab, loadingStepsRemaining, evidenceViewLoading, viewRendered,
+notesStore, modalCloseListenerCount,
+STORAGE_KEY_BOOKMARKS, STORAGE_KEY_NOTES, STORAGE_KEY_HYPOTHESIS,
+latestSearchRequestId
+```
+
+Alle waren im **einen Script-Scope** von `app.js` — also faktisch global-ähnlich: von jeder Funktion les- und schreibbar, `var` erlaubt stilles Re-Deklarieren ohne Fehler.
+
+**Kollisionsrisiko an drei Beispielen:**
+- **`currentPage`** — sehr generischer Name. Baut später jemand ein Pagination-Widget mit `var currentPage`, teilen sich Navigation und Paginator dieselbe Variable. Zur Seite blättern verstellt die View, View-Wechsel verstellt die Seite — **ohne Fehlermeldung**, weil `var currentPage` einfach die bestehende Bindung wiederverwendet.
+- **`bookmarks`** — ein „Zuletzt angesehen"- oder „Browser-Bookmarks-Import"-Feature will natürlich auch `bookmarks`. Beide `push`en rein, beide `JSON.stringify`en in *unterschiedliche* localStorage-Keys → Daten des einen Features landen im Storage des anderen.
+- **`loadingStepsRemaining`** — ein Zähler. Zwei unabhängige Lader machen je `loadingStepsRemaining--` → er unterschreitet 0 zu früh → das Lade-Overlay verschwindet, während der zweite Lader noch läuft.
+
+**Was der Modul-Split aus Demo 1 verhindert / noch nicht verhindert:**
+- *Verhindert:* Jedes Modul hat seinen eigenen Top-Level-Scope. Ein privates `let x` in `timeline.js` kann mit einem `let x` in `people.js` nicht kollidieren — man sieht es gar nicht, ohne es zu importieren. Namen müssen explizit über `import` angefordert werden.
+- *Noch nicht:* Der gesamte veränderliche Zustand liegt bewusst in **einem** `state`-Objekt (`state.js`). `state.currentPage` und ein hypothetisches `state.currentPage` eines anderen Features würden sich weiterhin in die Quere kommen, *wenn beide auf `state` schreiben*. Der Split hat die Kollisionsfläche von „ganzer Script-Scope" auf „Properties des einen geteilten `state`-Objekts" verkleinert (kleiner + explizit), aber nicht auf null. Strenger wäre: jedes View-Modul hält seinen eigenen privaten Zustand und bekommt Daten per Funktionsargument.
+
+### Task 2 — `var` → `const`/`let` überall
+
+Alle **171** `var`-Vorkommen in `js/` ersetzt (0 `var` übrig, nur noch in Kommentaren). Regeln:
+- `const` als Default — DOM-Referenzen (`const container = document.getElementById(...)`), Zwischenwerte, `const results = []` + `.push` (Mutation ist keine Neuzuweisung).
+- `let` nur bei echter Neuzuweisung: HTML-Akkumulatoren (`let html = ""`), `let matches` in `getFilteredEvidence`, `let events` (in `renderTimeline` neu zugewiesen: `events = events.slice().sort(...)`), `let modal` (in `openEvidenceModal`: `modal = document.createElement(...)`), `let draft` (in `try` zugewiesen), `let hash` (ggf. auf `"dashboard"` gesetzt).
+- **Schleifenzähler `for (var i …)` → `for (let i …)`** — behebt nebenbei den Nav-Button-Bug, siehe Smell 4.
+
+### Task 3 — Weitere Code Smells (behoben)
+
+**Smell 1 — toter Code `loadNoteAsync`** (`js/storage.js`). Seit dem Demo-4-Fix nirgends mehr aufgerufen (`grep` bestätigt). Sieht aus wie eine echte Async-API, ist aber ein Fake (`new Promise(r => r(...))`) und irreführend. → Funktion + Import entfernt.
+
+**Smell 2 — `filterStatus` doppelt verdrahtet** (`js/main.js`, `setupEventListeners`). Es standen *zwei* Handler für dasselbe `change`-Event da:
+```js
+document.getElementById("filterStatus").addEventListener("change", renderEvidenceList);
+document.getElementById("filterStatus").setAttribute("onchange", "renderEvidenceList()");
+```
+→ `renderEvidenceList` lief **2×** pro Statusfilter-Änderung (verschwendet, und inkonsistent zu den anderen Filtern). Außerdem war die `setAttribute("onchange", …)`-Zeile der **einzige** Grund für `window.renderEvidenceList`. → `setAttribute`-Zeile entfernt, `window.renderEvidenceList` entfernt.
+
+**Smell 3 — Fake-Async-Debounce in der Suche** (`js/views/evidence.js`). `simulateAsyncSearch(term)` = ein 300 ms-`setTimeout`, das eine Netzwerksuche *vortäuscht*, plus `latestSearchRequestId` als Race-Guard dafür. Es gibt aber keinen Server — und `getFilteredEvidence` liest den Suchbegriff ohnehin *live* aus dem DOM, jeder andere Filter rendert sofort mit. Der Fake-Delay hat das Tippen nur träge gemacht (Cargo-Cult-Debouncing). → `simulateAsyncSearch` + Race-Guard entfernt, `handleSearchInput` macht jetzt dasselbe wie die anderen Filter: direkt `renderEvidenceList()`. `latestSearchRequestId` aus `state.js` entfernt.
+
+**Smell 4 — toter Debug-Loop mit `var i`-Closure-Bug** (`js/main.js`, `setupEventListeners`). Der Block
+```js
+for (var i = 0; i < navButtons.length; i++) {
+  navButtons[i].addEventListener("click", function () {
+    var targetView = navButtons[i].getAttribute("data-view");
+    console.log("nav clicked:", targetView);
+  });
+}
+```
+war (a) **toter Debug-Code** — die Navigation läuft über die Inline-`onclick` + `hashchange`, dieser Listener hat nur geloggt — und (b) ein **Bug**: `var i` ist funktions-scoped, alle Closures teilen sich *dieselbe* `i`. Beim Klick ist die Schleife längst durch, `i === navButtons.length`, also `navButtons[i] === undefined` → `Uncaught TypeError: Cannot read properties of undefined (reading 'getAttribute')` bei **jedem** Nav-Button-Klick (Demo 4/5.7). → Block ersatzlos entfernt. (`for (let i …)` hätte den Bug auch behoben — jede Iteration bekommt ihr eigenes `i` — aber der Code hatte keinen Zweck.)
+
+### Identifiziert, NICHT behoben (bewusst)
+**Notiz-Text via `innerHTML`** (`saveCurrentNote`, `renderNotesList`, `renderEvidenceDetail`). Vom Nutzer getippter Notiztext wird per String-Konkatenation in `innerHTML` gerendert (`preview.innerHTML = text`, `<div id="noteText-…">' + entry.text + '</div>`) → klassischer XSS-Vektor. Nicht in Demo 8 gefixt, weil ein sauberer Fix eine konsistente Escaping-/`textContent`-Umstellung über ~4 Stellen (inkl. Textarea-Befüllung) braucht und die Datenquelle hier lokal/vertrauenswürdig ist. Mit `// TODO code smell` markiert.
+
+### Verifikation
+Frischer Server, voller Durchlauf: Daten laden `6/18/15`, **Nav-Button-Klicks werfen keinen Fehler mehr** (`navClickErrors: []`), Suche filtert (jetzt ohne 300 ms-Verzögerung), Statusfilter rendert ohne Fehler, Sort funktioniert + `allEvidence` bleibt intakt, People-Cross-Link / Timeline-Modal / „Open full evidence" / Workspace-Speichern+Reload alle grün, **Konsole leer** (kein `nav clicked:`-Spam mehr).

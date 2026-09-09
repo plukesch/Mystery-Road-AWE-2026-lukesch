@@ -11,8 +11,8 @@ export function saveBookmarksToStorage() {
 
 export function loadBookmarksFromStorage() {
   try {
-    var raw = localStorage.getItem(STORAGE_KEYS.bookmarks);
-    var parsed = raw ? JSON.parse(raw) : [];
+    const raw = localStorage.getItem(STORAGE_KEYS.bookmarks);
+    const parsed = raw ? JSON.parse(raw) : [];
     state.bookmarks = Array.isArray(parsed) ? parsed : [];
   } catch (err) {
     console.warn("Could not read stored bookmarks, starting empty", err);
@@ -34,19 +34,11 @@ export function loadNoteForEvidence(evidenceId) {
 // SyntaxError geworfen, loadAllData() lief nie -> KOMPLETTE app leer.
 export function loadNotesFromStorage() {
   try {
-    var raw = localStorage.getItem(STORAGE_KEYS.notes);
-    var parsed = raw ? JSON.parse(raw) : {};
+    const raw = localStorage.getItem(STORAGE_KEYS.notes);
+    const parsed = raw ? JSON.parse(raw) : {};
     state.notesStore = parsed && typeof parsed === "object" ? parsed : {};
   } catch (err) {
     console.warn("Could not read stored notes, starting empty", err);
     state.notesStore = {};
   }
-}
-
-// gibt ein Promise zurueck obwohl daten schon da sind (fake-async)
-// TODO demo 8: seit dem demo-4-fix nirgends mehr aufgerufen -> toter code, kann weg
-export function loadNoteAsync(evidenceId) {
-  return new Promise(function (resolve) {
-    resolve(state.notesStore[evidenceId] || "");
-  });
 }

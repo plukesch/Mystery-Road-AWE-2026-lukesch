@@ -19,9 +19,8 @@ import { switchPeopleTab } from "./views/people.js";
 import { saveHypothesis } from "./views/workspace.js";
 
 // ---------------------------------------------------------------------
-// module scope ist NICHT global. das index.html hat aber noch inline
-// onclick/onchange attribute (und app.js setzt eins per setAttribute).
-// die suchen ihre funktion auf window -> hier explizit dranhaengen.
+// module scope ist NICHT global. index.html hat noch inline onclick/onchange
+// attribute -> die funktionen dahinter muessen auf window liegen.
 // (wird in einer spaeteren uebung sauber auf addEventListener umgestellt)
 // ---------------------------------------------------------------------
 window.navigateTo = navigateTo;
@@ -30,7 +29,6 @@ window.handleSortChange = handleSortChange;
 window.saveHypothesis = saveHypothesis;
 window.closeEvidenceDetail = closeEvidenceDetail;
 window.saveCurrentNote = saveCurrentNote;
-window.renderEvidenceList = renderEvidenceList;
 
 // ---------------------------------------------------------------------
 // EVENT LISTENER SETUP
@@ -39,23 +37,22 @@ window.renderEvidenceList = renderEvidenceList;
 function setupEventListeners() {
   window.addEventListener("hashchange", handleHashChange);
 
-  var navButtons = document.querySelectorAll(".nav-btn");
-  for (var i = 0; i < navButtons.length; i++) {
-    navButtons[i].addEventListener("click", function () {
-      var targetView = navButtons[i].getAttribute("data-view");
-      console.log("nav clicked:", targetView);
-    });
-  }
+  // demo 8: hier stand ein for-(var i)-loop, der jedem .nav-btn einen click-listener
+  // gab, dessen einziger inhalt "console.log('nav clicked:', navButtons[i]...)" war.
+  // - toter debug-code (navigation laeuft ueber die inline onclick + hashchange)
+  // - und wegen "var i" + closure war i beim klick === navButtons.length -> das
+  //   throw "Cannot read properties of undefined (reading 'getAttribute')".
+  // ersatzlos entfernt.
 
   document.getElementById("evidenceSearch").addEventListener("input", handleSearchInput);
 
   document.getElementById("filterType").addEventListener("change", renderEvidenceList);
   document.getElementById("filterPerson").addEventListener("change", renderEvidenceList);
   document.getElementById("filterLocation").addEventListener("change", renderEvidenceList);
-
+  // demo 8: filterStatus war doppelt verdrahtet - addEventListener UND
+  // setAttribute("onchange", "renderEvidenceList()") -> render lief 2x pro aenderung,
+  // und nur wegen der onchange-zeile brauchte es window.renderEvidenceList. beides raus.
   document.getElementById("filterStatus").addEventListener("change", renderEvidenceList);
-  document.getElementById("filterStatus").setAttribute("onchange", "renderEvidenceList()");
-
   document.getElementById("filterRelevance").addEventListener("change", renderEvidenceList);
 
   document.getElementById("clearFiltersBtn").addEventListener("click", clearFilters);

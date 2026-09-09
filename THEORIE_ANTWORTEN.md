@@ -147,3 +147,55 @@ Ja, mehrfach — vor allem zwischen Demo 2, Demo 3 und Bug 5.2 (Sort):
 2. Pro Bug ein gezielter Vorher/Nachher-Check über die Konsole, jeweils mit frischem Seiten-Load (Modul-Cache über neuen Port umgangen).
 3. Nach dem Anwenden **aller** Fixes ein kompletter Feature-Durchlauf: jede View mehrfach, Suche, alle Filter, Sort, Bookmark (inkl. Stern-Klick), Detail öffnen/schließen, People-Tabs, Timeline-Filter + Modal, Hypothese speichern und Reload → Persistenz prüfen. Alles grün, Konsole leer.
 4. Keiner der sechs Verifikations-Checks berührt Zustand, den ein anderer Fix besitzt — deshalb können sie sich nicht gegenseitig maskieren.
+
+---
+
+## Demo 6 — JavaScript-Debugger
+
+Durchgeführt am Commit `6377dd0` auf `handleSortChange` (Demo-2-Bug). Ablauf siehe `DEMO6_DEBUGGER.md`.
+
+### F1: Unterschied „Step over" vs. „Step into"? Konkretes Beispiel aus dieser App, wo der falsche Griff Zeit kostet.
+
+- **Step over (F10):** führt die aktuelle Zeile *als Ganzes* aus. Steht ein Funktionsaufruf drin, wird die Funktion komplett abgearbeitet und der Debugger hält erst auf der *nächsten* Zeile der aktuellen Funktion.
+- **Step into (F11):** ist ein Funktionsaufruf in der Zeile, springt der Debugger *in diese Funktion hinein* und hält auf deren erster Zeile.
+
+**Beispiel:** In `handleSortChange`, Zeile 166: `state.filteredEvidence.sort(function (a, b) { … })`. Ich will eigentlich nur die Sortierung ausführen lassen und dann sehen, was mit `state.allEvidence` passiert ist → **Step over**. Nehme ich hier **Step into**, lande ich im Komparator `function (a, b)`, den `.sort()` bei 18 Elementen ~55-mal aufruft. Jetzt darf ich mich durch Dutzende identische Komparator-Aufrufe klicken, bevor ich wieder bei Zeile 182 bin — reine Zeitverschwendung. Umgekehrt: will ich wissen, *warum* die Sortierung komisch ist, ist Step over falsch (ich sehe den Vergleich nie) und Step into (bzw. ein Conditional Breakpoint im Komparator) richtig.
+
+### F2: Was ist der Call Stack, und wie hat das Lesen geholfen herauszufinden, woher ein Wert kam / warum eine Funktion lief?
+
+Der **Call Stack** ist die Liste der gerade offenen Funktionsaufrufe, von unten (Einstiegspunkt) nach oben (wo der Debugger jetzt steht). Jeder Eintrag (*Frame*) hat seine eigenen lokalen Variablen; per Klick springt man in dessen Scope.
+
+Konkret bei `handleSortChange`: der Stack war
+```
+handleSortChange        evidence.js
+onchange (inline)       index.html:126   <select id="sortEvidence" onchange="handleSortChange()">
+(dispatch / native)     Event-System
+```
+Das hat zwei Dinge beantwortet:
+- **Warum lief die Funktion?** Nicht durch normalen Programmfluss, sondern durch mein Ändern des Dropdowns → ein `change`-Event → der Inline-`onchange`-Handler.
+- **Woher kam der Wert `sortValue`?** `handleSortChange` bekommt *kein* Argument (im Stack sieht man die Aufrufstelle `handleSortChange()` — leere Klammern). Der Wert stammt also nicht von einem Aufrufer, sondern wird in Zeile 163 selbst aus dem DOM gelesen. Ohne den Stack hätte man rätseln können, ob irgendwer `handleSortChange("title-asc")` aufruft.
+
+### F3: Was ist ein Conditional Breakpoint, und warum effizienter als wiederholtes „Resume"?
+
+Ein **Conditional Breakpoint** ist ein Breakpoint mit einer Bedingung (ein JS-Ausdruck). Der Debugger hält dort **nur**, wenn der Ausdruck `true` ergibt — sonst läuft er durch, als wäre kein Breakpoint da.
+
+Beispiel: Breakpoint im Sort-Komparator (Zeile 167) mit Bedingung `a.title.startsWith("Legacy")`. Der Komparator läuft ~55-mal; mich interessiert nur der Aufruf mit dem „Legacy"-Element. Mit einem normalen Breakpoint müsste ich ~55× „Resume" klicken und jedes Mal im Scope prüfen, ob jetzt das richtige `a` dran ist. Der Conditional Breakpoint bringt mich **mit einem Klick** genau dorthin. Bei Schleifen über große Listen oder „nur wenn `id === 'E08'`" ist das der Unterschied zwischen Sekunden und Minuten — und man übersieht den gesuchten Fall nicht aus Versehen durch einmal zu viel „Resume".
+
+### F4: Unterschied zwischen einem Breakpoint im DevTools-UI und einem `debugger;` im Quellcode? Wann welches?
+
+- **UI-Breakpoint:** in DevTools per Klick auf die Zeilennummer gesetzt. Ändert die Quelldatei **nicht**, wird nicht committet, greift nur in *meinem* Browser. Chrome merkt sie sich pro Origin über Reloads hinweg, aber sie können verrutschen, wenn sich die Datei stark ändert, und sind weg, wenn jemand anders das Projekt auscheckt.
+- **`debugger;`-Statement:** steht **im Quellcode**. Pausiert bei *jedem*, der den Code mit offenen DevTools ausführt, überlebt Hard-Reload und Datei-Umbau (es klebt an der Code-Stelle, nicht an einer Zeilennummer), und wandert über Git zu allen mit.
+
+**Wann was:**
+- **UI-Breakpoint** im Normalfall: schnelles, temporäres Erkunden; Code, den ich nicht anfassen will/kann (Bibliotheken, Minified); wenn ich die Stelle nur kurz brauche.
+- **`debugger;`** wenn der Haltepunkt *exakt und reload-fest* sein muss, in dynamisch geladenem/`eval`-tem Code, den ich in „Sources" schlecht finde, oder wenn ich mit mehreren Leuten dieselbe Stelle debugge. **Achtung:** niemals committen/ausliefern — es pausiert sonst echte Nutzer mit offenen DevTools. Ein Lint-Regel (`no-debugger`) fängt das ab.
+
+### F5: Ein Moment, wo `console.log` allein nicht gereicht hätte, das Durchsteppen aber schon. Was zeigte der Debugger, was Logging nicht kann?
+
+Der Demo-2-Bug. Mit `console.log` hätte ich `state.allEvidence` vor und nach `.sort()` geloggt und *gesehen*, dass sich die Reihenfolge ändert — aber um zu **verstehen warum**, hätte ich schon vorher vermuten müssen, dass `filteredEvidence` und `allEvidence` dasselbe Objekt sind, und gezielt `console.log(state.allEvidence === state.filteredEvidence)` schreiben. Der Debugger zeigte es **ohne Vorwissen**:
+
+1. **Identität sichtbar:** im Watch-Panel `state.allEvidence === state.filteredEvidence` → `true`; beim Aufklappen beider Objekte im Scope sieht man, dass es *dieselbe* Referenz ist. `console.log` von zwei Arrays zeigt zwei Ausdrucke, nie „das ist physisch dasselbe".
+2. **Wert-Änderung zwischen zwei Steps festgenagelt:** ich sah `state.allEvidence` *unmittelbar vor* und *nach* Zeile 166 umkippen → die verantwortliche Zeile war eindeutig, nicht „irgendwo zwischen zwei Logs".
+3. **Call Stack** bewies, dass wirklich das Dropdown-`onchange` der Auslöser war und kein anderer Codepfad.
+4. **Live-Test ohne Redeploy:** `state.filteredEvidence = state.allEvidence.slice()` in der Console eingegeben, weiterlaufen lassen, gesehen dass `allEvidence` heil bleibt → Fix bewiesen, bevor eine Zeile Quellcode geändert wurde. Mit `console.log` müsste ich editieren, neu laden, hoffen.
+5. Beim Komparator, der ~55× läuft, hätte `console.log` darin die Konsole geflutet; der **Conditional Breakpoint** hielt exakt einmal beim gesuchten Element.

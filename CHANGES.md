@@ -240,3 +240,19 @@ Für die Live-Demo gewählt: **5.5**. Vor dem Anwenden der Demo-5-Fixes den Stan
 - **Demo 3 → aktiviert die Cross-Links** People→Evidence und Timeline→Evidence (sie setzen `filterPerson.value` und rufen `renderEvidenceList`, was vorher am Frueh-Return hing). Kein Bugfix, aber vorher toter Code.
 - **Demo 4** (stray `console.log` entfernt) ist isoliert — nichts hängt an der Zeile.
 - **5.1 / 5.3 / 5.4 / 5.5 / 5.6** sind untereinander isoliert: je eine andere Funktion in einem anderen Modul. Nach dem Anwenden aller sechs: kompletter Feature-Durchlauf (jede View, Suche, Filter, Sort, Bookmark, Detail, Tab-Wechsel, Timeline-Filter, Hypothese speichern + Reload-Persistenz) grün, Konsole sauber.
+
+---
+
+## Demo 6 — Debugger-Session
+
+**Keine Code-Änderung.** Reine Werkzeug-Demo. Vollständiges Live-Skript in
+[`DEMO6_DEBUGGER.md`](DEMO6_DEBUGGER.md).
+
+Kurz: am Commit `6377dd0` (Demo1 done, noch kein Bugfix) wird der **Demo-2-Bug** in
+`handleSortChange` (`js/views/evidence.js`, Z. 162–182) mit dem Chrome-Debugger seziert:
+Breakpoint auf Z. 163, Watch-Ausdrücke `state.allEvidence === state.filteredEvidence` (`true`)
+und `state.allEvidence.map(e=>e.id).join()`, Step over / Step into (Komparator Z. 167) /
+Step out, Conditional Breakpoint `a.title.startsWith("Legacy")`, Call Stack
+(`handleSortChange` ← inline `onchange` des `<select>` ← `change`-Event), und zum Schluss
+`state.filteredEvidence = state.allEvidence.slice()` **live in der Console** eingeben, um den
+`.slice()`-Fix im laufenden Programm zu beweisen, bevor er in den Quellcode wandert.

@@ -1,0 +1,12 @@
+# OS / OneDrive
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# Editor
+.vscode/*
+!.vscode/settings.json
+
+# Python (falls lokal was ausgefuehrt wird)
+__pycache__/
+*.pyc

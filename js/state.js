@@ -33,7 +33,6 @@ const state = {
   },
 
   notesStore: {},
-  modalCloseListenerCount: 0,
 
   // race-guard fuer die such-eingabe
   latestSearchRequestId: 0

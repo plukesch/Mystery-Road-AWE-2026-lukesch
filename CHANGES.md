@@ -155,3 +155,88 @@ Seite laden + durch alle 5 Views navigieren → **Konsole komplett leer** („No
 
 ### Zweiter stiller Bug gefunden (NICHT hier gefixt → Demo 8 / Demo 5)
 Klick auf einen **Nav-Button** wirft `Uncaught TypeError: Cannot read properties of undefined (reading 'getAttribute')` (`js/main.js`, im `setupEventListeners`-Nav-Loop). Ursache: `for (var i …)` + Closure — beim Klick ist `i === navButtons.length`, also `navButtons[i] === undefined`. Navigation funktioniert trotzdem (Inline-`onclick`/hashchange). Das ist genau das `var`-Scoping-Beispiel für Demo 8, daher dort gefixt.
+
+---
+
+## Demo 5 — Voller Durchlauf: weitere Bugs
+
+Alle über die App-Bedienung + Konsole gefunden und im Browser (frischer Port pro Test wegen Modul-Cache) bestätigt.
+
+### Übersicht
+
+| # | Bug | sichtbar? | gefixt in |
+|---|---|---|---|
+| 5.1 | Timeline zeigt `Location: [object Object]` | ja | Demo 5 |
+| 5.2 | Sort-Dropdown bewirkt nichts (durch Demo-2/3-Fixes freigelegt) | ja | Demo 5 |
+| 5.3 | Dashboard-Stats frieren nach dem ersten Rendern ein | ja | Demo 5 |
+| 5.4 | Klick auf den ★-Stern öffnet das Detail statt zu bookmarken | ja | Demo 5 |
+| 5.5 | Kaputter `localStorage`-Eintrag legt die GANZE App lahm | ja (App leer) | Demo 5 |
+| 5.6 | Timeline-Quick-View-Modal: click-listener bei jedem Öffnen neu + Konsolen-Spam | halb | Demo 5 |
+| 5.7 | Nav-Button-Klick wirft `TypeError` (`var i` closure) | nur Konsole | **Demo 8** |
+
+Untersucht, **kein** Bug (wichtig für die Reflexionsfrage):
+- Doppeltes `container.addEventListener("click", handleEvidenceListClick)` bei jedem Render — der Browser dedupliziert gleiche `(typ, listener, capture)`-Tripel, es entsteht **kein** zweiter Listener. Nur ein Stil-Thema → Kommentar für Demo 8.
+- Confidence `0` nach Reload → 50? Nein. Gespeichert wird `hypConfidence.value`, also der **String** `"0"`, und `"0"` ist truthy → `draft.confidence || 50` liefert `"0"`.
+- `getRelevanceBadgeClass` hat keinen `irrelevant`-Zweig → rein kosmetisch, es gibt keine CSS-Klasse `badge-irrelevant`, und CSS ist out of scope.
+
+---
+
+### 5.1 Timeline `Location: [object Object]`
+- **Repro:** Timeline öffnen → jedes Event mit Ort zeigt `Location: [object Object]`.
+- **Erwartet / tatsächlich:** erwartet den Ortsnamen; tatsächlich die `toString()`-Ausgabe eines Objekts.
+- **Ursache:** `renderTimeline` → `eventLocationNames.push(evtLoc || item.locationIds[el])`. `evtLoc` ist das komplette Location-**Objekt** aus `findLocationById`. `join(", ")` ruft `String(obj)` → `"[object Object]"`.
+- **Fix** (`js/views/timeline.js`): `push(evtLoc ? evtLoc.name : item.locationIds[el])`.
+- **Verifiziert:** Timeline-Zeile lautet jetzt z. B. `Location: Human-Robot Interaction Laboratory`, `innerText.includes('[object Object]') === false`.
+
+### 5.2 Sort-Dropdown ist wirkungslos
+- **Repro:** Evidence öffnen → Sort auf „Title (A–Z)" → Kartenreihenfolge ändert sich nicht.
+- **Erwartet / tatsächlich:** erwartet alphabetische Sortierung der Liste; tatsächlich keine Änderung.
+- **Ursache:** `handleSortChange` sortierte `state.filteredEvidence` einmalig; `renderEvidenceList` ruft danach `getFilteredEvidence`, das `state.filteredEvidence` **frisch aus `allEvidence`** (unsortiert) neu aufbaut → Sortierung sofort überschrieben. Vor den Demo-2/3-Fixes „funktionierte" Sort nur als Nebeneffekt: der Referenz-Bug (Demo 2) ließ die `sort()`-Mutation auf `allEvidence` durchschlagen, und der Loading-Bug (Demo 3) verhinderte, dass `getFilteredEvidence` je lief. Beide Fixes zusammen haben den Defekt sichtbar gemacht.
+- **Fix** (`js/views/evidence.js`): neue Helper-Funktion `sortEvidenceInPlace(list)`, aufgerufen in `renderEvidenceList` **nach** `getFilteredEvidence()` (das Ergebnis-Array ist frisch → in-place-`sort` fasst `allEvidence` nicht an). `handleSortChange` ist jetzt nur noch `renderEvidenceList()`.
+- **Verifiziert:** Sort ändert die Liste, `allEvidence` bleibt `E01…E18`, Sortierung überlebt einen Re-Render durch Filterwechsel.
+
+### 5.3 Dashboard friert nach dem ersten Rendern ein
+- **Repro:** Evidence → Karte bookmarken → zurück aufs Dashboard → Stat „Bookmarked" steht weiter auf `0`. Erst ein Reload zeigt `1`.
+- **Erwartet / tatsächlich:** erwartet, dass die Stats den aktuellen Stand zeigen; tatsächlich eingefroren auf den Stand des ersten Rendervorgangs.
+- **Ursache:** `handleHashChange`: `if (hash === "dashboard" && !state.viewRendered.dashboard)`. Nach dem ersten Rendern ist `viewRendered.dashboard === true` → beim Wiederbesuch wird `renderDashboard()` nie erneut aufgerufen.
+- **Fix** (`js/navigation.js`): Guard `&& !state.viewRendered.dashboard` entfernt → Dashboard rendert bei jedem Besuch neu (wie `workspace` es schon tut).
+- **Verifiziert:** Bookmark setzen → Dashboard → „Bookmarked" zeigt sofort `1`.
+- Anmerkung: People-/Timeline-Views haben denselben Guard, aber **keinen** sichtbaren Staleness-Bug (ihre Inhalte hängen an keinem veränderlichen Zustand). Inkonsistenz notiert für Demo 8.
+
+### 5.4 Klick auf den ★-Stern öffnet das Detail
+- **Repro:** Evidence → präzise auf das ★/☆-Zeichen einer Karte klicken (nicht auf den Button-Rand).
+- **Erwartet / tatsächlich:** erwartet Bookmark an/aus; tatsächlich öffnet sich die Detailansicht der Karte.
+- **Ursache:** `handleEvidenceListClick` prüfte `target.dataset.action === "bookmark"`. Das `data-action` sitzt am `<button>`, das Klick-Ziel ist aber oft das innere `<span class="bookmark-icon">` → `dataset.action` ist `undefined` → Code fällt durch zu `target.closest(".evidence-card")` → `openEvidenceDetail`.
+- **Fix** (`js/views/evidence.js`): `var bookmarkBtn = target.closest("[data-action='bookmark']")` — läuft vom Klick-Ziel nach oben und findet den Button auch bei Klick aufs Icon.
+- **Verifiziert:** Stern-Klick → `state.bookmarks` enthält die ID, Detail bleibt zu.
+
+### 5.5 Kaputter `localStorage`-Eintrag legt die ganze App lahm  ← **Präsentations-Bug**
+- **Repro:**
+  1. App laden (läuft normal).
+  2. DevTools → Application → Local Storage → den Origin auswählen.
+  3. Wert von `remotion_notes` auf etwas setzen, das kein JSON ist, z. B. `hello` oder `{{{`. (Falls der Key fehlt: vorher in der App eine Notiz speichern, dann den Wert überschreiben — oder den Key direkt anlegen.)
+  4. Seite neu laden.
+- **Erwartet / tatsächlich:** erwartet, dass die App lädt und die Notizen halt leer sind; tatsächlich ist die **komplette App leer** — Dashboard `0/0/0/0/0`, Evidence/People/Timeline ohne Inhalt.
+- **Ursache:** `loadNotesFromStorage` (und `loadHypothesisFromStorage`) machen `JSON.parse(raw)` **ohne** `try/catch` — anders als `loadBookmarksFromStorage`, das eins hat. `loadNotesFromStorage` läuft **synchron in `initApp`, vor `loadAllData()`**. Der `SyntaxError` bricht `initApp` komplett ab → `setupEventListeners()` und `loadAllData()` laufen nie → keine Fetches, keine Daten, keine Listener. Konsole: `Uncaught SyntaxError: … is not valid JSON at initApp (main.js:79)`.
+- **Fix** (`js/storage.js` + `js/views/workspace.js`): `JSON.parse` in `try/catch`, im Fehlerfall `console.warn` + leerer Fallback (`{}` bzw. Draft ignorieren). Zusätzlich Typ-Check (`typeof parsed === "object"`), damit z. B. `"5"` (valides JSON, aber kein Objekt) auch abgefangen wird.
+- **Verifiziert:** beide Keys mit Müll gefüllt → Reload → App lädt alle 18 Evidenzen, alle Views funktionieren, Konsole zeigt **zwei `console.warn`** statt eines `Uncaught SyntaxError`.
+
+### 5.6 Timeline-Modal: Listener-Leak + Konsolen-Spam
+- **Repro:** Timeline → mehrfach „View Exx" klicken (Quick-View-Modal öffnen). Konsole zeigt bei jedem Öffnen `modal opened, active close listeners: 1, 2, 3, …`.
+- **Erwartet / tatsächlich:** erwartet ein Modal mit genau einem Klick-Handler; tatsächlich wird bei jedem Öffnen ein weiterer `click`-Listener auf demselben (wiederverwendeten) `#quickViewModal`-Node registriert, dazu Debug-Logs.
+- **Ursache:** `openEvidenceModal` erstellt den Modal-Node nur beim ersten Mal (`if (!modal) { … }`), hängt den `addEventListener("click", …)` aber **außerhalb** dieses `if` — also bei jedem Aufruf erneut. `modalCloseListenerCount` + `console.log` sind stehengebliebene Debug-Instrumentierung.
+- **Fix** (`js/views/timeline.js` + `js/state.js`): Handler in eine benannte Funktion `handleModalClick` ausgelagert und `addEventListener` **in** das `if (!modal)` verschoben (einmalig). `modalCloseListenerCount` und der `console.log` entfernt.
+- **Verifiziert:** Modal 5× öffnen → keine Konsolen-Ausgabe, `'modalCloseListenerCount' in state === false`, „Open full evidence" löst genau eine Navigation aus.
+
+### 5.7 Nav-Button-Klick wirft `TypeError` → Fix in Demo 8
+Dokumentiert unter Demo 4. `for (var i …)` + Closure in `setupEventListeners`. Wird in Demo 8 mit der `var`→`let`/`const`-Umstellung behoben, weil es genau das dortige Lehrbeispiel ist.
+
+### Präsentations-Bug & Pre-Fix-Commit
+Für die Live-Demo gewählt: **5.5**. Vor dem Anwenden der Demo-5-Fixes den Stand committen (`git commit -m "Demo 5: pre-fix state"` bzw. Commit-Hash notieren), damit broken↔fixed live diffbar ist.
+
+### Wechselwirkungen zwischen den Fixes (Reflexion)
+- **Demo 3 → legt 5.2 frei:** ohne den Loading-Fix rendert die Evidenz-Liste nie, also war nie sichtbar, dass Sort nichts tut.
+- **Demo 2 → ändert das Symptom von 5.2:** vor dem `.slice()`-Fix „sortierte" das Dropdown scheinbar — aber nur, weil es über die geteilte Referenz `allEvidence` umbaute. Der Fix nimmt diesen unabsichtlichen Nebeneffekt weg → Sort tut jetzt *sichtbar* nichts, bis 5.2 es richtig implementiert.
+- **Demo 3 → aktiviert die Cross-Links** People→Evidence und Timeline→Evidence (sie setzen `filterPerson.value` und rufen `renderEvidenceList`, was vorher am Frueh-Return hing). Kein Bugfix, aber vorher toter Code.
+- **Demo 4** (stray `console.log` entfernt) ist isoliert — nichts hängt an der Zeile.
+- **5.1 / 5.3 / 5.4 / 5.5 / 5.6** sind untereinander isoliert: je eine andere Funktion in einem anderen Modul. Nach dem Anwenden aller sechs: kompletter Feature-Durchlauf (jede View, Suche, Filter, Sort, Bookmark, Detail, Tab-Wechsel, Timeline-Filter, Hypothese speichern + Reload-Persistenz) grün, Konsole sauber.

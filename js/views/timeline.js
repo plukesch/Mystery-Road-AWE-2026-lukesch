@@ -67,7 +67,10 @@ export function renderTimeline() {
     var eventLocationNames = [];
     for (var el = 0; el < item.locationIds.length; el++) {
       var evtLoc = findLocationById(item.locationIds[el]);
-      eventLocationNames.push(evtLoc || item.locationIds[el]);
+      // demo 5 fix: .name statt des ganzen objekts.
+      // vorher wurde evtLoc (ein objekt) ins array gepusht -> join() macht daraus
+      // "Location: [object Object]" in der timeline.
+      eventLocationNames.push(evtLoc ? evtLoc.name : item.locationIds[el]);
     }
     if (eventLocationNames.length > 0) {
       html += '<p class="evidence-meta">Location: ' + eventLocationNames.join(", ") + "</p>";
@@ -109,6 +112,11 @@ function openEvidenceModal(evidenceId) {
     modal = document.createElement("div");
     modal.id = "quickViewModal";
     document.body.appendChild(modal);
+    // demo 5 fix: listener nur EINMAL beim erstellen des node.
+    // vorher wurde bei jedem oeffnen ein weiterer click-listener auf dem
+    // (wiederverwendeten) modal-node registriert -> stapelten sich, dazu
+    // console-spam ("modal opened, active close listeners: N"). counter raus.
+    modal.addEventListener("click", handleModalClick);
   }
 
   modal.innerHTML =
@@ -119,20 +127,19 @@ function openEvidenceModal(evidenceId) {
     "<p>" + ev.summary + "</p>" +
     '<button type="button" class="btn btn-primary btn-small" data-open-full="' + ev.id + '">Open full evidence</button>' +
     "</div></div>";
+}
 
-  state.modalCloseListenerCount++;
-  console.log("modal opened, active close listeners:", state.modalCloseListenerCount);
-
-  modal.addEventListener("click", function (e) {
-    if (e.target.classList.contains("modal-close-btn") || e.target.classList.contains("modal-backdrop")) {
-      modal.innerHTML = "";
-    }
-    if (e.target.getAttribute && e.target.getAttribute("data-open-full")) {
-      modal.innerHTML = "";
-      navigateTo("evidence");
-      setTimeout(function () {
-        openEvidenceDetail(e.target.getAttribute("data-open-full"));
-      }, 0);
-    }
-  });
+function handleModalClick(e) {
+  var modal = document.getElementById("quickViewModal");
+  if (!modal) return;
+  if (e.target.classList.contains("modal-close-btn") || e.target.classList.contains("modal-backdrop")) {
+    modal.innerHTML = "";
+  }
+  if (e.target.getAttribute && e.target.getAttribute("data-open-full")) {
+    modal.innerHTML = "";
+    navigateTo("evidence");
+    setTimeout(function () {
+      openEvidenceDetail(e.target.getAttribute("data-open-full"));
+    }, 0);
+  }
 }

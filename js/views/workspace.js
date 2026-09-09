@@ -127,12 +127,20 @@ function getSelectedOptions(selectEl) {
   return result;
 }
 
-// kein try/catch um JSON.parse -> bug bleibt fuer demo 1 drin
+// demo 5 fix: JSON.parse in try/catch. vorher konnte ein kaputter
+// remotion_hypothesis-eintrag renderWorkspace() mit einer SyntaxError abbrechen.
 function loadHypothesisFromStorage() {
   var raw = localStorage.getItem(STORAGE_KEYS.hypothesis);
   if (!raw) return;
 
-  var draft = JSON.parse(raw);
+  var draft;
+  try {
+    draft = JSON.parse(raw);
+  } catch (err) {
+    console.warn("Could not read stored hypothesis draft, ignoring it", err);
+    return;
+  }
+  if (!draft || typeof draft !== "object") return;
 
   document.getElementById("hypSuspect").value = draft.suspectId || "";
   document.getElementById("hypNature").value = draft.nature || "";

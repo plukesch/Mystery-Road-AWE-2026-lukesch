@@ -83,6 +83,12 @@ export function renderEvidenceList() {
   if (loadingIndicator) loadingIndicator.classList.add("hidden");
 
   var results = getFilteredEvidence();
+  // demo 5 fix: sortierung hier bei JEDEM render anwenden.
+  // vorher hat handleSortChange das filteredEvidence-array einmalig sortiert,
+  // aber getFilteredEvidence baut es beim naechsten render frisch aus allEvidence
+  // -> sortierung war sofort wieder weg (das dropdown tat sichtbar nichts,
+  // sobald die liste nach den demo-2/3-fixes wirklich rendert).
+  sortEvidenceInPlace(results);
 
   var html = "";
   if (results.length === 0) {
@@ -93,8 +99,25 @@ export function renderEvidenceList() {
   }
   container.innerHTML = html;
 
-  // Event delegation for card clicks / bookmark button.
+  // handleEvidenceListClick ist eine stabile funktionsreferenz -> der browser
+  // dedupliziert gleiche (typ, listener) paare, mehrfaches addEventListener hier
+  // legt also keinen zweiten listener an. (kein bug, aber siehe demo 8.)
   container.addEventListener("click", handleEvidenceListClick);
+}
+
+// results ist ein frisches array aus getFilteredEvidence -> in-place sort ok,
+// allEvidence wird nicht angefasst (siehe demo-2-fix).
+function sortEvidenceInPlace(list) {
+  var sortValue = document.getElementById("sortEvidence").value;
+  if (sortValue === "title-asc") {
+    list.sort(function (a, b) { return a.title.localeCompare(b.title); });
+  } else if (sortValue === "title-desc") {
+    list.sort(function (a, b) { return b.title.localeCompare(a.title); });
+  } else if (sortValue === "date-asc") {
+    list.sort(function (a, b) { return new Date(a.timestamp) - new Date(b.timestamp); });
+  } else {
+    list.sort(function (a, b) { return new Date(b.timestamp) - new Date(a.timestamp); });
+  }
 }
 
 function renderEvidenceCardHTML(ev) {
@@ -122,9 +145,14 @@ function renderEvidenceCardHTML(ev) {
 function handleEvidenceListClick(event) {
   var target = event.target;
 
-  if (target.dataset && target.dataset.action === "bookmark") {
+  // demo 5 fix: vorher wurde nur target.dataset.action geprueft. der klick landet
+  // aber oft auf dem <span class="bookmark-icon"> IN dem button -> kein data-action
+  // -> stern-klick oeffnete das detail statt zu bookmarken. closest() geht vom
+  // klick-ziel nach oben und findet den button auch bei klick aufs innere span.
+  var bookmarkBtn = target.closest("[data-action='bookmark']");
+  if (bookmarkBtn) {
     event.stopPropagation();
-    handleBookmarkClick(target.dataset.id);
+    handleBookmarkClick(bookmarkBtn.dataset.id);
     return;
   }
 
@@ -159,26 +187,9 @@ export function applyStoredBookmarkFlags() {
 }
 
 // window-export (index.html: <select id="sortEvidence" onchange="handleSortChange()">)
+// die eigentliche sortierung passiert jetzt in renderEvidenceList/sortEvidenceInPlace,
+// damit sie jeden render ueberlebt. hier reicht der re-render.
 export function handleSortChange() {
-  var sortValue = document.getElementById("sortEvidence").value;
-
-  if (sortValue === "title-asc") {
-    state.filteredEvidence.sort(function (a, b) {
-      return a.title.localeCompare(b.title);
-    });
-  } else if (sortValue === "title-desc") {
-    state.filteredEvidence.sort(function (a, b) {
-      return b.title.localeCompare(a.title);
-    });
-  } else if (sortValue === "date-asc") {
-    state.filteredEvidence.sort(function (a, b) {
-      return new Date(a.timestamp) - new Date(b.timestamp);
-    });
-  } else {
-    state.filteredEvidence.sort(function (a, b) {
-      return new Date(b.timestamp) - new Date(a.timestamp);
-    });
-  }
   renderEvidenceList();
 }
 

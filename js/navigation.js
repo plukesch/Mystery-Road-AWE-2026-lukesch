@@ -38,7 +38,11 @@ export function handleHashChange() {
     }
   }
 
-  if (hash === "dashboard" && !state.viewRendered.dashboard) {
+  if (hash === "dashboard") {
+    // demo 5 fix: dashboard bei JEDEM besuch neu rendern.
+    // vorher hat der !viewRendered.dashboard-guard das nach dem ersten mal
+    // eingefroren -> bookmark setzen und zurueck aufs dashboard: "Bookmarked"
+    // stand weiter auf 0 bis zum reload. stats muessen den aktuellen stand zeigen.
     renderDashboard();
     state.viewRendered.dashboard = true;
   } else if (hash === "evidence" && !state.viewRendered.evidence) {

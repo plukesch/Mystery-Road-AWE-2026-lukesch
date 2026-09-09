@@ -100,3 +100,50 @@ Gefundener Bug: `initApp` in `js/main.js` loggt `console.log("First note preview
 - Die Konsole ist eine echte Fehler-Oberfläche. Wenn dort dauernd Rauschen steht, gewöhnt man sich dran und übersieht die *nächste*, ernste Meldung. „Konsole sauber halten" ist deshalb Teil von „funktioniert", nicht Kosmetik.
 
 Konkret in dieser App: derselbe Bug-Typ hält den Evidence-View auf „Loading" fest (Demo 3) und (in einer anderen Ausprägung — `var`-Closure) wirft bei jedem Nav-Button-Klick eine `TypeError` in die Konsole, während die Navigation optisch normal weiterläuft.
+
+---
+
+## Demo 5 — Voller Durchlauf & Reflexion
+
+Weitere gefundene Bugs (Details + Fixes in `CHANGES.md`):
+- **5.1** Timeline `Location: [object Object]` — ganzes Objekt statt `.name` gepusht.
+- **5.2** Sort-Dropdown wirkungslos — Sortierung wird bei jedem Render von `getFilteredEvidence` überschrieben (freigelegt durch die Demo-2/3-Fixes).
+- **5.3** Dashboard-Stats eingefroren — `!viewRendered.dashboard`-Guard verhindert Re-Render.
+- **5.4** Klick auf den ★-Stern öffnet das Detail — Klick-Ziel ist das innere `<span>` ohne `data-action`.
+- **5.5** Kaputter `localStorage`-Eintrag legt die ganze App lahm — `JSON.parse` ohne `try/catch` in `loadNotesFromStorage`/`loadHypothesisFromStorage`.
+- **5.6** Timeline-Modal: `click`-Listener bei jedem Öffnen neu + Konsolen-Spam.
+- **5.7** Nav-Button-Klick wirft `TypeError` (`var i` closure) — Fix in Demo 8.
+
+Gewählter Präsentations-Bug: **5.5**.
+
+### F1: Für den gewählten Bug — genaue User-Aktionen und System-Zustand, die ihn auslösen, live ab dem Pre-Fix-Commit.
+
+Ausgangspunkt: der committete Stand **vor** den Demo-5-Fixes, App über den lokalen Server geladen.
+
+1. App läuft normal — Dashboard zeigt `18 / 6 / 6 / …`, alle Views gefüllt.
+2. DevTools öffnen → Tab **Application** (Chrome) bzw. **Storage** (Firefox) → links **Local Storage** → den Eintrag für `http://127.0.0.1:<port>` anklicken.
+3. In der App einmal ein Beweisstück öffnen und eine Notiz speichern (damit der Key `remotion_notes` existiert). In der Local-Storage-Tabelle steht jetzt `remotion_notes` mit einem JSON-Wert wie `{"E01":"..."}`.
+4. Den **Wert** von `remotion_notes` doppelklicken und durch etwas ersetzen, das **kein gültiges JSON** ist, z. B. `hello` oder `{{{`. Enter.
+5. Seite neu laden (`F5`).
+6. **Beobachtung:** die App ist praktisch tot — Dashboard zeigt überall `0`, Evidence-Liste leer, People/Timeline leer. In der Konsole steht rot: `Uncaught SyntaxError: "hello" is not valid JSON` mit Stack-Frame `at initApp (main.js:79)`.
+
+**Warum genau dieser Zustand:** `initApp` ruft der Reihe nach `loadBookmarksFromStorage()`, dann `loadNotesFromStorage()`, dann `setupEventListeners()`, dann `loadAllData()`. `loadNotesFromStorage` macht `state.notesStore = JSON.parse(raw)` **ohne** `try/catch`. Bei ungültigem JSON wirft `JSON.parse` synchron einen `SyntaxError`. Dieser Fehler fliegt ungefangen aus `initApp` heraus → **alles danach in `initApp` läuft nicht mehr**: keine Event-Listener, und vor allem `loadAllData()` startet nie → kein `fetch`, keine Daten. Deshalb ist nicht nur „Notizen" kaputt, sondern die ganze App.
+
+Der Auslöser ist bewusst „unartig": kein normaler Nutzer editiert `localStorage`. Aber genau das steht in der Angabe zu Demo 5 („inspect and hand-edit `localStorage` in DevTools") und zu Demo 7 („Replace a value with text that isn't valid JSON and see what happens"). Und im echten Leben reicht schon ein halb geschriebener Wert nach einem Browser-Absturz oder ein Migrationsfehler.
+
+**Ab dem Fix-Commit dieselben Schritte:** Reload → App lädt alle 18 Evidenzen und funktioniert normal; in der Konsole steht **eine** gelbe `console.warn("Could not read stored notes, starting empty", …)`. Die Notizen sind leer, sonst nichts.
+
+### F2: Hat das Beheben eines Bugs je die Symptome eines anderen verändert, einen aufgedeckt oder versehentlich behoben? Wenn ja — die Beziehung erklären. Wenn nein — wie hast du bestätigt, dass die Fixes sauber isoliert sind?
+
+Ja, mehrfach — vor allem zwischen Demo 2, Demo 3 und Bug 5.2 (Sort):
+
+- **Demo 3 hat 5.2 aufgedeckt.** Vor dem Demo-3-Fix (`evidenceViewLoading` nie `false`) hat die Evidenz-Liste nie gerendert. Man *konnte* gar nicht sehen, ob das Sort-Dropdown etwas tut. Erst nachdem die Liste rendert, wird sichtbar: es tut nichts.
+- **Demo 2 hat das Symptom von 5.2 verändert.** Vor dem `.slice()`-Fix schien Sort zu funktionieren — aber nur, weil `handleSortChange` das Array sortierte, auf das `filteredEvidence` **und** `allEvidence` zeigten, und `getFilteredEvidence` danach dieses jetzt sortierte `allEvidence` durchlief. Sort „funktionierte", indem es die Master-Liste zerlegte. Der Demo-2-Fix nimmt diesen unabsichtlichen Kanal weg → Sort tut jetzt *sichtbar* nichts. Der Fix hat also keinen neuen Bug erzeugt, sondern den **Zufall entfernt, der ein fehlendes Feature kaschiert hat**. Die richtige Implementierung ist dann 5.2 (Sortierung in `renderEvidenceList` bei jedem Render anwenden).
+- **Demo 3 hat zwei Features reaktiviert**, die vorher toter Code waren: die „view"-Cross-Links von den Personen-Karten und den „View Exx"-Links in der Timeline zur gefilterten Evidenz-Liste. Die setzen `filterPerson.value` und rufen `renderEvidenceList` — was vorher am Frueh-Return hing. Kein Bugfix, aber vorher ohne Wirkung.
+- **Demo 4** (die überflüssige `console.log`-Zeile entfernt) ist isoliert: keine Logik hängt an dieser Zeile, Konsole danach sauber, alle Views unverändert.
+
+**Isolation der übrigen Fixes (5.1, 5.3, 5.4, 5.5, 5.6) bestätigt durch:**
+1. Jeder Fix fasst eine andere Funktion in einem anderen Modul an (Timeline-Location-Schleife / Dashboard-Zweig in `handleHashChange` / Klick-Ziel-Prüfung in `handleEvidenceListClick` / `JSON.parse`-Guards in `storage.js`+`workspace.js` / Listener-Anhängen in `openEvidenceModal`). Keine gemeinsamen Variablen.
+2. Pro Bug ein gezielter Vorher/Nachher-Check über die Konsole, jeweils mit frischem Seiten-Load (Modul-Cache über neuen Port umgangen).
+3. Nach dem Anwenden **aller** Fixes ein kompletter Feature-Durchlauf: jede View mehrfach, Suche, alle Filter, Sort, Bookmark (inkl. Stern-Klick), Detail öffnen/schließen, People-Tabs, Timeline-Filter + Modal, Hypothese speichern und Reload → Persistenz prüfen. Alles grün, Konsole leer.
+4. Keiner der sechs Verifikations-Checks berührt Zustand, den ein anderer Fix besitzt — deshalb können sie sich nicht gegenseitig maskieren.

@@ -29,15 +29,18 @@ export function loadNoteForEvidence(evidenceId) {
   return state.notesStore[evidenceId] || "";
 }
 
-// kein try/catch hier (im gegensatz zu bookmarks) - inkonsistent, bug bleibt drin
+// demo 5 fix: JSON.parse in try/catch (wie loadBookmarksFromStorage).
+// vorher ohne -> ein kaputter remotion_notes-eintrag hat in initApp eine
+// SyntaxError geworfen, loadAllData() lief nie -> KOMPLETTE app leer.
 export function loadNotesFromStorage() {
-  var raw = localStorage.getItem(STORAGE_KEYS.notes);
-  if (!raw) {
+  try {
+    var raw = localStorage.getItem(STORAGE_KEYS.notes);
+    var parsed = raw ? JSON.parse(raw) : {};
+    state.notesStore = parsed && typeof parsed === "object" ? parsed : {};
+  } catch (err) {
+    console.warn("Could not read stored notes, starting empty", err);
     state.notesStore = {};
-    return;
   }
-
-  state.notesStore = JSON.parse(raw);
 }
 
 // gibt ein Promise zurueck obwohl daten schon da sind (fake-async)

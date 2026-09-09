@@ -83,3 +83,44 @@ state.filteredEvidence = state.allEvidence.slice();   // flache kopie
 
 ### Folgebefund (NICHT hier gefixt, gehört zu Demo 5 / später)
 Der „Sort" sortierte die sichtbare Liste vorher nur, *weil* er über die geteilte Referenz `allEvidence` umbaute und `getFilteredEvidence` danach in dieser neuen Reihenfolge iterierte. Mit dem Fix ist Sort faktisch ein No-op, sobald die Liste wirklich rendert (`getFilteredEvidence` baut `filteredEvidence` jedes Mal frisch aus `allEvidence` auf). Das Sortier-Feature *richtig* zu machen ist ein eigenes Thema und nicht Teil von Demo 2 (= Mutationsbug beseitigen).
+
+---
+
+## Demo 3 — Asynchron-/Promise-Handling-Bug
+
+### Datei
+[`js/data.js`](js/data.js) → `loadEvidenceData` (State-Flag lebt in [`js/state.js`](js/state.js), gelesen in [`js/views/evidence.js`](js/views/evidence.js) → `renderEvidenceList`).
+
+### Die async-Operation
+`fetch("data/evidence.json")` → `.json()` → liefert das Array der 18 Evidenz-Objekte. Zwei-Stufen-Promise (erst Response, dann Body-Parse), am Ende landet das Ergebnis im `.then(function(data){…})`.
+
+### Der Bug
+`state.evidenceViewLoading` wird **genau einmal** gesetzt — im Initializer auf `true` — und **nie wieder**. `renderEvidenceList` macht ganz am Anfang:
+```js
+if (state.evidenceViewLoading) { /* spinner zeigen */ return; }
+```
+Der Erfolgs-Callback des `fetch` setzt zwar `state.allEvidence = data`, aber **nicht** `evidenceViewLoading = false`. Ergebnis: die Evidenz-Liste hängt dauerhaft auf „Loading evidence…", obwohl die Daten längst im Speicher sind. Jeder spätere `renderEvidenceList` (Filter, Sort, Suche, Tab-Wechsel) springt sofort wieder mit Spinner raus.
+
+**Zeitpunkt im Lebenszyklus:** der Fehler passiert **on success** — das Update, das *nach* dem Auflösen des Promise hätte passieren müssen (Flag zurücksetzen), fehlt schlicht. „Before it starts" ist der Zustand korrekt (`true` = lädt noch), „pending" ist korrekt, nur der Übergang „resolved → nicht mehr am Laden" wird nie geschrieben.
+
+### Reproduktion (kalt bestätigt)
+1. App laden, auf „Evidence" klicken, beliebig lange warten.
+2. Liste zeigt permanent den Spinner, 0 Karten.
+3. Beweis, dass die Daten da sind: Dashboard sagt „18 Evidence items", Network-Tab zeigt `evidence.json` → `200`. Konsole: `state.evidenceViewLoading === true`, `state.allEvidence.length === 18`, `#evidenceList` leer.
+4. `grep evidenceViewLoading` über `js/` → nur der Initializer (`true`) und der Lese-Check. **Keine** Zuweisung auf `false`.
+
+### Fix
+In `loadEvidenceData`:
+- **im `.then` (Erfolg):** `state.evidenceViewLoading = false;` — als **erste** Zeile im Callback, damit der `renderEvidenceList()`-Aufruf am Ende desselben Callbacks nicht mehr am Frueh-Return hängenbleibt.
+- **im `.catch` (Fehler):** ebenfalls `state.evidenceViewLoading = false;` + `renderEvidenceList()` — sonst hängt der Spinner z. B. bei einem 404 ewig; jetzt zeigt die Liste stattdessen ihren Leer-Zustand.
+
+Kein Delay, kein Retry, kein Polling — nur das fehlende State-Update an der richtigen Stelle im Promise-Lifecycle.
+
+### Verifikation des Fixes
+- Nach dem Laden: `state.evidenceViewLoading === false`, Spinner versteckt, **18 Karten** im DOM.
+- Filter „Reviewed" → 1 Karte (E12), Filter leeren → wieder 18. Suche/Filter/Sort erreichen jetzt `getFilteredEvidence`.
+- Konsole sauber (nur der bekannte `First note preview: Promise`-Log → Demo 4).
+- Regression: Dashboard/People/Timeline/Workspace unverändert.
+
+### Wechselwirkung mit Demo 2 (→ Demo 5)
+Jetzt wo die Liste wirklich rendert, ist sichtbar: das **Sort-Dropdown bewirkt nichts** (`getFilteredEvidence` baut `filteredEvidence` jedes Mal frisch aus `allEvidence` auf, die Sortierung wird sofort überschrieben). Vorher „funktionierte" Sort nur als Nebeneffekt des Referenz-Bugs aus Demo 2. Das Beheben von Demo 2 + Demo 3 hat also einen dritten Defekt *freigelegt* (Sort ist nie korrekt implementiert worden). Nicht hier gefixt — Eintrag für Demo 5.

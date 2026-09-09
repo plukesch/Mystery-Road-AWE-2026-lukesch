@@ -59,3 +59,27 @@ Gefundener Bug: `js/data.js` → `state.filteredEvidence = state.allEvidence;` (
 **System-Zustand, der nötig ist:** `filteredEvidence` muss zu diesem Zeitpunkt noch `=== allEvidence` sein. Das ist der Fall, solange `getFilteredEvidence()` noch nie gelaufen ist (es würde ein frisches Array zuweisen). In dieser App passiert das nie, weil der Evidence-View auf „Loading" festhängt — deshalb ist der Bug hier sogar *zuverlässig* statt nur sporadisch.
 
 **Durch reines Lesen findbar?** Die *Zeile* `filteredEvidence = allEvidence` sieht man beim Lesen sofort und sie sollte einen stutzig machen. Aber dass daraus ein **sichtbarer** Schaden wird, hängt an einer Kette über mehrere Funktionen und Views hinweg: `sort()` mutiert in-place (muss man wissen), beide Namen teilen die Referenz, ein *anderer* Bug hält den Zustand so fest dass die Referenz nie ersetzt wird, und erst eine *dritte* Stelle (`allEvidence.slice(-5)` im Dashboard) macht den Schaden sichtbar. Diesen Pfad im Kopf zusammenzusetzen ist realistisch nur, wenn man das Symptom schon gesehen hat und rückwärts sucht. Also: die Ursache ist lesbar, der *Effekt* praktisch nur durch Benutzen + Nachstellen zu finden.
+
+---
+
+## Demo 3 — Asynchron-/Promise-Handling-Bug
+
+Gefundener Bug: `state.evidenceViewLoading` wird auf `true` initialisiert und vom Erfolgs-Callback des `fetch("data/evidence.json")` nie auf `false` gesetzt → `renderEvidenceList` springt für immer mit „Loading evidence…"-Spinner raus. Fix: `state.evidenceViewLoading = false` im `.then` (und `.catch`) von `loadEvidenceData`.
+
+### F1: Erkläre die async-Operation, um die es geht: was holt/liefert sie, und an welchem Punkt ihres Lebenszyklus (vor dem Start, während pending, bei Erfolg, bei Fehler) passiert der Bug? Wie hast du das bestätigt statt geraten?
+
+**Die Operation:** `fetch("data/evidence.json")`. Das ist ein zweistufiges Promise: `fetch(...)` löst mit einem `Response`-Objekt auf, `.json()` darauf löst nochmal auf und **liefert das geparste JSON** — hier das Array mit den 18 Evidenz-Objekten. Das Ergebnis landet in `loadEvidenceData` im `.then(function (data) { … })`. Dieser Erfolgs-Callback ist auch die Stelle, die die anderen Views anstößt (`renderDashboard`, `populateAllDropdowns`, ggf. `renderEvidenceList`).
+
+**Wo im Lebenszyklus:** der Bug ist ein **fehlendes State-Update bei Erfolg (on success)**.
+- *Vor dem Start:* `evidenceViewLoading = true` ist korrekt — „wir laden noch, zeig den Spinner".
+- *Während pending:* auch korrekt — Spinner ist richtig.
+- *Bei Erfolg:* hier hätte der Callback das Flag auf `false` setzen müssen, damit `renderEvidenceList` ab jetzt die Liste rendert statt des Spinners. Genau dieses eine Update fehlt. Der Callback setzt `allEvidence`, ruft sogar `renderEvidenceList()` auf — aber `renderEvidenceList` prüft als Erstes `if (state.evidenceViewLoading) return;`, und weil das Flag noch `true` ist, passiert nichts.
+- *Bei Fehler:* der `.catch` setzte es vorher auch nicht zurück → bei einem 404 hinge der Spinner ewig (Teil des Fixes: `.catch` setzt es ebenfalls auf `false`).
+
+Der Kern in async-Worten: eine Zustandsvariable wird **vor** der Operation gesetzt und **von deren Abschluss-Callback nie aktualisiert**. Der spätere `renderEvidenceList`-Check läuft zeitlich *nach* dem Auflösen des Promise, liest aber einen Wert, der auf dem Stand von *vor dem Start* eingefroren ist.
+
+**Wie bestätigt (nicht geraten):**
+1. Nach dem Laden in der Konsole: `state.evidenceViewLoading` ist `true`, obwohl `state.allEvidence.length === 18` — die Daten sind also **nachweislich angekommen**, nur das Flag steht falsch.
+2. Network-Tab: `evidence.json` → `200`. Der `fetch` ist also nicht fehlgeschlagen; es ist kein Netzwerk-/Parse-Problem.
+3. `grep evidenceViewLoading` über den ganzen `js/`-Ordner: **zwei** Treffer — der Initializer (`: true`) und der Lese-Check in `renderEvidenceList`. **Null** Zuweisungen auf `false`. Damit ist bewiesen, dass kein Codepfad das Flag je zurücksetzt.
+4. Gegenprobe nach dem Fix: gleiche Konsolen-Checks → `evidenceViewLoading === false`, 18 Karten im DOM, Filter/Suche/Sort erreichen jetzt `getFilteredEvidence`.

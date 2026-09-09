@@ -56,6 +56,13 @@ function loadEvidenceData() {
       return res.json();
     })
     .then(function (data) {
+      // demo 3 fix: ladeflag hier ausschalten, wenn der fetch fertig ist.
+      // vorher wurde evidenceViewLoading nur EINMAL (bei true) gesetzt und nie
+      // wieder -> renderEvidenceList() ist immer frueh mit spinner rausgesprungen,
+      // obwohl die daten laengst da waren. muss VOR renderEvidenceList() stehen,
+      // sonst greift der frueh-return im selben callback noch.
+      state.evidenceViewLoading = false;
+
       state.allEvidence = data;
       applyStoredBookmarkFlags();
       // demo 2 fix: KOPIE statt gleicher referenz.
@@ -69,8 +76,12 @@ function loadEvidenceData() {
       if (state.currentPage === "evidence") renderEvidenceList();
     })
     .catch(function (err) {
+      // auch im fehlerfall ist "loading" vorbei - sonst haengt der spinner ewig
+      // (z.b. bei 404). renderEvidenceList zeigt dann den leer-zustand statt spinner.
+      state.evidenceViewLoading = false;
       console.error("Failed to load evidence.json", err);
       alert("Evidence could not be loaded. Some views may be incomplete.");
+      if (state.currentPage === "evidence") renderEvidenceList();
     });
 }
 

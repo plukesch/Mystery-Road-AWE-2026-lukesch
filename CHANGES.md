@@ -334,3 +334,61 @@ war (a) **toter Debug-Code** — die Navigation läuft über die Inline-`onclick
 
 ### Verifikation
 Frischer Server, voller Durchlauf: Daten laden `6/18/15`, **Nav-Button-Klicks werfen keinen Fehler mehr** (`navClickErrors: []`), Suche filtert (jetzt ohne 300 ms-Verzögerung), Statusfilter rendert ohne Fehler, Sort funktioniert + `allEvidence` bleibt intakt, People-Cross-Link / Timeline-Modal / „Open full evidence" / Workspace-Speichern+Reload alle grün, **Konsole leer** (kein `nav clicked:`-Spam mehr).
+
+---
+
+## Demo 9 — Verschachtelte Promises → `async`/`await`
+
+Alle Änderungen in [`js/data.js`](js/data.js). Verhalten 1:1 erhalten (inkl. sequenziell + Fehlerbehandlung).
+
+### Task 1 — Die tiefste `.then()`-Kette (Skizze vorher)
+
+`loadCorePeopleAndLocations` — **6 Ebenen** tief:
+
+```
+fetch("data/case.json")            .then(caseRes =>        [1] auf case-response warten
+  caseRes.json()                   .then(caseJson => {     [2] case-body parsen -> state.caseData
+    fetch("data/people.json")      .then(peopleRes =>      [3] startet ERST jetzt
+      peopleRes.json()             .then(peopleJson => {   [4] people-body parsen -> state.allPeople
+        fetch("data/locations.json").then(locRes =>        [5] startet ERST jetzt
+          locRes.json()            .then(locJson => {      [6] locations-body parsen -> state.allLocations
+            hideLoadingStep(); renderDashboard(); populateAllDropdowns();
+```
+
+Was vor der nächsten Ebene fertig sein muss: Ebene *n+1* startet erst, wenn die Promise aus Ebene *n* resolved ist. Jedes `fetch` wartet also auf das **vollständige Parsen** der vorigen Datei → strikt nacheinander, kein Overlap. **Kein `.catch`** in der ganzen Kette (deshalb hängt ein 404 die App — Demo 7).
+
+### Task 2 — als `async` mit `await` (Verhalten identisch)
+
+```js
+async function loadCorePeopleAndLocations() {
+  const caseRes = await fetch("data/case.json");
+  state.caseData = await caseRes.json();
+  const peopleRes = await fetch("data/people.json");
+  state.allPeople = await peopleRes.json();
+  const locationsRes = await fetch("data/locations.json");
+  state.allLocations = await locationsRes.json();
+  hideLoadingStep(); renderDashboard(); populateAllDropdowns();
+}
+```
+
+Jedes `await` = ein Punkt, an dem die vorige Stufe fertig sein **muss**, bevor die nächste Zeile läuft → identische Reihenfolge, identisch sequenziell. Kein `try/catch` hinzugefügt — das Original hatte keins.
+
+### Task 3 — weitere `.then()`/`.catch()`/`.finally()`-Stellen
+
+- **`loadEvidenceData`**: `.then(res=>res.json()).then(data=>{…}).catch(err=>{…})` → `async` mit `try/catch`. Der `catch`-Inhalt (Flag `false`, `console.error`, `alert`, ggf. Re-Render) **unverändert**.
+- **`loadTimelineData`**: `.then().then().catch().finally()` → `async` mit `try/catch/finally`. `catch` = `console.log("timeline load error", err)` wie im Original, `finally` = `hideLoadingStep()`.
+- **`loadAllData`**: `.then(cb)` → `await loadCorePeopleAndLocations();` dann `loadEvidenceData(); loadTimelineData();` **ohne `await`** — genau wie vorher (die beiden laufen im Hintergrund weiter, `loadAllData` ist „fertig", sobald core da ist).
+
+### Task 4 — Verifikation mit dem Debugger
+
+Live: Breakpoint auf die erste Zeile von `loadCorePeopleAndLocations` (`const caseRes = await fetch(...)`), Seite neu laden. Dann Schritt für Schritt:
+- **Step over** über `await fetch("data/case.json")` → der Debugger „verschwindet" kurz (Funktion suspendiert), kcommt zurück wenn die Response da ist; `caseRes` im Scope ist jetzt ein `Response`.
+- Weiter über `await caseRes.json()` → `state.caseData` wird gesetzt.
+- **Call Stack** an dem Breakpoint: `loadCorePeopleAndLocations` ← `loadAllData` ← `initApp` ← `DOMContentLoaded`-Listener. Nach dem ersten `await` zeigt der Stack nur noch `loadCorePeopleAndLocations` (async continuation) — der Rest ist abgewickelt, das Programm lief weiter.
+- Beobachtung: `state.caseData` → `state.allPeople` → `state.allLocations` werden **in genau dieser Reihenfolge** gesetzt, jedes erst nach dem `await` davor. Gegenprobe über die Performance-Timeline: `case.json` @57ms → `people.json` @61ms → `locations.json` @64ms → `evidence.json`+`timeline.json` @68ms — **identisch zum `.then()`-Original**.
+
+### Verifikation (Browser)
+- Normaler Load: `case/people/locations` strikt sequenziell, dann `evidence`+`timeline` zusammen (fire-and-forget) — Fetch-Reihenfolge unverändert.
+- Alle Views: 18 Evidenz-Karten, 6 Personen, 15 Timeline-Events, Dashboard `18/6/6/0/1`, Konsole leer.
+- `loadAllData() instanceof Promise` → `true`.
+- **Fehlerpfad** (mit umbenanntem `evidence.json` getestet): `try/catch` fängt wie vorher — `console.error("Failed to load evidence.json", …)` + `alert(...)`, `evidenceViewLoading` wird `false`, Liste zeigt „No evidence matches…" (kein hängender Spinner), core + timeline laden unabhängig weiter, Overlay verschwindet.

@@ -296,3 +296,53 @@ Beispiel: die **Fake-Async-Suche** (`simulateAsyncSearch` + `latestSearchRequest
 - **Falsches Vorbild:** Der nächste, der „echtes" Debouncing braucht, kopiert dieses Muster — inklusive der Stellen, an denen es hier schon nichts tut.
 
 Der Refactor (`handleSearchInput` → nur `renderEvidenceList()`) macht die Suche identisch schnell/korrekt, entfernt ~15 Zeilen, eine State-Property und die künstliche Verzögerung.
+
+---
+
+## Demo 9 — `.then()`-Ketten → `async`/`await`
+
+Umgestellt: `loadCorePeopleAndLocations` (6 Ebenen tief), `loadEvidenceData`, `loadTimelineData`, `loadAllData` — alle in `js/data.js`. Skizze + Fixes in `CHANGES.md`.
+
+### F1: Warum ist die verschachtelte `.then()`-Kette schwerer zu verstehen als die `async`/`await`-Version — obwohl beide identisch laufen?
+
+- **Verschachtelung / Einrückung:** 6 Ebenen tief marschiert der Code nach rechts aus dem Bild. Der „Happy Path" steckt in Callbacks-in-Callbacks. `async`/`await` ist flach, von oben nach unten lesbar wie synchroner Code.
+- **`return` ist mehrdeutig:** in `.then` heißt `return fetch(...)` „hänge dich an diese Promise" und `return wert` „resolve mit diesem Wert". Ein vergessenes `return` bricht die Kette *still* (die nächste `.then` läuft, bevor die innere Promise fertig ist). Bei `await` gibt es nur eine Bedeutung.
+- **Fehlerweg unklar:** man muss verfolgen, an welche `.then` ein `.catch` gehängt ist (hier: an keine → eine Rejection entkommt komplett). Ein `try { … } catch` zeigt den Gültigkeitsbereich sofort.
+- **Scope:** `caseRes` ist nur *innerhalb* seines Callbacks sichtbar — man kann `caseRes` und `locationsRes` nicht an einer Stelle zusammen benutzen. Mit `await` sind `caseRes`, `peopleRes`, `locationsRes` ganz normale lokale Variablen in einem Scope.
+- **Debugging:** durch `.then`-Callbacks steppen springt durch die Microtask-Queue, der Call Stack ist voll anonymer Callback-Frames. `await`-Zeilen steppt man wie synchronen Code.
+
+### F2: Was macht `await` mit der Ausführung der `async`-Funktion? Was tut der Rest des Programms währenddessen?
+
+`await promise` **pausiert** die `async`-Funktion an dieser Stelle und gibt die Kontrolle an den Aufrufer zurück. Der Rest des Funktionskörpers wird als **Microtask eingeplant**, der läuft, *wenn die Promise settlet* — mit ihrem Wert (dann ist `await x` dieser Wert) oder indem `await` die Rejection **wirft**.
+
+Der Thread wird **nicht blockiert**. Während die Funktion pausiert, läuft das restliche Programm normal weiter: der Call Stack wickelt sich zurück bis zum Aufrufer bzw. zur Event-Loop, andere Event-Handler feuern, Timer laufen, der Browser rendert/paintet, andere Promises resolven. JavaScript ist single-threaded — `await` ist *kooperatives Abgeben*, kein Thread-Block. Wenn die awaitete Promise settlet, wird die Fortsetzung in die Microtask-Queue gestellt und läuft nach dem aktuellen Task und den vorher eingereihten Microtasks.
+
+### F3: Eine `async`-Funktion gibt immer eine Promise zurück, auch bei `return wert;`. Beweis: was bekommst du, wenn du `.then()` auf das Ergebnis deiner refaktorierten Funktion aufrufst und es loggst?
+
+`loadAllData` hat **kein** `return`-Statement — der Körper macht nur `await …; loadEvidenceData(); loadTimelineData();`. Trotzdem: `loadAllData() instanceof Promise` → **`true`** (im Browser geprüft). Eine `async`-Funktion verpackt ihr Ergebnis *immer*: `return x` → resolve mit `x`; kein/leeres `return` → resolve mit `undefined`; `throw e` → reject mit `e`; `return einePromise` → übernimmt deren Zustand.
+
+Also:
+```js
+loadAllData().then(v => console.log("resolved with:", v));   // -> resolved with: undefined
+```
+Man bekommt `undefined` — die Funktion hat eine Promise zurückgegeben, die mit `undefined` erfüllt wurde (kein explizites `return`). Ebenso `loadCorePeopleAndLocations().then(v => console.log(v))` → `undefined`.
+
+### F4: Was ist das `async`/`await`-Äquivalent zu `.catch()`? Was passiert zur Laufzeit, wenn man es vergisst und die awaitete Operation rejectet?
+
+Äquivalent: den `await` in `try { … } catch (err) { … }` einwickeln. (Und `.finally()` → ein `finally { }`-Block.) Eine rejectete awaitete Promise lässt den `await`-Ausdruck **eine Exception werfen** — ein normales `try/catch` fängt sie.
+
+Vergisst man es: die Rejection propagiert aus der `async`-Funktion heraus → **die von dieser Funktion zurückgegebene Promise rejectet**. Fängt *die* niemand (kein `.catch`, kein `await` in einem `try`), gibt es ein **`Uncaught (in promise)`** in der Konsole, und — wichtig — **der gesamte Code nach dem `await` in dieser Funktion läuft nicht mehr**. Genau die 404-Situation von `loadCorePeopleAndLocations` in dieser App: kein `try/catch` dort → 404 → die Funktion rejectet → `loadAllData` (das sie awaitet) rejectet auch → `initApp`'s `.then` hat keinen Reject-Handler → `handleHashChange()` läuft nie, `hideLoadingStep()` nach den `await`s läuft nie → Overlay hängt für immer. (Identisch zur `.then`-Kette ohne `.catch` vorher — Verhalten erhalten.)
+
+### F5: Ist `async`/`await`-Code *schneller* als die `.then()`-Kette? Was ändert sich genau und was nicht?
+
+**Nein, nicht schneller.** `async`/`await` ist nur Syntax über denselben Promises und derselben Microtask-Queue. Die awaiteten Operationen (die `fetch`es) dauern exakt gleich lang, laufen in derselben Reihenfolge, mit derselben Anzahl Microtask-Hops.
+
+- **Unverändert:** welche Requests laufen, ihre Reihenfolge (hier weiter sequenziell), Gesamt-Wall-Clock-Zeit, die Ergebniswerte, die Fehlersemantik.
+- **Geändert:** nur der Quelltext — Verschachtelung → flach, Callbacks → geradliniger Ablauf, `.catch` → `try/catch`. Lesbarkeit und Wartbarkeit, nicht Performance.
+- Schneller würde es nur, wenn man ändert, *was* man awaitet — z. B. `await Promise.all([fetch(a), fetch(b), fetch(c)])`, um die drei parallel laufen zu lassen. Das ist eine *andere* Änderung (in dieser Übung ausdrücklich out of scope).
+
+### F6: Ein `await` absichtlich entfernen (Funktion bleibt `async`). Was bricht, und wie hängt das mit einer Bug-Kategorie aus Demo 2–5 zusammen?
+
+Beispiel: `state.caseData = await caseRes.json();` → `state.caseData = caseRes.json();` (ohne `await`). Jetzt ist `state.caseData` eine **Promise**, kein geparstes Objekt. `renderDashboard()` liest später `state.caseData.title` → `undefined` (eine Promise hat kein `.title`), `state.caseData.status` → `undefined`. Im Browser nachgestellt: das Dashboard zeigt Titel **„Case"** (Fallback), Badge **„UNKNOWN"**, Summary **leer** — kein Absturz, nur still falsch. (Entfernt man stattdessen das `await` vor `fetch`, ist `caseRes` eine Promise und `caseRes.json()` wirft `TypeError: caseRes.json is not a function`.)
+
+Das ist **exakt die Kategorie aus Demo 3 und Demo 4**: eine Promise wird behandelt, als wäre sie schon der fertige Wert. Demo 3: `evidenceViewLoading` wurde geprüft, bevor der async-Callback es gesetzt hat. Demo 4: `console.log("First note preview:", loadNoteAsync("E01"))` loggte die Promise-Hülle statt den `await`eten Wert. Ein `await` zu entfernen bringt genau diese Bug-Form zurück — der Code liest einen Wert „zu früh", bevor die Promise, in der er sitzt, gesettlet ist.

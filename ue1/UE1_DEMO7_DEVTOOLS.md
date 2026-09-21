@@ -73,8 +73,8 @@ Seite öffnen, **F12**.
      <div><span class="tag-chip">deployment</span>…</div>
    </div>
    ```
-3. Zurück zum Code: das erzeugt **`renderEvidenceCardHTML(ev)`** in [`js/views/evidence.js`](js/views/evidence.js) — String-Konkatenation, am Ende `container.innerHTML = html` in `renderEvidenceList`. Konkrete Verbindungen:
+3. Zurück zum Code: das erzeugt **`renderEvidenceCardHTML(ev)`** in [`js/views/evidence.js`](../js/views/evidence.js) — String-Konkatenation, am Ende `container.innerHTML = html` in `renderEvidenceList`. Konkrete Verbindungen:
    - `data-id="E14"` ← `ev.id`; wird in `handleEvidenceListClick` per `card.getAttribute("data-id")` wieder ausgelesen.
    - `data-action="bookmark"` am `<button>`, aber das Klick-Ziel ist oft das innere `<span class="bookmark-icon">` — genau der Demo-5.4-Bug; Fix nutzt jetzt `target.closest("[data-action='bookmark']")`.
    - `badge-critical` erscheint nur, wenn `ev.tags` `"critical"` enthält; `getStatusBadgeClass(ev.status)` / `getRelevanceBadgeClass(ev.relevance)` liefern die anderen beiden Badge-Klassen.
-4. Dasselbe für eine **Person-Karte** (People-View): `<div class="person-card">` mit `person-card-header` (`img.person-avatar` ← `person.avatar`, `h3` ← `person.name`, `.person-role` ← `person.role`), `<ul><li>` ← `person.responsibilities`, `.person-statement` ← `person.statement`. Erzeugt von **`renderPeople()`** in [`js/views/people.js`](js/views/people.js).
+4. Dasselbe für eine **Person-Karte** (People-View): `<div class="person-card">` mit `person-card-header` (`img.person-avatar` ← `person.avatar`, `h3` ← `person.name`, `.person-role` ← `person.role`), `<ul><li>` ← `person.responsibilities`, `.person-statement` ← `person.statement`. Erzeugt von **`renderPeople()`** in [`js/views/people.js`](../js/views/people.js).

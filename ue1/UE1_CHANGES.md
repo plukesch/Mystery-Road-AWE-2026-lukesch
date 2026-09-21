@@ -51,7 +51,7 @@ Lokaler Server, alle 12 Module + 5 JSON-Dateien laden mit `200`, alle 5 Views re
 ## Demo 2 — Mutation-/Referenz-Bug
 
 ### Datei
-[`js/data.js`](js/data.js), Funktion `loadEvidenceData`.
+[`js/data.js`](../js/data.js), Funktion `loadEvidenceData`.
 
 ### Der Bug
 ```js
@@ -89,7 +89,7 @@ Der „Sort" sortierte die sichtbare Liste vorher nur, *weil* er über die getei
 ## Demo 3 — Asynchron-/Promise-Handling-Bug
 
 ### Datei
-[`js/data.js`](js/data.js) → `loadEvidenceData` (State-Flag lebt in [`js/state.js`](js/state.js), gelesen in [`js/views/evidence.js`](js/views/evidence.js) → `renderEvidenceList`).
+[`js/data.js`](../js/data.js) → `loadEvidenceData` (State-Flag lebt in [`js/state.js`](../js/state.js), gelesen in [`js/views/evidence.js`](../js/views/evidence.js) → `renderEvidenceList`).
 
 ### Die async-Operation
 `fetch("data/evidence.json")` → `.json()` → liefert das Array der 18 Evidenz-Objekte. Zwei-Stufen-Promise (erst Response, dann Body-Parse), am Ende landet das Ergebnis im `.then(function(data){…})`.
@@ -130,7 +130,7 @@ Jetzt wo die Liste wirklich rendert, ist sichtbar: das **Sort-Dropdown bewirkt n
 ## Demo 4 — Stiller Bug (nur Konsole, keine sichtbare UI-Änderung)
 
 ### Datei
-[`js/main.js`](js/main.js) → `initApp` (die Funktion in [`js/storage.js`](js/storage.js) → `loadNoteAsync`).
+[`js/main.js`](../js/main.js) → `initApp` (die Funktion in [`js/storage.js`](../js/storage.js) → `loadNoteAsync`).
 
 ### Konsolen-Output (vorher, exakt)
 ```
@@ -246,7 +246,7 @@ Für die Live-Demo gewählt: **5.5**. Vor dem Anwenden der Demo-5-Fixes den Stan
 ## Demo 6 — Debugger-Session
 
 **Keine Code-Änderung.** Reine Werkzeug-Demo. Vollständiges Live-Skript in
-[`DEMO6_DEBUGGER.md`](DEMO6_DEBUGGER.md).
+[`UE1_DEMO6_DEBUGGER.md`](UE1_DEMO6_DEBUGGER.md).
 
 Kurz: am Commit `6377dd0` (Demo1 done, noch kein Bugfix) wird der **Demo-2-Bug** in
 `handleSortChange` (`js/views/evidence.js`, Z. 162–182) mit dem Chrome-Debugger seziert:
@@ -262,7 +262,7 @@ Step out, Conditional Breakpoint `a.title.startsWith("Legacy")`, Call Stack
 ## Demo 7 — DevTools-Tour
 
 **Keine Code-Änderung.** Werkzeug-Tour durch Console / Network / Application / Elements.
-Vollständiges Skript in [`DEMO7_DEVTOOLS.md`](DEMO7_DEVTOOLS.md).
+Vollständiges Skript in [`UE1_DEMO7_DEVTOOLS.md`](UE1_DEMO7_DEVTOOLS.md).
 
 Im Browser überprüft:
 - **Network:** Ladereihenfolge `case → people → locations → evidence → timeline` (5 `fetch`-Requests, alle `200`), `evidence.json` Response = JSON-Array mit 18 Objekten.
@@ -339,7 +339,7 @@ Frischer Server, voller Durchlauf: Daten laden `6/18/15`, **Nav-Button-Klicks we
 
 ## Demo 9 — Verschachtelte Promises → `async`/`await`
 
-Alle Änderungen in [`js/data.js`](js/data.js). Verhalten 1:1 erhalten (inkl. sequenziell + Fehlerbehandlung).
+Alle Änderungen in [`js/data.js`](../js/data.js). Verhalten 1:1 erhalten (inkl. sequenziell + Fehlerbehandlung).
 
 ### Task 1 — Die tiefste `.then()`-Kette (Skizze vorher)
 

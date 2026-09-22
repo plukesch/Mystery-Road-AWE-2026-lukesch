@@ -775,3 +775,73 @@ grün durch.
 `npm run dev`, `F12` → Network-Tab, Seite laden. Zeig `GET /js/utils.ts` und `GET /js/lookup.ts`
 mit `200` — "andere Dateien importieren die immer noch mit `.js` am Ende, Vite biegt das beim
 Laden automatisch auf die echte `.ts`-Datei um."
+
+---
+
+## Demo 6 — Die Domain-Daten typisieren
+
+*(Hinweis: Demo 6/7 werden nicht präsentiert/angekreuzt — der Code muss trotzdem sauber
+funktionieren, weil Demo 8/9s CI genau darauf aufbaut. Diese Doku ist deshalb etwas knapper
+gehalten als bei den Demos, die wirklich vorgeführt werden.)*
+
+### Task 1 — Typen für Evidence, Person, Location, Timeline-Event, Case
+
+Neue Datei **`js/types.ts`** mit den Domain-Interfaces, passend zur echten Form von `data/*.json`:
+`Evidence`, `Person`, `Location`, `TimelineEvent`, `CaseFile`, dazu drei Union-Typen
+(`ReviewStatus`, `Relevance`, `Certainty` — nur mit `type` möglich, nicht mit `interface`, siehe
+F3) und `AppStateShape` (die Zwischenlösung für den noch nicht typisierten `state.js`, siehe
+Demo 5).
+
+### Task 2 — Daten-Lader konvertiert
+
+`js/data.js` → `js/data.ts` (per `git mv`). Die drei `fetch(...).then(res => res.json())`-Stellen
+lesen jetzt nicht mehr stillschweigend `any`, sondern werden explizit zugeordnet:
+```ts
+state.caseData = (await caseRes.json()) as CaseFile;
+state.allPeople = (await peopleRes.json()) as Person[];
+state.allLocations = (await locationsRes.json()) as Location[];
+state.allEvidence = (await res.json()) as Evidence[];   // in loadEvidenceData
+state.allTimeline = (await res.json()) as TimelineEvent[]; // in loadTimelineData
+```
+
+**Zwei echte Compiler-Funde unterwegs:**
+1. Derselbe `never[]`-Effekt wie in Demo 5 (state.js's leere Array-Literale) — behoben mit
+   demselben Muster: `stateJs as AppStateShape` an der einen Importstelle.
+2. **Neu:** `state.js`s `caseData: {}` (leeres Objekt als Startwert) und unser `CaseFile` (9
+   Pflichtfelder) waren TypeScript laut eigener Meldung *"zu unähnlich"* für eine direkte
+   Umwandlung (*"may be a mistake because neither type sufficiently overlaps with the other"*).
+   Lösung: der von TypeScript selbst vorgeschlagene Umweg über `unknown` —
+   `stateJs as unknown as AppStateShape`. Wichtig: das ist **kein** `any`. Es ist eine einmalige,
+   bewusste Umwandlung an **einer** Stelle; jede Codezeile danach (`state.allEvidence.length` usw.)
+   wird weiterhin ganz normal gegen die echten Typen geprüft.
+
+`lookup.ts` gleichzeitig aufgeräumt: die Demo-5-Platzhalter `EvidenceRecord`/`PersonRecord`/
+`LocationRecord` (nur die paar Felder, die die Funktionen damals brauchten) sind jetzt durch die
+echten, vollständigen `Evidence`/`Person`/`Location`-Typen aus `types.ts` ersetzt.
+
+### Task 3 — das ambige Feld: `Evidence.personIds`
+
+Direkt am Feld in `types.ts` dokumentiert: `personIds` ist fast überall eine echte `Person.id`
+(z. B. `"kernel-colt"`) — **außer** bei E04 in `evidence.json`, wo stattdessen der **Anzeigename**
+`"Nova Byte"` drinsteht statt der id `"nova-byte"`.
+
+**Wie JavaScript das nie entscheiden musste:** `personIds` war einfach `Array` — ein Array aus
+Strings ist ein Array aus Strings, ob eine id oder ein Name drinsteht, ist JS völlig egal.
+`evidenceMentionsPerson()` (schon aus UE1 bekannt) prüft deshalb explizit **beides**
+(`indexOf(person.id) !== -1 || indexOf(person.name) !== -1`) — eine stille Notlösung, tief in
+einer Funktion vergraben, nie irgendwo als offizielle Aussage festgehalten.
+
+**Was das Schreiben eines ehrlichen Typs erzwungen hat:** TypeScript selbst hat diese
+Inkonsistenz **nicht automatisch erkannt** (`string[]` ist für eine id genauso gültig wie für
+einen Namen — der Compiler kann den Unterschied nicht sehen). Was TypeScript stattdessen erzwungen
+hat: der **Versuch**, ein ehrliches Interface zu schreiben, hat mich gezwungen, mir die echten
+Daten nochmal genau anzuschauen und mich zu fragen "ist das *wirklich* immer eine id?" — und die
+Antwort ("nein, siehe E04") jetzt explizit als Kommentar direkt am Typ festzuhalten, statt sie wie
+bisher nur implizit in einer Workaround-Funktion zu verstecken.
+
+### Verifikation
+`npm run typecheck` → 0 Fehler (nach den zwei oben beschriebenen Funden behoben). `grep` bestätigt:
+kein echtes `any` in `data.ts`/`lookup.ts`/`types.ts`. `npm run dev` + Feature-Durchlauf: Dashboard
+zeigt Case-Titel korrekt (`caseData` jetzt als `CaseFile` typisiert), alle 18/6/15 Einträge laden,
+Konsole sauber. `npm run build` läuft grün (`tsc --noEmit && vite build`), Bundle-Größe praktisch
+unverändert (~23 KB).

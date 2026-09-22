@@ -334,3 +334,74 @@ Text verglichen, ein Feldname vertippt) ebenfalls nichts mehr gesagt — falsche
 kompiliert!"), ohne einen einzigen der eigentlichen Vorteile von TypeScript. Der enge Type-Assertion
 (`as AppState`) hat genauso viel "Vertrauensvorschuss" gebraucht, prüft aber weiterhin **strukturell**
 mit — ein Tippfehler im Feldnamen oder eine falsche Form wäre dort immer noch aufgefallen.
+
+---
+
+## Demo 6 — Die Domain-Daten typisieren
+
+*(nicht präsentiert/angekreuzt, siehe Absprache — kurz gehalten)*
+
+`js/types.ts` mit den Domain-Interfaces angelegt, `js/data.ts` (Daten-Lader) konvertiert, das ambige Feld `Evidence.personIds` dokumentiert. Details in `UE2_CHANGES.md`.
+
+### F1: Das ambige Feld durchgehen — wie ist JavaScript ausgekommen, ohne sich auf eine Form festzulegen, und worauf hat TypeScript dich festgelegt?
+
+`Evidence.personIds` ist fast überall eine echte `Person.id` (`"kernel-colt"`), aber E04 in
+`evidence.json` hat stattdessen den Anzeigenamen `"Nova Byte"` drinstehen. JavaScript kam damit
+klar, weil `personIds` dort einfach ein Array war — Arrays aus Strings unterscheiden nicht
+zwischen "das ist eine ID" und "das ist ein Anzeigename", beides ist einfach ein String. Die
+bestehende `evidenceMentionsPerson()`-Funktion prüft deshalb pragmatisch beides.
+
+TypeScript hat diese Inkonsistenz **nicht automatisch entdeckt** — `personIds: string[]` ist für
+eine ID genauso ein gültiger Typ wie für einen Namen, der Compiler kann den Unterschied nicht
+sehen. Worauf mich der **Versuch, den Typ ehrlich zu schreiben** aber festgelegt hat: ich musste
+mir die echten Daten nochmal anschauen und mich aktiv entscheiden, wie ich das dokumentiere — und
+das Ergebnis (die Inkonsistenz + die Begründung, warum `evidenceMentionsPerson` beides prüft) steht
+jetzt direkt als Kommentar am Feld in `types.ts`, statt nur implizit in einer Workaround-Funktion
+zu leben. Der Zwang kam also nicht vom Compiler selbst, sondern von der **Disziplin des
+Typ-Schreibens** — man kann bei einem benannten Interface-Feld nicht mehr "irgendwas reinlegen",
+ohne sich wenigstens einmal zu fragen, was da wirklich reingehört.
+
+### F2: Gibt es ein Daten-Form-Problem, das TypeScripts statische Typen allein NICHT fangen können, weil die schlechten Daten erst zur Laufzeit aus einer JSON-Datei auftauchen? Was bräuchtest du zusätzlich?
+
+Ja, ein sehr konkretes: `Evidence.status`/`Evidence.relevance` sind als Union-Typen typisiert
+(`"unreviewed" | "reviewed" | "flagged"` bzw. `"unknown" | "relevant" | "irrelevant"`) — sieht so
+aus, als würde das ungültige Werte verhindern. Die echten Daten in `evidence.json` widersprechen
+dem aber: `E12` hat tatsächlich `"Reviewed"`/`"Unknown"` (großgeschrieben) stehen, was **nicht**
+zu den erlaubten (kleingeschriebenen) Werten passt.
+
+**Warum TypeScript das trotzdem nicht meldet:** wir laden die Daten über
+`(await res.json()) as Evidence[]` — `res.json()` liefert `any` (TypeScripts eigene
+Bibliotheksdefinition, siehe Demo 5 F2), und `as Evidence[]` ist eine **Zusicherung**, kein Test.
+TypeScript **vertraut** der Zusicherung, es öffnet die tatsächliche JSON-Datei nie und vergleicht
+nie, ob `"Reviewed"` wirklich zu `"reviewed" | "flagged" | "unreviewed"` passt. Ein Typfehler ist
+per Definition etwas, das der Compiler **im Code selbst** sieht — nicht etwas in einer Datendatei,
+die erst zur Laufzeit vom Server kommt. (Dass daraus in der App kein sichtbarer Bug wurde, liegt
+an `getStatusBadgeClass`, das den Wert vor dem Vergleich klein schreibt — reiner Zufall der
+bestehenden defensiven Programmierung, keine Absicherung durch TypeScript.)
+
+**Was zusätzlich nötig wäre:** eine **Laufzeit-Validierung** — etwas, das die tatsächlich
+geladenen Daten *nach* dem `fetch()` wirklich inspiziert und mit der erwarteten Form vergleicht,
+z. B. eine Validierungs-Bibliothek (Zod, io-ts, …) oder eine selbst geschriebene Prüf-Funktion, die
+bei einem unerwarteten Wert loggt/wirft. Typen allein schützen nur den Code, der die Daten
+**benutzt** (unter der Annahme, sie seien schon richtig geformt) — sie prüfen nie nach, ob die
+Bytes, die tatsächlich übers Netzwerk kommen, dieser Annahme entsprechen.
+
+### F3: Unterschied zwischen `interface` und `type` für eine Objekt-Form? Welches hast du für die Domain-Modelle benutzt, und spielt das hier überhaupt eine Rolle?
+
+**Unterschied:** beide können eine Objekt-Form beschreiben, und für reine Objekt-Shapes sind sie
+praktisch austauschbar. Unterschiede, die es trotzdem gibt: ein `interface` kann später erneut
+geöffnet und um weitere Felder ergänzt werden ("declaration merging") und nutzt `extends`, um von
+einem anderen zu erben; ein `type`-Alias kann das nicht (einmal definiert, fest), kann dafür aber
+**mehr als nur Objekt-Formen** ausdrücken — Vereinigungen (`"a" | "b"`), Tupel, primitive Aliase.
+
+**Was wir benutzt haben:** `interface` für die fünf Domain-Entitäten (`Evidence`, `Person`,
+`Location`, `TimelineEvent`, `CaseFile`) — das sind "Dinge mit eigener Identität", der
+klassische Interface-Anwendungsfall, und konsistent zu dem, was wir in Demo 5 schon angefangen
+hatten. **`type`** dagegen für `ReviewStatus`, `Relevance`, `Certainty` — das sind
+**Vereinigungstypen** aus konkreten Text-Werten (`"unreviewed" | "reviewed" | "flagged"`).
+
+**Spielt das hier eine Rolle?** Bei den fünf Domain-Entitäten: nein, reine Geschmackssache,
+`type` hätte genauso funktioniert. Bei `ReviewStatus`/`Relevance`/`Certainty`: **ja, zwingend** —
+ein `interface` kann grundsätzlich **keine** Vereinigung aus String-Literalen ausdrücken (ein
+Interface beschreibt immer eine Objekt-Form mit benannten Feldern, keinen "entweder-oder"-Wert).
+Für diese drei Fälle war `type` also nicht Stil, sondern die einzig mögliche Wahl.

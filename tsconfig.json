@@ -1,0 +1,61 @@
+{
+  "compilerOptions": {
+    // ziel: aktuelle evergreen-browser (siehe README) -> modernes JS erlaubt
+    "target": "ES2022",
+    // DOM: wir fassen document/window/HTMLElement direkt an. DOM.Iterable:
+    // damit z.b. document.querySelectorAll(...) als iterable durchgeht.
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    // "Bundler" statt "Node10"/"NodeNext": das ist die resolution-strategie
+    // fuer bundler-basierte tools wie vite, nicht fuer direktes node-ausfuehren.
+    // erlaubt genau das import-schema, das vite selbst erwartet.
+    "moduleResolution": "Bundler",
+    "resolveJsonModule": true,
+
+    // esbuild (das vite fuers transpilieren benutzt) uebersetzt jede datei
+    // EINZELN, ohne das ganze programm zu kennen. manche TS-konstrukte
+    // (z.b. re-export von reinen typen ohne "export type") ueberleben das
+    // nicht. isolatedModules bringt TSC dazu, genau sowas selbst zu melden,
+    // statt dass es erst bei esbuild leise schiefgeht.
+    "isolatedModules": true,
+
+    // tsc wird hier NUR zum pruefen benutzt (typecheck-script) - das eigentliche
+    // uebersetzen zu JS macht weiterhin vite/esbuild beim dev/build. deshalb
+    // soll tsc selbst keine dateien rausschreiben.
+    "noEmit": true,
+
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    // node_modules/vite/...'s eigene .d.ts-dateien nicht nochmal pruefen -
+    // spart zeit, wir vertrauen den paketen selbst ihre typen zu.
+    "skipLibCheck": true,
+
+    // demo 5: erst 2 dateien (utils.ts, lookup.ts) konvertiert. lookup.ts
+    // importiert weiterhin "state" aus dem noch nicht konvertierten state.js.
+    // allowJs laesst TS ".js"-importe ueberhaupt aufloesen; checkJs:false
+    // heisst ausdruecklich "aber pruef den INHALT von state.js noch nicht,
+    // das kommt in demo 6/7". ohne allowJs wuerde schon der import in
+    // lookup.ts mit "cannot find module" scheitern.
+    "allowJs": true,
+    "checkJs": false,
+
+    // deliberate choice: strict mode AN (siehe THEORIE_ANTWORTEN demo 5 F1)
+    "strict": true,
+
+    // deliberate choice: zusaetzlich AN, ueber das strict-bundle hinaus.
+    // state.allEvidence[i] etc. sind haeufige zugriffsmuster im code -
+    // ohne dieses flag tut TS so, als waere ein index-zugriff IMMER gueltig.
+    "noUncheckedIndexedAccess": true,
+
+    // deliberate choice: bewusst AUS gelassen. "no-unused-vars" macht bei
+    // uns schon ESLint (demo 4) - zwei werkzeuge, die dieselbe meldung
+    // doppelt bringen, ist nur laut, nicht huebscher.
+    "noUnusedLocals": false,
+    "noUnusedParameters": false
+  },
+  // nur unsere schon konvertierten .ts-dateien sind teil des programms.
+  // was sie importieren (state.js) wird ueber allowJs mitgezogen, aber
+  // alles andere (main.js, die anderen views, app.js) ist bis demo 7
+  // schlicht nicht teil dessen, was tsc ueberhaupt anschaut.
+  "include": ["js/**/*.ts"]
+}

@@ -245,3 +245,92 @@ würde dort gefunden. **Aber das wäre die falsche, fragile Lösung:**
 Deshalb installieren wir ESLint/Prettier als **`devDependencies`**: sie werden dadurch Teil des
 reproduzierbaren Projekt-Setups (in `package.json` + `package-lock.json` festgehalten, genau wie
 `dayjs` oder `vite`), nicht eine zufällige Eigenschaft von irgendjemandes Rechner.
+
+---
+
+## Demo 5 — TypeScript-Einstieg & erste Konvertierungen
+
+TypeScript installiert, `tsconfig.json` mit bewusst gewählten Einstellungen, `js/utils.ts` + `js/lookup.ts` konvertiert (0 Fehler, kein `any`), `tsc --noEmit` in `npm run build` eingehängt. Unterwegs 7 echte, lehrreiche Typfehler gefunden und sauber gelöst (nicht mit `any` übertüncht). Details in `UE2_CHANGES.md`.
+
+### F1: Was schaltet `strict` in `tsconfig.json` eigentlich ein? Mindestens zwei einzelne Prüfungen nennen, sagen ob du es an gelassen hast und warum.
+
+**Einfach gesagt:** `strict` ist ein Sammelschalter für ca. acht einzelne strengere Prüfungen auf
+einmal. Wir haben ihn an gelassen, weil genau zwei davon in unserem Code sofort real etwas
+gebracht haben.
+
+`strict: true` schaltet unter anderem ein:
+- **`strictNullChecks`** — `null`/`undefined` werden nicht mehr stillschweigend als Teil von
+  *jedem* Typ akzeptiert; ein Wert, der fehlen kann, muss das explizit im Typ tragen
+  (`string | undefined`), und jede Stelle, die ihn benutzt, muss das vorher abfangen.
+  **Direkt bei uns erlebt:** `evidenceMentionsPerson` hat `personIds?: string[]` (optional) im
+  Interface. Ohne `strictNullChecks` wäre `ev.personIds.indexOf(...)` einfach so durchgegangen;
+  **mit** hätte TypeScript diese Zeile abgelehnt, wenn der vorhandene `if (!ev.personIds) return
+  false;`-Guard nicht schon dagestanden hätte. Der Guard war schon vorher aus JS-Vorsicht da — mit
+  `strictNullChecks` wird er vom "guten Stil" zur **Pflicht**.
+- **`noImplicitAny`** — jeder Wert ohne erkennbaren Typ (z. B. ein Funktionsparameter ohne
+  Annotation) wird zum Fehler, statt still zu `any` zu werden. **Direkt relevant:** genau das
+  hätte uns gestoppt, wenn wir in `formatDate` vergessen hätten, `ts` zu typisieren — Demo 5s
+  eigene "kein `any`"-Vorgabe ist im Grunde `noImplicitAny` in Textform.
+- (auch dabei, bei uns aber praktisch wirkungslos, weil wir keine Klassen benutzen:
+  `strictPropertyInitialization`, `strictBindCallApply`, `noImplicitThis`, `alwaysStrict`.)
+
+**An gelassen**, weil ein Projekt, das gerade erst mit TypeScript anfängt, von Anfang an die
+strengste sinnvolle Basis haben sollte — nachträglich `strict` einzuschalten, wenn schon viel
+lockerer Code existiert, ist deutlich schmerzhafter als von Anfang an strikt zu sein und Fälle wie
+unseren `never[]`-Fund sofort zu sehen, statt sie Monate später zu entdecken.
+
+### F2: Unterschied zwischen einem Compile-Zeit-Typfehler und den Laufzeit-Bugs, die du in Übung 1 gefixt hast? Hätte TypeScript allein einen dieser konkreten Bugs fangen können? Warum (nicht)?
+
+**Einfach gesagt:** ein Typfehler heißt "die FORM eines Werts widerspricht dem, was irgendwo
+erwartet wird" — komplett unabhängig davon, ob dein Programm zur Laufzeit das *Richtige* tut. Code
+kann 100 % typkorrekt sein und trotzdem jeden Bug aus UE1 enthalten.
+
+Konkret durchgegangen:
+- **Demo 2 (Referenz-Bug, `filteredEvidence = allEvidence`):** **Nein**, TypeScript hätte das
+  nicht gefangen. Beide Variablen haben denselben, korrekten Typ (ein Array von Evidence-Objekten)
+  — eine Referenz einer anderen Variablen zuzuweisen ist völlig gültiges, typkorrektes JavaScript.
+  Der Bug ist eine Frage der **Objekt-Identität zur Laufzeit** (zwei Namen zeigen auf dasselbe
+  Array), nicht der Form der Daten — dafür hat TypeScripts Typsystem kein Konzept.
+- **Demo 3 (async-Bug, `evidenceViewLoading` nie auf `false` gesetzt):** **Nein.** Das ist eine
+  fehlende Zeile, keine Typverletzung. `evidenceViewLoading: boolean` ist ein gültiger Typ, ob der
+  Wert *irgendwann* auf `false` gesetzt wird, ist eine Frage des **Kontrollflusses zur Laufzeit**,
+  die TypeScript nicht verfolgt.
+- **Demo 4 (stiller Bug, Promise geloggt statt `await`-etem Wert):** **Auch hier nein** — in der
+  Form, wie der Bug tatsächlich auftrat (`console.log("...", loadNoteAsync(...))`). `console.log`
+  akzeptiert *jeden* Typ anstandslos, ein `Promise<string>` ist ein zulässiger Typ, kein Fehler.
+  TypeScript *hätte* geholfen, wenn der Rückgabewert danach als `string` weiterverwendet worden
+  wäre (`firstNote.toUpperCase()` z. B. hätte TS abgelehnt) — aber genau das ist hier nicht
+  passiert, der Wert wurde nur geloggt.
+- **Demo 5.5 (kaputtes `localStorage` legt die App lahm, `JSON.parse` ohne `try/catch`):**
+  Ebenfalls **nein**, und das aus einem besonders lehrreichen Grund: `JSON.parse` ist in
+  TypeScripts eigener Standardbibliothek mit Rückgabetyp **`any`** deklariert — TypeScript kann
+  beim Parsen von Text, dessen Inhalt es unmöglich vorher kennen kann, grundsätzlich nichts über
+  die Form des Ergebnisses aussagen. Dass der String überhaupt gültiges JSON ist, ist eine
+  Laufzeit-Frage (`try/catch`), keine, die ein Typsystem beantworten kann.
+
+**Fazit:** keiner der konkreten UE1-Bugs war ein Typfehler — sie waren Aliasing-, Kontrollfluss-,
+Timing- und Eingabe-Validierungs-Probleme. TypeScript ist eine **andere Achse** der
+Fehlerprävention als das, was UE1s Bug-Hunting-Demos gebraucht haben; es ersetzt Testen/Debuggen
+nicht, es ergänzt es um eine Kategorie von Fehlern, die diese vier Bugs zufällig alle nicht waren.
+
+### F3: Was macht `any` mit TypeScripts Prüfung für einen Wert, und warum hast du es in diesem ersten Durchgang vermieden, obwohl es schneller gewesen wäre, die Fehler einfach damit zum Schweigen zu bringen?
+
+**Einfach gesagt:** `any` heißt "prüf hier gar nichts mehr" — sieht aus wie TypeScript, ist aber
+an dieser Stelle (und überall, wohin der Wert von da an fließt) einfach wieder JavaScript ohne
+Netz.
+
+`any` schaltet für einen Wert **jede** Typprüfung ab: er darf jedem beliebigen Typ zugewiesen
+werden, jede Eigenschaft/Methode darf ungeprüft auf ihm aufgerufen werden, und diese
+"Prüfungslosigkeit" **wandert mit** — verbindet man einen `any`-Wert mit einem sauber getypten
+Wert, wird an dieser Stelle oft auch die Prüfung für den sauberen Wert stillschweigend ausgehebelt
+("`any` ist ansteckend"). Man schreibt zwar `.ts`, aber genau dieser eine Wert ist wieder
+komplett ungeprüftes JavaScript.
+
+**Warum hier vermieden, obwohl schneller:** hätten wir `stateJs as any` statt des engen `stateJs
+as AppState` geschrieben, wären alle sieben echten Fehler aus Task 2 **sofort verschwunden** —
+nicht behoben, nur **unsichtbar gemacht**. Und ab dann hätte TypeScript uns bei jedem künftigen
+echten Fehler an genau dieser Stelle (z. B. `evidence.id` versehentlich mit einer Zahl statt einem
+Text verglichen, ein Feldname vertippt) ebenfalls nichts mehr gesagt — falsche Sicherheit ("hat ja
+kompiliert!"), ohne einen einzigen der eigentlichen Vorteile von TypeScript. Der enge Type-Assertion
+(`as AppState`) hat genauso viel "Vertrauensvorschuss" gebraucht, prüft aber weiterhin **strukturell**
+mit — ein Tippfehler im Feldnamen oder eine falsche Form wäre dort immer noch aufgefallen.

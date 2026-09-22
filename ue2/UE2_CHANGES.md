@@ -615,3 +615,163 @@ git diff --stat
 Zeig die Zeile `13 files changed, 1610 insertions(+), 311 deletions(-)` — "das war der einmalige
 große Aufräum-Diff, weil der Formatter den Code zum ersten Mal gesehen hat. Ab jetzt bleiben
 solche Diffs winzig, weil jeder neue Code gleich richtig formatiert reinkommt."
+
+---
+
+## Demo 5 — TypeScript-Einstieg & erste Konvertierungen
+
+### 🔰 Einfach erklärt — worum geht's hier überhaupt?
+
+**Was ist TypeScript?** JavaScript + ein "Typ-Prüfer" obendrauf. Du schreibst fast denselben
+Code wie vorher, sagst dem Computer aber zusätzlich Dinge wie "das hier ist immer ein Text" oder
+"das hier könnte auch mal fehlen". Ein Programm (der TypeScript-**Compiler**, `tsc`) liest
+**bevor irgendwas läuft** deinen ganzen Code durch und meldet, wenn du dir selbst widersprichst —
+z. B. wenn du versprichst "das ist immer ein Text", aber an einer Stelle so tust, als wäre es
+eine Zahl.
+
+*Analogie:* eine Rechtschreibprüfung, aber für **Logik statt Buchstaben**. Eine
+Rechtschreibprüfung führt deinen Aufsatz nicht aus, um Fehler zu finden — sie liest den Text und
+markiert Probleme, **bevor** du ihn abgibst. Genauso liest TypeScript deinen Code und markiert
+Typ-Widersprüche, **bevor** er je im Browser läuft.
+
+**Unterschied zu ESLint (Demo 4)?** ESLint sucht nach **verdächtigen Mustern** ("diese Variable
+hast du nie benutzt"). TypeScript prüft etwas Grundlegenderes: passt der **Typ** jedes Werts zu
+dem, was jede Stelle, die ihn benutzt, erwartet? "Diese Funktion verspricht, immer einen Text
+zurückzugeben, aber auf diesem Pfad könnte sie auch `undefined` liefern" — das ist kein Stilfehler,
+das ist ein beweisbarer Widerspruch.
+
+**Die vier Schritte, die wir gemacht haben:**
+1. TypeScript installiert.
+2. `tsconfig.json` geschrieben — TypeScripts eigene Einstellungsdatei (wie `eslint.config.js` aus Demo 4, nur fürs Typprüfen).
+3. Zwei Dateien von `.js` zu `.ts` umbenannt und mit Typen versehen.
+4. `tsc --noEmit` (nur prüfen, nichts erzeugen — Vite übersetzt weiterhin den eigentlichen JS-Code) in `npm run build` eingehängt.
+
+**Der spannendste Teil — ein Umweg, der genau das Richtige gezeigt hat:** Beim ersten `npm run
+typecheck` meldete TypeScript 7 Fehler in `lookup.ts`, obwohl der Code 1:1 aus dem funktionierenden
+JavaScript übernommen war. Grund: `state.js` selbst ist noch **nicht** typisiert. TypeScript hat
+versucht zu erraten, was in `state.allEvidence` drinsteckt, hat dort im für TypeScript sichtbaren
+Code nur `allEvidence: []` (eine leere Liste) gesehen — und **nirgends** eine Stelle, die je etwas
+hineinlegt (das passiert ja erst zur Laufzeit per `fetch()`, in Dateien, die TypeScript hier noch
+gar nicht anschaut). Also hat TypeScript — aus seiner Sicht völlig logisch — geschlossen: "diese
+Liste kann nur immer leer sein". Offensichtlich falsch, wir wissen ja, dass sie mit echten Daten
+gefüllt wird — aber TypeScript kann **nur über das urteilen, was es im Code sieht**, nie über das,
+was beim tatsächlichen Ausführen passiert. Das ist eine der wichtigsten Lektionen zu TypeScript
+überhaupt: es ist ein **statischer** Prüfer — es führt dein Programm nie selbst aus.
+
+**Der Fix, einfach gesagt:** wir haben TypeScript genau an der einen Stelle, wo wir `state`
+benutzen, direkt gesagt: "vertrau mir, diese drei Listen enthalten wirklich [Typ]-Objekte" — eine
+kleine, gezielte Ansage, **nicht** der große "schalt einfach jede Prüfung ab"-Hammer (`any`). Wie
+wenn du einem sehr wörtlich denkenden Kollegen sagst "ich weiß, du siehst den Lieferwagen nicht,
+der jeden Morgen die Ware bringt, aber glaub mir, das Regal wird wirklich befüllt" — statt zu
+sagen "prüf bei diesem Regal einfach gar nichts mehr".
+
+**Die Nachfolge-Fehler, einfach gesagt:** selbst danach hat TypeScript noch unseren
+altbekannten "durch die Liste per Index durchgehen"-Code (`liste[i]`) bemängelt — weil generell
+"gib mir Element Nummer 5" schiefgehen kann, wenn die Liste kürzer ist als gedacht (in JavaScript
+kein Fehler, einfach still `undefined`). Wir hatten TypeScript explizit gebeten, genau darauf zu
+achten (`noUncheckedIndexedAccess`, siehe Task 1) — viele Teams lassen das aus, weil es JEDEN
+Listenzugriff etwas umständlicher macht, wir haben es bewusst drin gelassen, weil unser Code genau
+dieses Zugriffsmuster oft benutzt und ein "Index war doch nicht da"-Fehler genau die Art Bug ist,
+die wir in UE1 (Demo 2–5) mühsam von Hand jagen mussten. Fix: den Wert einmal holen, prüfen, dass
+er wirklich da ist, dann benutzen — gleiches Ergebnis wie vorher, nur jetzt auch für TypeScript
+nachvollziehbar sicher.
+
+### Task 1 — TypeScript installiert, `tsconfig.json` bewusst konfiguriert
+
+Befehl (Nutzer): `npm install -D typescript` → `devDependencies.typescript: "^7.0.2"`.
+
+`tsconfig.json` — jede Einstellung mit eigenem Grund, nicht blind von irgendwo kopiert:
+
+| Einstellung | Wert | Warum |
+|---|---|---|
+| `target` / `lib` | `ES2022`, `["ES2022", "DOM", "DOM.Iterable"]` | passt zu "aktuelle evergreen-Browser" (README); `DOM` nötig, weil wir direkt `document`/`window` anfassen |
+| `moduleResolution` | `"Bundler"` | die Auflösungs-Strategie extra für bundler-basierte Tools wie Vite — nicht für direktes Node-Ausführen gedacht |
+| `isolatedModules` | `true` | Vite übersetzt mit **esbuild**, das jede Datei **einzeln** übersetzt, ohne das ganze Programm zu kennen — dieses Flag lässt `tsc` genau die TS-Konstrukte melden, die dabei stillschweigend kaputtgehen würden |
+| `noEmit` | `true` | `tsc` wird bei uns **nur zum Prüfen** benutzt — das eigentliche Übersetzen macht weiterhin Vite/esbuild |
+| `allowJs` + `checkJs: false` | `true` / `false` | lässt `.ts`-Dateien `.js`-Dateien überhaupt importieren (`lookup.ts` → `state.js`), aber verlangt noch **nicht**, dass der Inhalt von `state.js` selbst fehlerfrei typisiert ist — das kommt in Demo 6/7 |
+| `strict` | `true` | die Haupt-Entscheidung dieser Demo — siehe F1 |
+| `noUncheckedIndexedAccess` | `true` | **bewusst zusätzlich** über `strict` hinaus an — siehe oben, hat direkt echte Stellen in `lookup.ts` gefunden |
+| `noUnusedLocals` / `noUnusedParameters` | `false` | **bewusst aus** — das deckt ESLint (Demo 4) schon ab, zwei Werkzeuge mit derselben Meldung wäre nur doppelt laut |
+
+`include: ["js/**/*.ts"]` — das Typ-Programm besteht aktuell nur aus unseren zwei konvertierten
+Dateien (plus, über `allowJs`, dem noch ungeprüften `state.js`, das sie importieren). Der Rest der
+App (`main.js`, alle Views, `app.js`) ist für `tsc` aktuell schlicht nicht sichtbar — das ändert
+sich erst in Demo 7.
+
+### Task 2 — zwei Dateien konvertiert, ohne `any`, 0 Fehler
+
+**`js/utils.ts`** (per `git mv`, Historie bleibt): komplett eigenständig, keine Imports — der
+einfachstmögliche erste Schritt. Parameter wie `formatDate`s `ts` bekommen den Typ
+`string | undefined | null`, weil genau das ist, was `ev.timestamp`/`evt.time` aus den JSON-Daten
+tatsächlich sein können.
+
+**`js/lookup.ts`**: fünf Funktionen, drei kleine lokale Interfaces (`EvidenceRecord`,
+`PersonRecord`, `LocationRecord` — nur mit den Feldern, die diese Funktionen wirklich anfassen,
+nicht die vollständigen Domain-Typen, die kommen in Demo 6). Dazu der gezielte
+`stateJs as AppState`-Type-Assertion (siehe oben) und die `noUncheckedIndexedAccess`-Fixes in
+allen drei `findXById`-Funktionen + `countEvidenceForPerson`.
+
+`grep -n '\bany\b'` auf beiden Dateien: `any` kommt **nur** in Erklär-Kommentaren vor, nirgends
+als echter Typ.
+
+### Task 3 — TypeScript ins Tooling eingehängt
+
+`package.json`:
+```json
+"typecheck": "tsc --noEmit",
+"build": "tsc --noEmit && vite build",
+```
+`build` bricht jetzt **vor** `vite build` ab, wenn `tsc` einen Fehler findet (`&&` verkettet die
+beiden Befehle — der zweite läuft nur, wenn der erste mit Erfolg endet). Live geprüft: mit einem
+absichtlichen Fehler (`const x: string = 5;`) bricht `npm run build` schon bei `tsc` ab, „vite
+build" taucht in der Ausgabe gar nicht erst auf.
+
+**Bewusst nicht gemacht:** `npm run dev` (Vites Dev-Server) selbst typprüft **nicht** — Vite
+übersetzt `.ts`-Dateien beim Entwickeln nur mit esbuild (schnell, aber esbuild entfernt Typen
+einfach, ohne sie zu validieren). Das ist eine bewusste Vite-Design-Entscheidung für Geschwindigkeit,
+kein Versehen unsererseits. Für Echtzeit-Fehler beim Tippen sorgt der Editor (VS-Code +
+TypeScript-Sprachserver); für die **verlässliche** Prüfung, die wirklich niemand umgehen kann,
+sorgt jetzt `npm run build` (und später die CI in Demo 8/9).
+
+### Verifikation
+`npm run typecheck` → 0 Fehler. `grep` bestätigt: kein echtes `any` in den zwei neuen Dateien.
+`npm run dev` + voller Feature-Durchlauf im Browser: 18 Evidenz-Karten, `formatDate`
+(`utils.ts`) formatiert Daten korrekt, People-Cross-Link (nutzt `countEvidenceForPerson`/
+`evidenceMentionsPerson` aus `lookup.ts`) liefert 3 Karten — beide konvertierten Dateien
+funktionieren zur Laufzeit identisch zu vorher. Netzwerk-Log bestätigt: `GET /js/utils.ts` und
+`GET /js/lookup.ts` laden mit `200`, **obwohl** andere Dateien sie weiterhin mit `.js`-Endung
+importieren (`from "../utils.js"`) — Vite löst das automatisch auf die echte `.ts`-Datei auf,
+ganz ohne dass wir einen einzigen Import in den restlichen `.js`-Dateien anfassen mussten.
+`npm run build` läuft grün (`tsc --noEmit && vite build`), Konsole beim Dev-Server sauber.
+
+### 🎤 Live-Demo — was du im Unterricht herzeigst
+
+**1. `tsconfig.json` aufmachen**
+Zeig 2–3 Zeilen und ihre Begründung aus der Tabelle oben — besonders `noUncheckedIndexedAccess`
+(„bewusst zusätzlich an, hat direkt einen echten Fall gefunden") und `noUnusedLocals: false`
+(„bewusst aus, das deckt schon ESLint ab").
+
+**2. Den echten Fehler nachstellen**
+In `js/lookup.ts`, in einer der `findXById`-Funktionen, `const ev = state.allEvidence[i];` +
+`if (ev && ...)` kurz zurück auf die alte Form ändern (`if (state.allEvidence[i].id === id) return
+state.allEvidence[i];`), speichern, dann:
+```bash
+npm run typecheck
+```
+Zeig die roten `TS2532`/`TS2322`-Fehler live. Erklär in einem Satz: "TypeScript kann nicht
+beweisen, dass der Index immer gültig ist." Rückgängig machen, `npm run typecheck` wieder grün.
+
+**3. Den Build-Gate-Test**
+In `js/utils.ts` die Zeile `// const kaputterTest: string = 5;` einkommentieren, dann:
+```bash
+npm run build
+```
+Zeig, dass die Ausgabe schon bei `tsc --noEmit` abbricht — **"vite v8.3.0 building..."** taucht
+gar nicht erst auf. Sag: "das ist der Beweis, dass Typfehler nicht nur im Editor rot sind, sondern
+den echten Build-Prozess blockieren." Zeile wieder auskommentieren, `npm run build` läuft wieder
+grün durch.
+
+**4. Netzwerk-Beweis für die `.js` → `.ts`-Auflösung**
+`npm run dev`, `F12` → Network-Tab, Seite laden. Zeig `GET /js/utils.ts` und `GET /js/lookup.ts`
+mit `200` — "andere Dateien importieren die immer noch mit `.js` am Ende, Vite biegt das beim
+Laden automatisch auf die echte `.ts`-Datei um."

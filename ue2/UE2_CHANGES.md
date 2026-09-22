@@ -1309,3 +1309,79 @@ Upload-Schritt, nur `git push`."
 **4. Alternative, falls gerade nichts zu ändern ist: manueller Trigger**
 Actions-Tab → Workflow "Deploy to GitHub Pages" → Button **"Run workflow"** (dank
 `workflow_dispatch:`) → löst denselben Ablauf ohne neuen Commit aus.
+
+---
+
+## Demo 10 — Workflow-Trigger, Rechte & Fehlerfälle
+
+### 🔰 Einfach erklärt — worum geht's hier überhaupt?
+
+Demo 8 und 9 haben zwei funktionierende Workflows gebaut. Demo 10 fragt: **was, wenn etwas
+schiefgeht?** — passiert dann etwas Schlimmes mit der Live-Seite? Und: **wer darf hier überhaupt
+was?** — welche Rechte hat der Deploy-Roboter genau, und ist das riskant?
+
+### Task 1 — echter TypeScript-Fehler, blockiert Deploy real
+
+In `js/utils.ts` die geparkte Test-Zeile aus Demo 5 reaktiviert:
+
+| Schritt | Befehl/Änderung | Ergebnis |
+|---|---|---|
+| 1 | `// const kaputterTest: string = 5;` → `const kaputterTest: string = 5;` (Kommentar weg) | echter TS-Typfehler (`number` einer `string`-Variable zugewiesen) |
+| 2 | `git add`, `git commit`, `git push` | löst beide Workflows aus |
+| 3 | **Ergebnis (echt beobachtet, Screenshot):** `Deploy to GitHub Pages / build` ✗ *"Failing after 19s"* — `deploy`-Job taucht gar nicht erst als Eintrag auf | `npm run build` (`tsc --noEmit && vite build`) bricht schon bei `tsc` ab, `deploy` startet nie, weil `needs: build` das verhindert |
+| 4 | Rechts im GitHub-Sidebar unter "Deployments": die **alte**, zuvor erfolgreich deployte `github-pages`-Version blieb währenddessen weiterhin aktiv | direkter, echter Beweis für die Antwort zu Theorie-F1 unten |
+| 5 | Zeile wieder auskommentiert, `git add`/`commit`/`push` | **Ergebnis (echt beobachtet, Screenshot):** alle 3 Checks grün (`build` 14s, `deploy` 1m, `CI` 10s), neues Deployment aktiv |
+
+`CI` (Demo 8) blieb bei Schritt 3 übrigens **grün** — der TS-Fehler ist kein Lint-/Format-Problem,
+ESLint und Prettier sagen dazu nichts (siehe Demo 7/8: ESLint deckt `.ts` ohnehin nicht ab). Nur
+der Build-Schritt (`tsc --noEmit`) fängt das — ein guter Beleg dafür, dass die drei Gates (Lint,
+Format, TypeScript) wirklich unterschiedliche Fehlerklassen abdecken, keine Doppelung.
+
+### Task 2 — Rechte & Secrets des Deploy-Workflows, wo konfiguriert
+
+| Was | Wert | Wo konfiguriert |
+|---|---|---|
+| `contents: read` | Repo lesen | `permissions:`-Block direkt in `.github/workflows/deploy.yml` |
+| `pages: write` | Auf GitHub Pages veröffentlichen dürfen | ebenda |
+| `id-token: write` | Sich per OIDC (kurzlebiger, automatisch ausgestellter Ausweis) gegenüber der Pages-API ausweisen | ebenda |
+| GitHub-Pages-Quelle | "GitHub Actions" (statt "Deploy from a branch") | Repo → **Settings → Pages → Build and deployment → Source** (einmalig manuell umgestellt, Demo 9) |
+| Secrets | **keine** | nicht nötig — die Authentifizierung läuft komplett über die drei `permissions:`-Zeilen + OIDC, kein von Hand angelegtes Passwort/Token in `Settings → Secrets and variables → Actions` |
+
+Kein einziges Secret nötig, weil GitHub Pages als **GitHub-eigenes** Ziel direkt über den vom
+Workflow-Lauf selbst ausgestellten, kurzlebigen OIDC-Token authentifiziert — anders als bei einem
+externen Ziel (Netlify, eigener Server per SFTP, siehe Demo 9 F3), wo ein dauerhaftes API-Token/
+Passwort als Secret nötig wäre.
+
+### Task 3 — Run-Historie beider Workflows
+
+Actions-Tab zeigt für **beide** Workflows getrennt die volle Lauf-Historie (`ci.yml` und
+`deploy.yml`, je eigener Menüpunkt in der linken Sidebar). Für die Präsentation: der Lauf aus
+Task 1 (roter Build, dann grüner Fix direkt danach) ist ein echter, vorzeigbarer Beleg — beim
+Reinklicken zeigt GitHub den genauen `tsc`-Fehlertext (Zeile, erwarteter vs. tatsächlicher Typ)
+direkt im Log des `build`-Jobs.
+
+### Verifikation
+Beide Zyklen real durchgeführt und per Screenshot bestätigt (siehe Task 1). Keine offenen,
+kaputten Commits auf `main` — Endzustand ist der reparierte, grüne Stand.
+
+### 🎤 Live-Demo — was du im Unterricht herzeigst
+
+**1. Den echten Fehlschlag reproduzieren**
+In `js/utils.ts` dieselbe Zeile wieder aktivieren (`// const kaputterTest...` → aktiv), pushen.
+Actions-Tab zeigen: `build` wird rot, `deploy` erscheint gar nicht. Reinklicken ins Log, die
+`tsc`-Fehlermeldung zeigen ("hier erklärt TypeScript live, warum eine Zahl keiner
+`string`-Variable zugewiesen werden darf").
+
+**2. Zeigen, dass die alte Seite live bleibt**
+Während (oder kurz nach) dem roten Lauf die deployte URL trotzdem öffnen — App läuft weiterhin,
+mit dem **alten** Stand. Sag: "ein kaputter Build nimmt die Seite nicht offline, er verhindert nur,
+dass eine neue, kaputte Version drüberkopiert wird."
+
+**3. Rechte zeigen**
+`.github/workflows/deploy.yml` aufmachen, auf den `permissions:`-Block zeigen. Dann GitHub →
+Settings → Secrets and variables → Actions öffnen: **leer** — "wir brauchen kein einziges Secret,
+weil GitHub Pages sich direkt über diese drei Zeilen plus einen von GitHub selbst ausgestellten,
+kurzlebigen Token authentifiziert."
+
+**4. Reparieren, wieder grün zeigen**
+Zeile wieder auskommentieren, pushen, beide Workflows wieder grün zeigen, deployte URL neu laden.

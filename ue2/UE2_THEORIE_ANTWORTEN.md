@@ -723,3 +723,111 @@ Zielplattform gar nichts mit, er erzeugt einfach `dist/`. Ändern müsste sich a
 **Fazit:** der Ortswechsel des Hostings ist überraschend klein im Code — man tauscht im Wesentlichen
 nur die letzten paar Zeilen (den `deploy`-Job) aus, weil "wie baue ich die App" und "wohin
 veröffentliche ich sie" von Anfang an bewusst zwei getrennte Jobs waren.
+
+---
+
+## Demo 10 — Workflow-Trigger, Rechte & Fehlerfälle
+
+Echten TS-Fehler (geparkte Demo-5-Testzeile in `js/utils.ts`) reaktiviert, gepusht, beobachtet:
+`build`-Job wird rot, `deploy` läuft gar nicht erst an, die alte Live-Seite bleibt währenddessen
+online. Fehler wieder behoben, gepusht, beide Workflows wieder grün. Rechte/Secrets des
+Deploy-Workflows tabellarisch durchgegangen. Details, Screenshots-Beschreibung in
+`UE2_CHANGES.md`.
+
+### F1: Wenn dein Build-Schritt fehlschlägt — bleibt die zuvor deployte Version der App live, wird sie offline genommen, oder passiert etwas anderes? Ist das das gewünschte Verhalten, und warum?
+
+**Einfach gesagt:** die alte Version bleibt einfach stehen — ein kaputter Bauversuch **überschreibt
+nichts**. Genau live beobachtet: während `build` in Demo 10 rot war, lief die App unter der
+GitHub-Pages-URL unverändert mit dem alten Stand weiter, kein Ausfall, keine leere Seite.
+
+**Warum das so ist (der Mechanismus):** `deploy` hat `needs: build` — startet also **nur**, wenn
+`build` erfolgreich durchgelaufen ist. Schlägt `build` fehl, wird `actions/deploy-pages@v4` (der
+einzige Schritt, der die Live-Seite tatsächlich verändert) **gar nicht erst ausgeführt**. Die zuvor
+veröffentlichte Version bleibt exakt so bestehen, wie sie beim letzten **erfolgreichen** Lauf
+veröffentlicht wurde — GitHub Pages "vergisst" die alte Version nicht einfach, weil ein neuer
+Versuch angefangen (und dann abgebrochen) wurde.
+
+**Ist das das gewünschte Verhalten? Ja, eindeutig:**
+- **Nutzer:innen der Seite merken nichts von einem fehlgeschlagenen internen Build.** Wäre es
+  andersrum (Seite geht sofort offline, sobald irgendein Build-Versuch scheitert), würde ein
+  einziger Tippfehler im Code die komplette öffentliche Seite lahmlegen, bis jemand den Fehler
+  behebt — ein winziges internes Problem hätte ein unverhältnismäßig großes, sofort sichtbares
+  Symptom nach außen.
+- **"Alt, aber funktionierend" ist fast immer besser als "kaputt oder leer".** Die alte Version war
+  zuletzt bewiesenermaßen ein Zustand, der den kompletten Build-Prozess (Lint, TypeScript, Vite
+  Build) erfolgreich durchlaufen hat — sie ist also mit Sicherheit funktionsfähig. Eine neue,
+  fehlerhafte Version wäre das Gegenteil.
+- Das ist genau der Sinn von `needs:` zwischen zwei Jobs: **erst prüfen, dann erst verändern** —
+  nie eine Veröffentlichung riskieren, deren Voraussetzung (ein erfolgreicher Build) nicht erfüllt
+  ist.
+
+### F2: Welche GitHub-Actions-Rechte und/oder Secrets braucht dein Deploy-Workflow wirklich, und wo hast du sie vergeben/gespeichert? Was ist das Sicherheitsrisiko, wenn man hier zu großzügig Rechte vergibt?
+
+**Einfach gesagt:** drei Zeilen Rechte, **null** Secrets. Alles steht direkt sichtbar im
+`permissions:`-Block von `deploy.yml` — kein verstecktes Passwort irgendwo in den Repo-Settings.
+
+| Was | Zweck | Wo konfiguriert |
+|---|---|---|
+| `permissions: contents: read` | Repo-Inhalt lesen (für `actions/checkout`) | `.github/workflows/deploy.yml` |
+| `permissions: pages: write` | über die GitHub-Pages-API tatsächlich veröffentlichen dürfen | ebenda |
+| `permissions: id-token: write` | sich per OIDC gegenüber der Pages-API als "ich bin dieser eine, gerade laufende Workflow-Lauf" ausweisen | ebenda |
+| GitHub-Pages-Quelle: "GitHub Actions" | erlaubt Workflows überhaupt, auf Pages zu veröffentlichen (statt eines Branches) | Repo → Settings → Pages |
+| Secrets | **keine** | `Settings → Secrets and variables → Actions` bleibt für dieses Setup leer |
+
+**Warum keine Secrets nötig sind:** GitHub Pages ist ein **GitHub-eigenes** Ziel. Statt eines
+dauerhaften, von Hand angelegten API-Tokens (das irgendwo sicher gespeichert, irgendwann erneuert,
+und bei einem Leak sofort widerrufen werden müsste) bekommt jeder einzelne Workflow-Lauf von
+GitHub selbst automatisch einen **kurzlebigen** OIDC-Token ausgestellt — gültig nur für die Dauer
+dieses einen Laufs, danach automatisch wertlos. `id-token: write` ist die Erlaubnis, diesen Token
+overhaupt anzufordern.
+
+**Sicherheitsrisiko bei zu großzügigen Rechten:** GitHub Actions vererbt standardmäßig (wenn man
+gar keinen `permissions:`-Block schreibt) oft recht weitreichende Rechte an den automatisch
+erzeugten `GITHUB_TOKEN` — je nach Repo-Voreinstellung z. B. Schreibrechte auf Issues, Pull
+Requests, sogar den Repo-Inhalt selbst. Das eigentliche Risiko liegt nicht in diesem einen
+Workflow selbst (den habe ich ja kontrolliere), sondern darin, **was bei einer kompromittierten
+Abhängigkeit passieren könnte**: läuft in `npm ci`/`npm run build` irgendwo eine bösartige
+(oder gehackte) npm-Paket-Version mit, könnte deren Code — falls der Workflow zu großzügige Rechte
+hat — diese Rechte missbrauchen (z. B. Code auf `main` pushen, Repo-Einstellungen ändern, in
+anderen Workflows lesen). Mit **eng zugeschnittenen** Rechten (`contents: read` statt `write`,
+kein `issues:`/`pull-requests:`-Zugriff, den dieser Workflow gar nicht braucht) ist der maximale
+Schaden im Ernstfall drastisch kleiner — genau das Prinzip **"least privilege"** (minimal nötige
+Rechte), das hinter dem expliziten, knappen `permissions:`-Block steht, statt sich auf
+GitHub-Voreinstellungen zu verlassen.
+
+### F3: Was ist der Unterschied zwischen `on: push`, `on: pull_request` und `on: workflow_dispatch`? Welchen hast du für den Development-Workflow (Demo 8) und welchen für den Deployment-Workflow (Demo 9) benutzt, und warum ist genau diese Zuordnung richtig?
+
+**Einfach gesagt:** `push` = "irgendwer hat gerade Code irgendwohin geschoben", `pull_request` =
+"jemand will Code **zusammenführen**, prüf das vorher", `workflow_dispatch` = "ein Mensch klickt
+manuell einen Knopf". Drei verschiedene Auslöser für drei verschiedene Situationen.
+
+| Trigger | Läuft wann | Bei uns benutzt in |
+|---|---|---|
+| `on: push` | bei jedem tatsächlichen Push auf einen Branch (bei uns: **jeden** Branch, keine Einschränkung) | `ci.yml` (Demo 8) — **und** `deploy.yml` (Demo 9), dort aber eingeschränkt auf `branches: [main]` |
+| `on: pull_request` | wenn ein Pull Request gegen den angegebenen Ziel-Branch geöffnet/aktualisiert wird — läuft gegen den **gemergten Vorschau-Stand** (PR-Branch + Ziel-Branch), nicht erst nach dem Merge | `ci.yml` (Demo 8), `branches: [main]` — prüft Beiträge, **bevor** sie gemergt werden dürfen |
+| `on: workflow_dispatch` | nur, wenn ein Mensch im Actions-Tab explizit auf **"Run workflow"** klickt (oder per API) | `deploy.yml` (Demo 9) — zusätzlich zu `push`, als manueller Nachtrigger |
+
+**Warum genau diese Zuordnung die richtige ist:**
+- **Demo 8 (`ci.yml`) auf `push` + `pull_request`:** der Dev-Workflow soll **so früh wie möglich**
+  Feedback geben — auf **jedem** Branch, bei **jedem** Push, damit man Probleme sofort merkt,
+  während man noch daran arbeitet, nicht erst wenn man versucht zu mergen. `pull_request`
+  zusätzlich, weil das der Moment ist, an dem ein Beitrag **offiziell zur Aufnahme vorgeschlagen**
+  wird — der letzte, verbindliche Check vor dem Merge, unabhängig davon, ob die einreichende Person
+  vorher lokal geprüft hat.
+- **Demo 9 (`deploy.yml`) nur auf `push` gegen `main`, plus `workflow_dispatch`:** Deployment ist
+  ein **Ergebnis**, kein Zwischenschritt — es soll **nicht** bei jedem Feature-Branch-Push
+  passieren (dann würde ständig unfertiger, halb getesteter Code live gehen), und **nicht** schon
+  bei einem offenen Pull Request (der ist ja noch gar nicht gemergt — würde man dort deployen,
+  könnte jeder offene, noch nicht akzeptierte PR die Live-Seite überschreiben). Nur ein
+  tatsächlicher Merge/Push auf `main` — der Branch, der laut Konvention immer der "fertige,
+  freigegebene" Stand ist — soll live gehen. `workflow_dispatch` obendrauf ist rein praktisch: ein
+  manueller Nachtrigger für Fälle, in denen man ohne neuen Commit nochmal deployen will (z. B. nach
+  einer reinen Konfigurationsänderung in den Pages-Settings, oder für eine Live-Vorführung).
+
+**Warum wäre die vertauschte Zuordnung falsch?** `deploy.yml` auf `pull_request` zu triggern wäre
+riskant (unautorisierter/unreviewter Code aus einem PR würde live gehen, bevor überhaupt jemand
+zugestimmt hat) und würde zudem für **jeden** offenen PR parallel eine eigene Veröffentlichung
+versuchen — es gibt aber nur **eine** Live-Seite. `ci.yml` **nur** auf `workflow_dispatch` zu
+beschränken würde den ganzen Sinn von CI zunichtemachen: die Prüfung müsste dann jedes Mal von
+Hand angestoßen werden — genau das manuelle "könnte vergessen werden"-Problem, das CI laut Demo 8
+(F2) eigentlich lösen soll.

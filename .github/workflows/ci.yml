@@ -1,0 +1,41 @@
+# ---------------------------------------------------------------------
+# DEVELOPMENT-WORKFLOW (Demo 8, UE2)
+# laeuft bei jedem push (auf jeden branch) und bei jedem pull request
+# gegen main - prueft frueh, BEVOR irgendwas gemerged wird, ob der code
+# sauber ist (lint) und einheitlich formatiert (prettier --check).
+# deployed NICHTS - das macht der separate workflow aus demo 9.
+# ---------------------------------------------------------------------
+name: CI
+
+on:
+  push:
+  pull_request:
+    branches: [main]
+
+# nur lesend: dieser workflow schreibt nirgends ins repo, braucht also
+# keine schreibrechte auf github-inhalte. bewusst so eng wie moeglich -
+# der deploy-workflow (demo 9/10) braucht mehr und bekommt das dort explizit.
+permissions:
+  contents: read
+
+jobs:
+  lint-and-format:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Repo auschecken
+        uses: actions/checkout@v4
+
+      - name: Node.js einrichten
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - name: Abhaengigkeiten installieren
+        run: npm ci
+
+      - name: Linter laufen lassen
+        run: npm run lint
+
+      - name: Formatierung pruefen (nur pruefen, aendert nichts)
+        run: npm run format:check

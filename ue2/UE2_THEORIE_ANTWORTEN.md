@@ -520,3 +520,99 @@ z. B. die `noUncheckedIndexedAccess`-Funde in Demo 5/6 gab es in Demo 7 keinen F
 tatsächlich fehlerhaftes Laufzeitverhalten aufgedeckt wurde. Der `window`-Fund ist trotzdem mehr
 als reines Rauschen: er macht eine vorher unsichtbare Kopplung zwischen zwei Dateien
 (`index.html` und `main.ts`) zum ersten Mal explizit und maschinenprüfbar.
+
+---
+
+## Demo 8 — GitHub Actions: Development-Workflow
+
+`.github/workflows/ci.yml` neu angelegt (Trigger, Checkout, Node-Setup mit Caching, `lint` +
+`format:check`), `package.json` um das Script `format:check` ergänzt. Details, die komplette
+Datei tabellarisch erklärt und der Fail→Fix-Ablauf in `UE2_CHANGES.md`.
+
+### F1: Was ist der Unterschied zwischen einem Workflow, einem Job und einem Step in GitHub Actions? Zeig auf je eins in deiner Workflow-Datei.
+
+**Einfach gesagt:** Workflow = das ganze Rezeptbuch-Kapitel ("wann backe ich überhaupt"), Job =
+ein einzelnes Rezept darin (bekommt eine eigene, saubere Küche), Step = eine einzelne Anweisung im
+Rezept ("Ofen vorheizen"). Die Steps eines Jobs laufen der Reihe nach in derselben Küche.
+
+| Ebene | Definition | Stelle in `.github/workflows/ci.yml` |
+|---|---|---|
+| **Workflow** | Die komplette YAML-Datei — legt fest, *wann* überhaupt etwas laufen soll (`on:`) und was danach passiert | die ganze Datei, benannt über `name: CI` |
+| **Job** | Eine Gruppe von Steps, die zusammen eine **eigene, frische virtuelle Maschine** bekommt (`runs-on:`). Mehrere Jobs im selben Workflow laufen standardmäßig **parallel**, jeder auf seiner eigenen Maschine | `lint-and-format:` — bei uns nur ein einziger Job |
+| **Step** | Ein einzelner Befehl **innerhalb** eines Jobs. Steps laufen **nacheinander**, auf derselben Maschine, und teilen sich deren Dateisystem-Zustand (was Step 1 auf die Platte schreibt, sieht Step 2 noch) | z. B. `- name: Node.js einrichten` / `uses: actions/setup-node@v4` — einer von fünf Steps im Job |
+
+Konkret bei uns: **ein** Workflow, **ein** Job, **fünf** Steps (Auschecken → Node einrichten →
+Installieren → Linter laufen lassen → Formatierung prüfen). Der Job-Level ist der Grund, warum
+z. B. `npm ci` (Step 3) die Pakete installiert, die `npm run lint` (Step 4) direkt danach benutzen
+kann — beide Steps laufen im selben Job, auf derselben Maschine, mit demselben `node_modules/`.
+Ein **zweiter** Job (hätten wir z. B. Linting und Formatierung in getrennte Jobs aufgeteilt) hätte
+dagegen bei null angefangen und `npm ci` erneut gebraucht — Jobs teilen sich nichts automatisch.
+
+### F2: Warum sollte lint/format überhaupt in CI laufen, wenn es ohnehin (oder zumindest potenziell) auf der eigenen Maschine jedes Entwicklers vor dem Push läuft?
+
+**Einfach gesagt:** "könnte lokal laufen" ist nicht dasselbe wie "läuft garantiert lokal". CI ist
+die eine Stelle, die **niemand** versehentlich überspringen kann — weil sie nicht auf irgendjemandes
+Rechner läuft, sondern zentral bei GitHub, bei jedem einzelnen Push, auf einer immer gleichen,
+sauberen Maschine.
+
+Konkrete Gründe, warum "läuft ja eh lokal" allein nicht reicht:
+
+- **Menschen vergessen Dinge.** Zeitdruck, ein schneller Hotfix, ein `git push` mitten in einer
+  anderen Sache — `npm run lint` lokal auszuführen ist ein **freiwilliger** Schritt, den man
+  überspringen kann, ohne dass irgendetwas es verhindert. Ein CI-Schritt lässt sich dagegen nicht
+  "vergessen" — er läuft, ob man daran gedacht hat oder nicht.
+- **"Lokal" ist nicht garantiert dieselbe Umgebung.** Ohne CI verlässt man sich darauf, dass jede
+  Person, die pusht, dieselbe Node-Version, dieselben installierten Paketversionen und eine
+  funktionierende lokale Tool-Konfiguration hat. CI installiert bei **jedem** Lauf über `npm ci`
+  exakt das aus der committeten Lockfile (Demo 1) — ein objektiver, für alle identischer Maßstab,
+  unabhängig davon, was gerade zufällig auf wessen Rechner installiert ist.
+- **Ein Pull Request von jemand anderem hat vielleicht gar keine lokale Umgebung, die du prüfen
+  kannst.** Sobald mehr als eine Person am Repo arbeitet (oder ein externer Beitrag per PR kommt),
+  kannst du nicht kontrollieren, ob die andere Person `lint`/`format` vor dem Push überhaupt
+  ausgeführt hat. Der `pull_request`-Trigger sorgt dafür, dass **jeder** Beitrag denselben
+  automatischen Check durchläuft, bevor er gemergt werden darf — unabhängig vom Workflow der
+  einreichenden Person.
+- **Ein objektives, dauerhaftes, für alle sichtbares Protokoll.** Der Actions-Tab zeigt für **jeden**
+  Commit einen grünen Haken oder ein rotes Kreuz — eine nachvollziehbare, permanente Historie, die
+  ein rein lokaler Lauf nie hinterlässt (der ist nach dem Terminal-Fenster schließen weg).
+
+**Fazit:** lokal laufen lassen ist die **schnelle Rückmeldung** beim Programmieren selbst (Editor,
+manueller `npm run lint`), CI ist das **erzwungene, nicht überspringbare, für alle gleiche** Gate,
+das am Ende wirklich garantiert, dass nichts Kaputtes durchrutscht — die beiden ersetzen sich nicht
+gegenseitig, sie ergänzen sich.
+
+### F3: Was macht Dependency-Caching in deinem Workflow, und was würde (sowohl bei der Korrektheit als auch bei der Geschwindigkeit) passieren, wenn du es entfernen würdest?
+
+**Einfach gesagt:** jeder CI-Lauf startet auf einer komplett leeren, frisch hochgefahrenen Maschine
+— nichts vom letzten Mal ist mehr da. Caching hebt genau den einen Ordner auf, in dem npm
+heruntergeladene Pakete zwischenspeichert, damit der nächste Lauf sie nicht erneut aus dem Internet
+laden muss.
+
+**Was `cache: "npm"` (Teil von `actions/setup-node@v4`) konkret tut:** `npm ci` lädt jedes Paket
+aus `package-lock.json` aus dem npm-Registry herunter und legt es zusätzlich in einem lokalen
+Download-Cache-Ordner (`~/.npm`) ab, bevor es nach `node_modules/` entpackt/verlinkt wird. Auf einer
+Wegwerf-CI-Maschine wäre dieser `~/.npm`-Ordner nach jedem Lauf sofort wieder weg. `cache: "npm"`
+lässt GitHub genau diesen einen Ordner nach dem Lauf als "Actions-Cache" sichern und beim
+**nächsten** Lauf automatisch wieder einspielen — **solange sich der Cache-Schlüssel nicht
+geändert hat**. Der Cache-Schlüssel wird automatisch aus einem Hash von `package-lock.json`
+berechnet: ändert sich auch nur eine Version in der Lockfile, bekommt der nächste Lauf automatisch
+einen **neuen** Cache-Eintrag (leer, muss einmal neu laden) statt versehentlich einen veralteten zu
+benutzen.
+
+**Ohne Caching:**
+- **Korrektheit:** **unverändert**. `npm ci` installiert so oder so **exakt** das, was in
+  `package-lock.json` steht — ob die Pakete aus einem Cache oder frisch aus dem Registry kommen,
+  ändert am Ergebnis (welche Versionen landen in `node_modules/`) nichts. Caching ist reine
+  Performance-Optimierung, keine Korrektheits-Frage.
+- **Geschwindigkeit:** **spürbar langsamer**, weil **jeder einzelne** Push wieder **jedes** Paket
+  komplett neu aus dem npm-Registry über das Internet herunterladen müsste, statt die meisten davon
+  aus einem lokal (auf dem Runner) bereits vorhandenen Cache zu nehmen. Bei unserem kleinen
+  Abhängigkeitsbaum (aktuell ~7 Pakete, siehe `package.json`) ist der Unterschied gering, aber bei
+  einem realen Projekt mit hunderten transitiven Abhängigkeiten (Demo 1, F4) macht das ohne Cache
+  oft den Unterschied zwischen einem 10-Sekunden- und einem Minuten-langen Install-Schritt — bei
+  jedem einzelnen Workflow-Lauf, jeden Tag.
+
+**Fazit:** Caching ist hier ausschließlich ein **Geschwindigkeits**-Hebel, kein
+**Korrektheits**-Mechanismus — genau deshalb ist es unbedenklich, es einfach als optionales
+`cache: "npm"` dazuzuschreiben, ohne Angst, dass es je ein falsches, veraltetes Ergebnis
+verschleiert.

@@ -972,3 +972,163 @@ Stand vor der Migration — reine Typ-Ergänzung, keine Logikänderung. `npm run
 (`tsc --noEmit && vite build`) läuft grün, 18 Module transformiert, Bundle ~21 KB (minimal kleiner
 als vorher, weil im Zuge der Konvertierung auch ein paar tote Debug-Codezeilen aus früheren Demos
 mit aufgeräumt wurden — siehe Kommentare in `main.ts`).
+
+---
+
+## Demo 8 — GitHub Actions: Development-Workflow
+
+### 🔰 Einfach erklärt — worum geht's hier überhaupt?
+
+Bisher musste **ich mich selbst erinnern**, `npm run lint`/`npm run build` einzutippen, bevor ich
+etwas pushe. Ab jetzt übernimmt das ein Roboter: GitHub startet bei jedem `git push` automatisch
+einen **leeren Computer** im Hintergrund, lädt den aktuellen Code drauf und führt dort Befehle aus.
+Das ganze Prinzip heißt **CI (Continuous Integration)** — GitHubs Umsetzung davon heißt
+**GitHub Actions**, konfiguriert über eine YAML-Datei im Repo.
+
+**Die drei Begriffe, von außen nach innen:**
+
+| Begriff | Was es ist | Bei uns konkret |
+|---|---|---|
+| **Workflow** | Die ganze Datei — legt fest, *wann* überhaupt etwas laufen soll | `.github/workflows/ci.yml`, `name: CI` |
+| **Job** | Bekommt einen **eigenen, komplett leeren** Computer (virtuelle Maschine) | `lint-and-format:` — bei uns nur ein Job |
+| **Step** | Ein einzelner Befehl **innerhalb** eines Jobs, läuft der Reihe nach auf derselben Maschine | 5 Stück: Auschecken, Node einrichten, Installieren, Linten, Format prüfen |
+
+*Analogie:* der Workflow ist das ganze Rezeptbuch-Kapitel ("wann backe ich überhaupt"), ein Job ist
+ein einzelnes Rezept darin (bekommt seine eigene, saubere Küche), ein Step ist eine einzelne
+Anweisung im Rezept ("Ofen vorheizen", "Teig kneten") — die laufen der Reihe nach in derselben
+Küche und sehen, was die vorige Anweisung dort hinterlassen hat.
+
+**Warum überhaupt ein Roboter, wenn ich `lint`/`build` doch auch selbst laufen lassen kann?** Weil
+"könnte ich" nicht "tue ich immer" heißt — vergessen, Zeitdruck, oder schlicht ein Tippfehler im
+Terminal. CI ist die eine Stelle, die **niemand überspringen kann**, weil sie nicht auf deinem
+Rechner, sondern bei GitHub selbst läuft, bei jedem Push, auf einer immer gleichen, sauberen
+Maschine. Mehr dazu bei Frage 2 unten.
+
+### Die Workflow-Datei
+
+```yaml
+name: CI
+
+on:
+  push:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lint-and-format:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Repo auschecken
+        uses: actions/checkout@v4
+
+      - name: Node.js einrichten
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - name: Abhaengigkeiten installieren
+        run: npm ci
+
+      - name: Linter laufen lassen
+        run: npm run lint
+
+      - name: Formatierung pruefen (nur pruefen, aendert nichts)
+        run: npm run format:check
+```
+
+**Was jede Zeile bedeutet:**
+
+| Codezeile | Erklärung |
+|---|---|
+| `on: push:` | Läuft bei **jedem** Push, auf **jeden** Branch — Probleme fallen sofort auf, egal wo gerade gearbeitet wird |
+| `on: pull_request: branches: [main]` | Läuft zusätzlich bei jedem Pull Request **gegen** `main` — prüft Beiträge, **bevor** sie gemergt werden dürfen |
+| `permissions: contents: read` | Der Roboter darf das Repo nur **lesen**. Dieser Workflow deployt nichts, braucht also keine Schreibrechte (bewusst so eng wie möglich — der Deploy-Workflow aus Demo 9/10 bekommt seine zusätzlichen Rechte dort **explizit**, nicht "auf Vorrat" schon hier) |
+| `runs-on: ubuntu-latest` | Der leere Linux-Computer, den GitHub für **diesen** Job hochfährt |
+| `uses: actions/checkout@v4` | Fertiges, von GitHub gepflegtes Mini-Programm ("Action"): holt das Repo per `git clone` auf den leeren Computer — der hat von sich aus **keinen** Code |
+| `uses: actions/setup-node@v4`, `node-version: "24"` | Installiert Node.js — exakt dieselbe Major-Version wie lokal (`node --version` → `v24.14.1`), damit CI dieselben Ergebnisse liefert wie die eigene Maschine |
+| `cache: "npm"` | Speichert heruntergeladene npm-Pakete zwischen zwei Läufen, siehe Tabelle unten |
+| `run: npm ci` | Installiert **exakt** das aus `package-lock.json`, kein Neu-Auflösen von `^`-Versionsbereichen — strenger als `npm install`, siehe Frage 2 unten |
+| `run: npm run lint` | Unser ESLint-Script aus Demo 4 |
+| `run: npm run format:check` | Neues Script (siehe unten) — prüft Formatierung, **ohne** etwas zu verändern |
+
+**Was macht `cache: "npm"` genau?**
+
+| Ohne Cache | Mit Cache |
+|---|---|
+| Jeder Lauf startet auf einer **komplett leeren** Maschine — jedes einzelne Paket wird bei **jedem** Push neu aus dem npm-Registry heruntergeladen | GitHub hebt den Download-Ordner (`~/.npm`) nach dem Lauf auf und legt ihn beim nächsten Lauf automatisch wieder rein |
+| Langsamer, unnötige Netzwerklast bei jedem einzelnen Push | Schneller — der Cache "verfällt" automatisch, sobald sich `package-lock.json` ändert (GitHub berechnet dafür selbst einen Hash der Datei als Cache-Schlüssel) |
+| **Korrektheit identisch in beiden Fällen** | `npm ci` hält sich so oder so exakt an die Lockfile — Cache betrifft ausschließlich Geschwindigkeit, nie das Ergebnis |
+
+### Task 1 — Workflow geschrieben (Trigger, Checkout, Node-Setup mit Caching, Lint + Format-Check)
+
+`.github/workflows/ci.yml` neu angelegt (Inhalt oben). Dazu in `package.json` ein neues Script
+ergänzt:
+
+| Datei | Änderung | Warum |
+|---|---|---|
+| `package.json` | `"format:check": "prettier --check ."` neu | `format` (mit `--write`) **verändert** Dateien — das darf ein CI-Roboter nie von selbst tun, sonst wäre die Änderung nach dem Lauf sofort wieder weg, ohne dass sie je committet wurde. `--check` meldet nur (Exit-Code ≠ 0 bei Abweichung), exakt dieselbe "melden statt heimlich reparieren"-Logik wie `lint` ohne `:fix` aus Demo 4 |
+
+**Ein wichtiger Fund dabei:** `npm run lint` meldet aktuell **0 Probleme** — nicht weil der Code
+perfekt ist, sondern weil ESLint (Demo 4) nur `**/*.js`-Dateien prüft (`app.js` ist zusätzlich
+explizit ignoriert), und seit Demo 7 ist `js/` komplett `.ts`. ESLint prüft also gerade effektiv
+**gar nichts** mehr — kein Parse-Fehler, keine Meldung, einfach stille Zustimmung zu nichts. Volle
+`.ts`-Unterstützung bräuchte `@typescript-eslint` (eigener Parser + Regelwerk) — bewusst **nicht**
+Teil dieser Übung (zusätzliche Abhängigkeit, die die Aufgabenstellung nicht verlangt). Für die
+"CI schlägt fehl"-Demo (Task 2) wird deshalb **`format:check`** statt `lint` verwendet — Prettier
+deckt `.ts`-Dateien bereits vollständig ab, und die Aufgabenstellung erlaubt ausdrücklich "fails
+lint **or** format".
+
+### Task 2 — ein Commit, der bewusst fehlschlägt
+
+Geplanter, minimaler Formatierungs-Verstoß: in `js/state.ts` bei `STORAGE_KEYS` testweise
+doppelte durch einfache Anführungszeichen ersetzt (`"remotion_bookmarks"` → `'remotion_bookmarks'`)
+— verstößt gegen `.prettierrc.json`s `"singleQuote": false` (Demo 4), ändert aber **nichts** an der
+Logik (gültiges TypeScript, `tsc`/ESLint sagen dazu nichts). Committet und gepusht — Ergebnis: der
+Workflow schlägt beim Step **„Formatierung pruefen"** fehl, die anderen vier Steps (Checkout, Node
+einrichten, Installieren, Linter) bleiben grün. *(wird als Nächstes live ausgeführt, Lauf-Link
+folgt)*
+
+### Task 3 — Fix, erneuter Push, Workflow wieder grün
+
+Anführungszeichen zurück auf doppelt (bzw. `npm run format` lokal laufen lassen), committet,
+gepusht. Ergebnis: derselbe Workflow läuft beim nächsten Push wieder komplett grün durch — alle
+5 Steps bestanden. *(wird als Nächstes live ausgeführt, Lauf-Link folgt)*
+
+### Verifikation
+*(wird nach dem echten Push/Fail/Fix-Zyklus ergänzt: Links zu den drei Actions-Läufen — grün,
+rot, wieder grün)*
+
+### 🎤 Live-Demo — was du im Unterricht herzeigst
+
+**1. Die Datei zeigen**
+`.github/workflows/ci.yml` im Editor aufmachen. Einmal laut durchgehen: "ein Workflow, ein Job
+(`lint-and-format`), fünf Steps." Auf `on:` zeigen: "läuft bei jedem Push und bei jedem PR gegen
+main."
+
+**2. Actions-Tab im Browser zeigen**
+GitHub-Repo → Tab **Actions**. Zeig den grünen Haken beim letzten Lauf, klick rein, zeig die
+5 Steps einzeln aufklappbar mit ihren Logs.
+
+**3. Live einen Fehler auslösen**
+Im Editor: eine Anführungszeichen-Stelle irgendwo kurz auf einfache Quotes ändern, speichern.
+```bash
+git add -A
+git commit -m "demo: format-Verstoss fuer CI-Vorfuehrung"
+git push
+```
+Zurück zu GitHub Actions: neuer Lauf startet automatisch, Step "Formatierung pruefen" wird rot.
+Reinklicken, die Fehlermeldung von Prettier zeigen.
+
+**4. Live wieder reparieren**
+```bash
+npm run format
+git add -A
+git commit -m "fix: Formatierung repariert"
+git push
+```
+Neuer Lauf, wieder komplett grün. Sag den einen Satz: "das ist der Beweis — kein Mensch musste
+hier manuell draufschauen, der Roboter hat's von selbst gefangen und bestätigt."

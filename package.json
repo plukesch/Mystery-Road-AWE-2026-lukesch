@@ -1,0 +1,26 @@
+{
+  "name": "mystery-road-awe-2026",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Investigate the failure of an AI-assisted rehabilitation robot. Browser-based case-file investigation portal, built and tooled up across the CSDC Advanced Web Engineering exercises (Exercise 1: ES modules & refactoring; Exercise 2: build tooling, TypeScript, CI/CD).",
+  "type": "module",
+  "scripts": {},
+  "keywords": [
+    "case-study",
+    "vanilla-js",
+    "web-engineering-course"
+  ],
+  "author": "Patrick Lukesch",
+  "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/plukesch/Mystery-Road-AWE-2026-lukesch.git"
+  },
+  "bugs": {
+    "url": "https://github.com/plukesch/Mystery-Road-AWE-2026-lukesch/issues"
+  },
+  "homepage": "https://github.com/plukesch/Mystery-Road-AWE-2026-lukesch#readme",
+  "dependencies": {
+    "dayjs": "^1.11.23"
+  }
+}

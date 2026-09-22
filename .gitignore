@@ -10,3 +10,11 @@ desktop.ini
 # Python (falls lokal was ausgefuehrt wird)
 __pycache__/
 *.pyc
+
+# Node / npm (UE2)
+node_modules/
+# vite-buildoutput, kommt in demo 3 - schon vorausschauend drin
+dist/
+# lokale env-dateien (secrets), falls wir welche brauchen
+.env
+.env.local

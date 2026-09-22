@@ -616,3 +616,110 @@ benutzen.
 **Korrektheits**-Mechanismus — genau deshalb ist es unbedenklich, es einfach als optionales
 `cache: "npm"` dazuzuschreiben, ohne Angst, dass es je ein falsches, veraltetes Ergebnis
 verschleiert.
+
+---
+
+## Demo 9 — GitHub Actions: Deployment-Workflow
+
+`.github/workflows/deploy.yml` neu angelegt (zwei Jobs: `build` → `deploy`, Deploy über
+`actions/upload-pages-artifact` + `actions/deploy-pages`), `vite.config.js` um `base:
+"/Mystery-Road-AWE-2026-lukesch/"` ergänzt (sonst 404 für alle Assets unter dem GitHub-Pages-
+Unterpfad), Pages-Quelle in den Repo-Settings auf "GitHub Actions" umgestellt. Details,
+komplette Datei tabellarisch erklärt, in `UE2_CHANGES.md`.
+
+### F1: Warum führt der Deploy-Workflow lint und build selbst nochmal aus, statt "hat ja schon auf meinem Rechner geklappt" zu vertrauen oder direkt das Ergebnis von Demo 8s Workflow wiederzuverwenden?
+
+**Einfach gesagt:** "hat bei mir funktioniert" ist keine Garantie, die ein automatischer
+Veröffentlichungs-Schritt akzeptieren darf — und Demo 8s Workflow-Lauf war eine **andere**
+Maschine zu einem **anderen** Zeitpunkt mit potenziell schon wieder anderem Code-Stand. Der
+Deploy-Workflow baut sich deshalb sein **eigenes, frisches, garantiert aktuelles** Ergebnis, statt
+irgendjemandem zu vertrauen.
+
+**Warum nicht "hat ja schon auf meinem Rechner geklappt" reicht:** genau das ist der Grund, warum
+CI überhaupt existiert (siehe Demo 8, F2) — ein manueller, lokaler Lauf ist nicht reproduzierbar
+garantiert, könnte übersprungen worden sein, oder auf einem Rechner mit leicht anderen installierten
+Versionen gelaufen sein. Ein Deploy-Schritt, der das nicht selbst nochmal prüft, würde diese ganze
+Garantie wegwerfen, genau an der Stelle, wo sie am meisten zählt (etwas geht **live**, öffentlich
+sichtbar).
+
+**Warum nicht einfach Demo 8s Workflow-**Ergebnis** wiederverwenden:** zwei konkrete Gründe:
+- **Zeitliche Lücke.** Demo 8s `ci.yml` läuft bei jedem Push/PR — sein letzter erfolgreicher Lauf
+  könnte von einem **älteren** Commit stammen als dem, der gerade auf `main` gelandet ist (z. B.
+  wenn zwischen PR-Freigabe und tatsächlichem Merge noch etwas dazwischenkommt). "Neuester grüner
+  Lauf" ist nicht dasselbe Versprechen wie "genau der Code, der jetzt deployt wird, wurde gerade
+  geprüft".
+- **`ci.yml` erzeugt gar kein wiederverwendbares Ergebnis.** Es prüft nur (`lint`, `format:check`)
+  und erzeugt **keinen** `dist/`-Build — es gibt technisch nichts, was `deploy.yml` von dort
+  "übernehmen" könnte. Selbst wenn man das ändern wollte (z. B. Build-Artefakte zwischen Workflows
+  teilen), bräuchte man einen expliziten, riskanteren Mechanismus (Artefakte hochladen/herunterladen
+  über Workflow-Grenzen hinweg) statt der einfachen, robusten Lösung: **beides einfach nochmal
+  selbst tun**, in derselben, garantiert aktuellen Umgebung.
+
+**Fazit:** Redundanz ist hier **bewusst** — der Deploy-Workflow verlässt sich auf **nichts**, was
+vorher irgendwo anders gelaufen ist, sondern stellt sein eigenes, minimal notwendiges "ist der
+aktuelle Code wirklich in Ordnung?"-Ergebnis her, direkt bevor er live geht.
+
+### F2: Was ist der tatsächliche Mechanismus, über den dein Deploy-Workflow auf GitHub Pages veröffentlicht (z. B. eine dedizierte Deploy-Action, die ein Artefakt veröffentlicht, ein Push auf einen `gh-pages`-Branch, oder etwas anderes)? Konkret erklären, was das tut.
+
+**Einfach gesagt:** kein `git push` auf einen extra Branch (das wäre der ältere, verbreitete Weg) —
+stattdessen ein **Artefakt-Upload**: `build` verpackt `dist/` in ein spezielles Paket und lädt es zu
+GitHub hoch, `deploy` nimmt genau dieses Paket und schaltet es live. Zwei getrennte Schritte, kein
+Umweg über Git selbst.
+
+**Konkret, Schritt für Schritt:**
+1. **`actions/configure-pages@v5`** (im `build`-Job) fragt bei GitHub die aktuelle Pages-
+   Konfiguration des Repos ab (u. a. die Basis-URL) — reine Vorbereitung, verändert noch nichts.
+2. **`actions/upload-pages-artifact@v3`** (im `build`-Job, `path: dist`) packt den Inhalt von
+   `dist/` in ein **GitHub-Actions-Artefakt** — ein von GitHub selbst verwaltetes, temporäres
+   Speicherobjekt, technisch ähnlich den "Build-Artefakten", die man sich sonst auch manuell von
+   einem Workflow-Lauf herunterladen kann. An dieser Stelle ist **noch nichts live** — das Artefakt
+   liegt nur bereit.
+3. **`needs: build`** lässt den `deploy`-Job erst starten, wenn dieses Artefakt fertig hochgeladen
+   und `build` insgesamt erfolgreich war.
+4. **`actions/deploy-pages@v4`** (im `deploy`-Job) ist die eigentliche Veröffentlichung: die Action
+   holt sich das zuvor hochgeladene Artefakt und übergibt es an GitHubs **Pages-API**, die es live
+   unter der Pages-URL schaltet. Die Authentifizierung dabei läuft über **OIDC**
+   (`permissions: id-token: write`) — der Workflow-Lauf bekommt von GitHub selbst einen kurzlebigen,
+   automatisch ausgestellten Token, mit dem er sich gegenüber der Pages-API als "ich bin genau
+   dieser eine, gerade laufende Workflow-Lauf dieses Repos" ausweist. Kein von Hand angelegtes,
+   dauerhaftes Secret nötig (Unterschied dazu: Demo 10, F2).
+
+**Warum nicht der ältere `gh-pages`-Branch-Weg** (ein Tool committet den Build-Output als Dateien
+auf einen separaten Git-Branch namens `gh-pages`, GitHub Pages liefert dann diesen Branch aus)?
+Beide Wege funktionieren, aber der Artefakt-Weg (den wir benutzen) ist der von GitHub selbst aktuell
+empfohlene, offizielle Standard-Mechanismus (`actions/deploy-pages`, seit 2022 verfügbar): kein
+zusätzlicher, künstlicher Git-Branch voller generierter Build-Dateien, der die eigentliche
+Commit-Historie unübersichtlich macht, keine Notwendigkeit, dass der Workflow selbst Schreibrechte
+auf den Git-**Inhalt** des Repos braucht (nur auf die Pages-**Veröffentlichung** über die API,
+`pages: write` statt `contents: write`) — strikter abgegrenzte, genauer zugeschnittene Rechte.
+
+### F3: Was müsstest du ändern, wenn du stattdessen auf einen anderen statischen Host deployen würdest (z. B. Netlify, Vercel, ein einfacher Server per SFTP)? Was würde gleich bleiben?
+
+**Einfach gesagt:** der **Bau-Teil** (Checkout, Node einrichten, `npm ci`, `npm run lint`,
+`npm run build`) bleibt zu 100 % gleich, egal wohin am Ende deployt wird — der bekommt von der
+Zielplattform gar nichts mit, er erzeugt einfach `dist/`. Ändern müsste sich ausschließlich der
+**letzte Teil**: wie genau `dist/` an sein Ziel kommt.
+
+| Bleibt gleich | Ändert sich |
+|---|---|
+| `actions/checkout@v4`, `actions/setup-node@v4`, `npm ci`, `npm run lint`, `npm run build` — der komplette `build`-Job bis zum fertigen `dist/`-Ordner | der `deploy`-Job komplett: andere Action(s), andere Authentifizierung, andere `permissions:` |
+| `vite.config.js`s `base`-Grundidee (Vite muss wissen, unter welchem Unterpfad die App live läuft) | der konkrete Wert von `base` — Netlify/Vercel liefern typischerweise unter der **Wurzel** (`/`) einer eigenen Domain aus, `base: "/"` (der Vite-Standard) würde dort reichen, kein `/<repo-name>/`-Unterpfad nötig |
+| die Grund-Idee "bauen, dann veröffentlichen" (zwei Phasen) | der genaue Mechanismus der Veröffentlichung selbst |
+
+**Konkret bei den drei genannten Alternativen:**
+- **Netlify/Vercel:** beide bieten eigene, offizielle GitHub-Actions (`netlify/actions-cli` bzw.
+  `amondnet/vercel-action`, oder alternativ deren eigene Git-Integration ganz ohne GitHub Actions).
+  Statt `pages: write`/`id-token: write` + `actions/deploy-pages` bräuchte man ein **API-Token**
+  dieser Plattform, gespeichert als GitHub-**Secret** (`Settings → Secrets and variables →
+  Actions`) und im Workflow über `secrets.NETLIFY_AUTH_TOKEN`/`secrets.VERCEL_TOKEN` referenziert —
+  ein grundlegend anderes Rechte-Modell als das OIDC-basierte GitHub-Pages-Setup (siehe Demo 10 F2
+  für den direkten Vergleich Secret vs. OIDC).
+- **Ein einfacher Server per SFTP:** kein "Deploy-Provider" mit eigener Action, eher ein generischer
+  SFTP-Upload-Schritt (z. B. `uses: SamKirkland/FTP-Deploy-Action`), der `dist/` einfach auf den
+  Server hochlädt. Bräuchte Server-**Zugangsdaten** (Host, Benutzername, Passwort oder SSH-Key) —
+  ebenfalls als GitHub-Secrets hinterlegt, **nicht** im Workflow-Code selbst (siehe Demo 10 F2, wo
+  genau diese Unterscheidung zwischen Secrets und den `permissions:`-Rechten Thema ist).
+
+**Fazit:** der Ortswechsel des Hostings ist überraschend klein im Code — man tauscht im Wesentlichen
+nur die letzten paar Zeilen (den `deploy`-Job) aus, weil "wie baue ich die App" und "wohin
+veröffentliche ich sie" von Anfang an bewusst zwei getrennte Jobs waren.

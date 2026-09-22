@@ -1132,3 +1132,180 @@ git push
 ```
 Neuer Lauf, wieder komplett grün. Sag den einen Satz: "das ist der Beweis — kein Mensch musste
 hier manuell draufschauen, der Roboter hat's von selbst gefangen und bestätigt."
+
+---
+
+## Demo 9 — GitHub Actions: Deployment-Workflow
+
+### 🔰 Einfach erklärt — worum geht's hier überhaupt?
+
+Demo 8 hat nur **geprüft** (Linter, Formatierung) — nichts davon hat irgendwo etwas
+veröffentlicht. Demo 9 baut einen **zweiten, komplett separaten** Workflow, der die App wirklich
+baut und **live ins Internet stellt**: **GitHub Pages**, GitHubs eigenes kostenloses Hosting für
+statische Seiten. "Statisch" heißt: nur HTML/CSS/JS-Dateien, kein Server-Code, der irgendwas
+berechnet — genau das, was `dist/` aus Demo 3 bereits ist.
+
+**Unterschied zu Demo 8, auf einen Blick:**
+
+| | Demo 8 (`ci.yml`) | Demo 9 (`deploy.yml`) |
+|---|---|---|
+| Trigger | jeder Push, jeder PR gegen `main` | **nur** Push auf `main` + manueller Knopf |
+| Tut was | prüft nur (Lint, Format) | baut (`vite build`) **und veröffentlicht live** |
+| Braucht Rechte | nur lesen | lesen **+ veröffentlichen** |
+| Anzahl Jobs | 1 | 2 (`build` → `deploy`, mit `needs:`-Abhängigkeit) |
+
+**Warum ein zweiter Job, nicht einfach mehr Steps im selben Job?** Weil "bauen" und
+"veröffentlichen" zwei fachlich verschiedene Dinge sind, die GitHub bewusst als zwei getrennte
+Phasen behandelt: `build` erzeugt ein **Artefakt** (eine gepackte Version von `dist/`, ähnlich
+einer ZIP-Datei, die GitHub selbst zwischenspeichert), `deploy` nimmt genau dieses Artefakt und
+macht es live. `needs: build` sagt: "starte `deploy` erst, wenn `build` fertig **und erfolgreich**
+war" — schlägt der Build fehl (z. B. ein Lint- oder TypeScript-Fehler), läuft `deploy` gar nicht
+erst los, die zuletzt live stehende Version bleibt unangetastet (siehe Demo 10, F1).
+
+### Zwei nötige Code-Änderungen
+
+**`vite.config.js`** — `base: "/Mystery-Road-AWE-2026-lukesch/"` ergänzt:
+
+| Ohne `base` | Mit `base` |
+|---|---|
+| Vite schreibt alle Asset-Pfade im Build relativ zu `/` (z. B. `/assets/index-XXXX.js`) | Vite schreibt sie relativ zum Unterpfad (`/Mystery-Road-AWE-2026-lukesch/assets/index-XXXX.js`) |
+| GitHub Pages liefert ein **Projekt**-Repo (kein User/Org-Pages-Repo) aber nicht unter `/`, sondern unter `/<repo-name>/` aus | Passt exakt zur echten URL: `https://plukesch.github.io/Mystery-Road-AWE-2026-lukesch/` |
+| Ergebnis: **404 für jede** JS-/CSS-/Bild-Datei, sobald die Seite live unter dem Unterpfad läuft — nur ein leeres `<body>` wäre sichtbar | App lädt korrekt |
+
+Betrifft **nicht nur** den Produktions-Build: Vite hängt `base` auch beim Dev-Server/Preview an die
+lokale URL an (`localhost:5173/Mystery-Road-AWE-2026-lukesch/` statt `localhost:5173/`) — ein
+Aufruf von `localhost:5173/` allein leitet automatisch dorthin um, lokal ändert sich für den
+Arbeitsablauf sonst nichts.
+
+**`.github/workflows/deploy.yml`** (neu) — der komplette Deploy-Workflow:
+
+```yaml
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Repo auschecken
+        uses: actions/checkout@v4
+      - name: Node.js einrichten
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+      - name: Abhaengigkeiten installieren
+        run: npm ci
+      - name: Linter laufen lassen
+        run: npm run lint
+      - name: Produktions-build
+        run: npm run build
+      - name: GitHub Pages vorbereiten
+        uses: actions/configure-pages@v5
+      - name: dist/ als deploybares Artefakt hochladen
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Auf GitHub Pages veroeffentlichen
+        id: deployment
+        uses: actions/deploy-pages@v4
+```
+
+**Zeile für Zeile:**
+
+| Codezeile | Erklärung |
+|---|---|
+| `on: push: branches: [main]` | Deployt **nur**, wenn wirklich auf `main` gepusht wird — nicht bei jedem Feature-Branch, nicht bei jedem PR (die werden nur geprüft, Demo 8) |
+| `workflow_dispatch:` | Fügt einen manuellen **"Run workflow"**-Knopf im Actions-Tab hinzu — löst einen Lauf aus, ohne dass extra ein Dummy-Commit nötig ist (praktisch für die Live-Präsentation) |
+| `permissions: contents: read` | Repo lesen — wie in Demo 8 |
+| `permissions: pages: write` | Erlaubt **tatsächliches Veröffentlichen** über die GitHub-Pages-API — der Dev-Workflow aus Demo 8 hatte das bewusst nicht |
+| `permissions: id-token: write` | Erlaubt dem Workflow, sich per **OIDC** (ein kurzlebiger, automatisch ausgestellter digitaler Ausweis: "ich bin wirklich dieser eine Workflow-Lauf, gerade jetzt") gegenüber GitHub Pages auszuweisen — kein händisch verwaltetes Passwort/Secret nötig, siehe Demo 10 F2 |
+| `concurrency: group: pages` | Falls kurz hintereinander zwei Pushes passieren: der zweite Lauf **wartet**, statt gleichzeitig mit dem ersten um die Veröffentlichung zu konkurrieren |
+| `jobs: build:` | **Job 1** — baut die App, verpackt `dist/` als hochladbares Artefakt |
+| `jobs: deploy: needs: build` | **Job 2** — startet **erst**, wenn `build` fertig **und erfolgreich** war |
+| `uses: actions/configure-pages@v5` | Bereitet die Pages-Konfiguration vor (liest u. a., unter welcher URL das Repo läuft) |
+| `uses: actions/upload-pages-artifact@v3`, `path: dist` | Verpackt `dist/` als spezielles "Pages-Artefakt" — **noch keine** echte Veröffentlichung, nur ein Zwischenschritt, den `deploy` danach abholt |
+| `environment: name: github-pages` | Ordnet den Job einer benannten GitHub-**Environment** zu — dort ließen sich später z. B. Freigabe-Regeln hinterlegen (nicht Teil dieser Übung, aber der vorgesehene Ort dafür) |
+| `uses: actions/deploy-pages@v4` | Der eigentliche letzte Schritt: nimmt das hochgeladene Artefakt und macht es **live** unter der Pages-URL |
+
+### Nötige manuelle Einstellung (kein Code, reine GitHub-Konfiguration)
+
+GitHub Pages muss einmalig auf **Quelle: GitHub Actions** umgestellt werden (Standard ist
+"Deploy from a branch" — den älteren, hier nicht benutzten Weg über einen separaten `gh-pages`
+git-Branch, siehe Demo 9 F2). Repo → **Settings** → **Pages** (unter "Code, planning, and
+automation") → **"Build and deployment" → "Source"** → **"GitHub Actions"** auswählen.
+
+### Task 1 — zweiter Workflow: Checkout, Install, Lint, Build, Deploy auf GitHub Pages
+
+`.github/workflows/deploy.yml` neu angelegt (Inhalt oben), `vite.config.js` um `base` ergänzt,
+GitHub-Pages-Quelle auf "GitHub Actions" umgestellt. Committet und gepusht.
+
+### Task 2 — deployte URL end-to-end bestätigt
+
+`https://plukesch.github.io/Mystery-Road-AWE-2026-lukesch/` im Browser geöffnet: App lädt
+vollständig (nicht nur eine leere Seite), Dashboard-Stats korrekt, alle 5 Views funktionieren,
+`data/*.json` und `assets/*` laden ohne 404 (der `base`-Fix greift). Nicht nur "Workflow zeigt
+grünen Haken", sondern die tatsächlich live erreichbare Seite geprüft — genau der Unterschied, den
+die Aufgabenstellung hier verlangt.
+
+### Task 3 — echte Änderung, Push, geht automatisch live
+
+Eine kleine, sichtbare Änderung gemacht, committet und auf `main` gepusht — **kein** manueller
+Deploy-Schritt (kein Hochladen von Dateien per Hand, kein Knopf außer `git push`). Der
+`deploy.yml`-Workflow läuft automatisch an, baut neu, veröffentlicht die neue Version. Deployte URL
+danach erneut geöffnet: Änderung sichtbar live.
+
+### Verifikation
+Workflow-Lauf im Actions-Tab: `build`-Job grün (Checkout → Node → Install → Lint → Build →
+Pages-Artefakt hochgeladen), danach `deploy`-Job grün (Veröffentlichung). Deployte URL im Browser
+end-to-end geprüft (siehe Task 2). Lokal weiterhin `npm run dev`/`npm run build` unverändert
+funktionsfähig (der `base`-Wert wirkt nur auf die tatsächlichen URLs, nicht auf die
+Funktionsfähigkeit selbst).
+
+### 🎤 Live-Demo — was du im Unterricht herzeigst
+
+**1. Die deployte Seite zeigen**
+`https://plukesch.github.io/Mystery-Road-AWE-2026-lukesch/` im Browser öffnen, kurz durch die
+Views klicken. Sag: "das ist keine lokale Vorschau mehr, das läuft öffentlich im Internet, GitHub
+selbst hostet das."
+
+**2. Die zwei Jobs im Actions-Tab zeigen**
+GitHub → Actions → letzter "Deploy to GitHub Pages"-Lauf. Zeig die zwei Kästchen `build` und
+`deploy` mit dem Pfeil dazwischen. Sag: "`deploy` startet erst, wenn `build` durch ist — steht hier
+in der Datei als `needs: build`."
+
+**3. Live einen echten Deploy auslösen**
+Im Editor irgendeine sichtbar kleine, harmlose Änderung machen (z. B. ein Wort im Dashboard-Text).
+```bash
+git add -A
+git commit -m "demo: live-deploy vorfuehren"
+git push
+```
+Zurück zu GitHub Actions: neuer Lauf startet automatisch (kein Klick nötig). Warten, bis beide Jobs
+grün sind, dann die deployte URL neu laden — Änderung ist live. Sag: "kein manueller
+Upload-Schritt, nur `git push`."
+
+**4. Alternative, falls gerade nichts zu ändern ist: manueller Trigger**
+Actions-Tab → Workflow "Deploy to GitHub Pages" → Button **"Run workflow"** (dank
+`workflow_dispatch:`) → löst denselben Ablauf ohne neuen Commit aus.

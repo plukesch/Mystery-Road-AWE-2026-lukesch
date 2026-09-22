@@ -107,8 +107,65 @@ verbundene Bausteine aufgeteilt ist. Bei der alten, einen riesigen `app.js`-Date
 nicht erkennen können, "welcher Teil" sich geändert hat — es hätte immer alles neu laden müssen.
 
 Vites komplettes Dev-Serving- und Bundling-Modell **basiert** auf dem nativen ES-Modul-Graphen: `<script type="module" src="…">` plus `import`/`export`-Anweisungen geben Vite einen echten, statisch analysierbaren Abhängigkeitsbaum. Dadurch kann Vite:
-- jede Datei **einzeln, on demand** ausliefern (im Netzwerk-Log genau so beobachtet — 12 einzelne `js/*.js`-Requests statt einer riesigen Datei),
+- jede Datei **einzeln, on demand** ausliefern (im Netzwerk-Log genau so beobachtet — 13 einzelne `js/*.js`-Requests statt einer riesigen Datei),
 - bei einer Änderung **exakt wissen, welches eine Modul betroffen ist** und nur das neu schicken (die Grundlage für HMR überhaupt),
 - beim Produktions-Build (Demo 3) **Tree-Shaking/Code-Splitting** machen, weil die Abhängigkeiten explizite, statische Deklarationen sind statt impliziter globaler Reihenfolge.
 
 Die alte `app.js` (klassisches `<script src="app.js">`, eine 1000+-Zeilen-Datei ohne `import`/`export`) hätte Vite dagegen nur als **eine beliebige statische Datei** gesehen — kein Abhängigkeitsgraph, keine Modul-Grenzen, keine Möglichkeit herauszufinden, "welcher Teil hat sich geändert". Jede Änderung hätte einen kompletten Reload gebraucht, genau wie bei einem reinen Dateiserver — Vites eigentliche Stärken (granulares HMR, Dependency-Pre-Bundling, späteres Tree-Shaking) hätten schlicht nichts, woran sie andocken könnten. Der ES-Modul-Split aus UE1 ist also nicht nur "sauberer Code", sondern die **Voraussetzung**, die diese Übung überhaupt erst sinnvoll macht — genau das sagt auch die Angabe eingangs ("you need the ES-module split from that exercise finished first").
+
+---
+
+## Demo 3 — Produktions-Build & Preview
+
+`npm run build` (→ `vite build`) untersucht, `dist/` inspiziert, mit `npm run preview` End-to-End getestet, Quelle vs. Build für `js/`-Bundle und `index.html` verglichen. Details in `UE2_CHANGES.md`.
+
+### F1: Nenne mindestens drei konkrete Transformationen, die Vite beim Produktions-Build auf deinen Quellcode angewendet hat (Bundling, Minifizierung, gehashte Dateinamen — die nennen, die du wirklich beobachtet hast).
+
+**Einfach gesagt:** aus 13 lesbaren Dateien wurde 1 kleine, unleserliche Datei mit komischem
+Namen. Drei Dinge sind dabei passiert: zusammengeklebt, zusammengequetscht, umbenannt.
+
+Konkret bei uns beobachtet:
+
+1. **Bundling.** Unsere 13 einzelnen `js/*.js`-Dateien (51.197 Bytes zusammen) wurden zu **einer** Datei `dist/assets/index-B1hG0RuO.js` zusammengefasst. Statt 13 Netzwerk-Anfragen im Dev-Modus gibt's im Build nur noch 1.
+2. **Minifizierung.** Diese eine Datei ist nur noch 23.269 Bytes groß (**−54 %**) und steht komplett auf **einer einzigen Zeile** (0 Zeilenumbrüche, gegenüber z. B. 111 lesbaren Zeilen in `js/data.js`). Kommentare weg, Variablennamen wie `state`/`caseRes` zu `e`/`t`/`n` eingedampft.
+3. **Content-Hashing der Dateinamen.** `js/main.js` (fester Name) wird zu `index-B1hG0RuO.js` (Name hängt vom exakten Inhalt ab) — Details bei F2.
+4. *(Bonus, auch beobachtet)* **Umschreiben der Referenzen in `index.html`.** `<script type="module" src="js/main.js">` (stand am Ende von `<body>`) wurde nach `<head>` verschoben und zu `<script type="module" crossorigin src="/assets/index-B1hG0RuO.js">` umgeschrieben — analog für das Stylesheet. **Nicht** umgeschrieben wurde dagegen `<img src="assets/logo/logo.svg">`, weil das eine `public/`-Datei ist (siehe Demo 2) — Vite lässt `public/`-Referenzen bewusst unangetastet.
+
+### F2: Warum enthalten Produktions-Dateinamen typischerweise einen Content-Hash? Welches Problem löst das bei echten Deployments?
+
+**Einfach gesagt:** wie ein Chargen-Code auf einer Lebensmittelpackung — ändert sich das Rezept,
+ändert sich die Nummer. So verwechselt niemand (auch nicht der Browser) alte und neue Version.
+
+Browser (und dazwischengeschaltete CDNs) wollen Dateien **möglichst lange zwischenspeichern**
+(cachen), um bei wiederkehrenden Besucher:innen nicht ständig alles neu herunterladen zu müssen
+— das spart massiv Ladezeit. Das Problem dabei: **woher weiß der Browser, wann sich eine Datei
+tatsächlich geändert hat**, ohne bei jedem Besuch nachzufragen (was den Cache-Vorteil wieder
+zunichtemachen würde)?
+
+Die Lösung: der Dateiname selbst wird aus dem **exakten Inhalt** der Datei berechnet
+(`index-B1hG0RuO.js`). Ändert sich am Code auch nur ein Zeichen, ändert sich der ganze Hash, also
+der ganze Dateiname. Das erlaubt zwei Dinge gleichzeitig, die sich sonst widersprechen würden:
+- Man kann dem Browser sagen "cache `index-B1hG0RuO.js` für immer, frag nie wieder nach" (extrem
+  lange Cache-Zeiten, z. B. ein Jahr) — **ohne** Risiko, weil dieser exakte Name garantiert nie
+  einen anderen Inhalt bekommt.
+- Ändert sich der Code, bekommt die neue Version automatisch einen **neuen** Namen — der Browser
+  hat den alten Namen zwar noch gecacht, aber `index.html` verweist jetzt auf den neuen Namen,
+  also lädt er zwangsläufig frisch nach.
+
+Ohne Hash müsste man entweder sehr kurze Cache-Zeiten setzen (langsamer für alle) oder riskieren,
+dass jemand tagelang eine veraltete, kaputte Version der Seite aus dem eigenen Browser-Cache
+ausgeliefert bekommt, obwohl längst ein Fix online ist.
+
+### F3: Warum würde man den Dev-Server selbst (`vite dev`/`vite`) nie für echte Nutzer:innen deployen, auch wenn er "funktioniert"?
+
+**Einfach gesagt:** eine Baustelle "funktioniert" auch — man kann durchlaufen und alles sehen.
+Trotzdem lädt man da keine Gäste ein. Der Dev-Server ist für *dich beim Programmieren* gebaut,
+nicht für fremde Besucher:innen.
+
+Konkret, direkt aus dem Vergleich unserer beiden Netzwerk-Logs:
+- **Viel mehr Daten, viel mehr Requests.** Dev-Server: 13 einzelne, unminifizierte `.js`-Dateien (51 KB gesamt) plus `@vite/client` plus ein `node_modules`-Request. Preview/Produktion: 1 Datei (23 KB) plus 1 CSS-Datei. Für echte Besucher:innen (oft mit langsamerem Internet, auf dem Handy) ist das ein spürbarer Geschwindigkeitsunterschied.
+- **Unnötige Entwickler-Maschinerie.** Der Dev-Server baut aktiv eine WebSocket-Verbindung für HMR auf (`[vite] connecting...`) — komplett nutzlos für jemanden, der nur deine Webseite lesen will, aber zusätzlicher Code, zusätzliche offene Verbindung, unnötige Angriffsfläche.
+- **Nicht für echten Betrieb gebaut/gehärtet.** Der Dev-Server ist für den Iterations-Loop einer einzelnen Person beim Programmieren optimiert (schneller Start, hilfreiche, ausführliche Fehlermeldungen) — nicht dafür, viele gleichzeitige, fremde Besucher:innen zuverlässig und sicher zu bedienen.
+- **Mehr Einblick als nötig.** Im Dev-Modus liegt der Code offen und lesbar da (mit Dateinamen, Kommentaren, Struktur) — im Produktions-Build ist er gebündelt/minifiziert. Für fremde Besucher:innen sollen nur so viele Interna wie nötig sichtbar sein.
+
+Live beobachtet: über `vite preview` war die Konsole **komplett leer** (kein `[vite] connecting...` mehr) — der Beweis, dass die ganze Dev-Maschinerie im echten Build gar nicht mehr da ist.

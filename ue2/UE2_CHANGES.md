@@ -230,3 +230,204 @@ Zeig kurz die bunte Vite-Startmeldung im Terminal (Version, "ready in X ms", die
 - Kommentar wieder entfernen.
 
 **6. Eine Zeile für den Vergleich, laut aussprechen:** "CSS-Änderungen tauscht Vite live aus, ganz automatisch. JavaScript-Änderungen nicht — weil unser Code keinen speziellen Zusatz-Code dafür hat, macht Vite lieber sauber neu, statt den Zustand zu riskieren."
+
+---
+
+## Demo 3 — Produktions-Build & Preview
+
+### 🔰 Einfach erklärt — worum geht's hier überhaupt?
+
+#### Zuerst die Grundfrage: was IST `dist/` eigentlich, und hab ich jetzt zwei Projekte?
+
+**Nein — du hast weiterhin nur EIN Projekt.** `dist/` ist **kein zweites Projekt, das du
+pflegst**, sondern nur eine **Kopie/ein Export**, den ein Programm (Vite) automatisch für dich
+aus deinem echten Projekt herstellt.
+
+*Die Analogie, die es hoffentlich sofort klarmacht:* Stell dir vor, du schreibst einen Text in
+Word. Das Word-Dokument (`.docx`) ist dein **echtes** Projekt — daran arbeitest du, das speicherst
+du, das ist in Git. Wenn du den Text jemandem schicken willst, klickst du "Als PDF exportieren".
+Das PDF ist eine **neue, zusätzliche Datei**, aus dem Word-Dokument heraus erzeugt. Du bearbeitest
+das PDF **nie direkt** — willst du was ändern, gehst du zurück ins Word-Dokument, änderst dort,
+und exportierst ein **neues** PDF (das alte überschreibst du damit).
+
+Genau das ist `dist/`: das "PDF" deines Projekts. Dein **echtes** Projekt bleibt `js/`,
+`index.html`, `styles.css`, `public/` — das bearbeitest du, das ist in Git. `dist/` wird bei
+jedem `npm run build` **komplett neu erzeugt** (alter Inhalt wird dabei gelöscht und neu
+geschrieben). Du fasst nie eine Datei *in* `dist/` von Hand an — genau wie du ein exportiertes
+PDF nicht in Word zurückverwandelst und weiterbearbeitest.
+
+Das erklärt auch, warum `dist/` (genau wie `node_modules/` aus Demo 1) in `.gitignore` steht und
+**nicht** committet wird: es ist jederzeit reproduzierbar — jeder, der deinen echten Quellcode
+hat, kann sich mit `npm run build` sein eigenes, identisches `dist/` erzeugen. Es mitzuschleppen
+wäre wie das PDF UND das Word-Dokument UND alle alten PDF-Versionen gemeinsam aufzuheben, obwohl
+eins davon (Word) reicht, um jedes PDF jederzeit neu zu erzeugen.
+
+**Wofür braucht man `dist/` dann überhaupt?** Weil dein echter Quellcode (so wie er in `js/`
+liegt: 13 einzelne, gut lesbare Dateien mit Kommentaren) genau das Richtige zum **Programmieren**
+ist, aber **nicht** das, was du später auf einen echten Server hochladen willst (zu viele
+einzelne Dateien, unnötig groß, mit internen Kommentaren, die niemanden außer dich was angehen).
+`dist/` ist die kompakte, fertig verschnürte Version davon — die, die wir in Demo 9 tatsächlich
+auf GitHub Pages hochladen werden.
+
+#### Warum waren es "13 Dateien" — welche 13 sind gemeint?
+
+Erinnerung an UE1, Demo 1: dort haben wir die eine riesige `app.js` in viele kleine,
+themenbezogene Dateien aufgeteilt, die sich per `import`/`export` gegenseitig benutzen. Das sind
+genau diese 13 Dateien im Ordner `js/`:
+
+```
+js/main.js            js/navigation.js       js/data.js
+js/storage.js          js/state.js            js/utils.js
+js/dropdowns.js         js/lookup.js
+js/views/dashboard.js  js/views/evidence.js   js/views/people.js
+js/views/timeline.js   js/views/workspace.js
+```
+
+Im **Dev-Modus** (Demo 2, `npm run dev`) lädt der Browser jede davon **einzeln** über eine eigene
+Netzwerk-Anfrage — praktisch zum Programmieren, weil Vite bei einer Änderung genau weiß, welche
+**eine** Datei es neu schicken muss (das war die Grundlage für HMR). Beim **Produktions-Build**
+(diese Demo) braucht dieser Vorteil aber niemand mehr — im Gegenteil, 13 einzelne
+Netzwerk-Anfragen sind für einen echten Besuch nur unnötig langsam. Deshalb klebt Vite sie beim
+Bauen zu einer Datei zusammen.
+
+*(Nebenbei: die Terminal-Ausgabe von `vite build` sagt "17 modules transformed" — das sind
+unsere 13 `.js`-Dateien plus `styles.css` plus ein paar kleine interne Helfer-Module, die Vite
+selbst automatisch dazupackt. Die genaue Zahl 17 musst du dir nicht merken, wichtig ist nur: 13
+eigene Quelldateien werden zu 1 Datei.)*
+
+---
+
+Bisher (Demo 2) haben wir Vite nur als "schlauer Briefträger fürs Programmieren" benutzt —
+der **Dev-Server**. Der ist super zum Entwickeln (schnell, HMR, zeigt Fehler ausführlich), aber
+**nie dafür gedacht, dass echte Besucher:innen deiner Webseite ihn benutzen**. Demo 3 ist der
+Schritt "jetzt bauen wir die Version, die wirklich rausgeht".
+
+*Analogie:* eine Baustelle vs. das fertige, eröffnete Gebäude. Auf der Baustelle (Dev-Server)
+liegt Werkzeug rum, es ist laut, Handwerker laufen durch, aber genau das macht flexibles Bauen
+möglich. Wenn das Gebäude fertig ist (Produktions-Build), wird aufgeräumt, alles verpackt und
+zugeschlossen — Besucher:innen sollen nur das fertige, saubere Ergebnis sehen, nicht die
+Baustelle.
+
+**Was heißt „bauen" (`vite build`) hier konkret?** Vite nimmt unsere 13 einzelnen
+`js/*.js`-Dateien (die man einzeln über 13 Netzwerk-Anfragen laden müsste) und macht daraus
+**eine einzige** Datei. Das nennt man **Bundling** — "viele kleine Briefe" werden zu "einem
+großen Brief", weil ein Postweg schneller ist als dreizehn einzelne.
+
+Zusätzlich wird der Code **minifiziert** — alles rausgeworfen, was nur für *Menschen* beim Lesen
+wichtig ist (Kommentare, sprechende Variablennamen wie `state` oder `caseRes`, Zeilenumbrüche,
+Einrückungen), weil der **Browser** das alles gar nicht braucht. Ergebnis bei uns: aus 51 KB
+lesbarem Code wurden 23 KB — mehr als halbiert, **ohne** dass sich am Verhalten irgendwas
+ändert.
+
+**Warum bekommen die neuen Dateien komische Namen wie `index-B1hG0RuO.js`?** Das ist ein
+**Content-Hash** — eine kurze, aus dem exakten Dateiinhalt berechnete Zeichenfolge, die sich
+**automatisch ändert**, sobald sich der Inhalt der Datei auch nur ein bisschen ändert.
+
+*Analogie:* ein Mindesthaltbarkeitsdatum/Chargen-Code auf einer Lebensmittelverpackung. Ändert
+sich das Rezept, bekommt die neue Charge eine neue Nummer — niemand verwechselt alte und neue
+Charge. Genauso beim Browser: er darf `index-B1hG0RuO.js` für **immer** in seinem
+Zwischenspeicher (Cache) behalten, weil dieser exakte Dateiname garantiert *nie* seinen Inhalt
+ändert — ändert sich der Code, bekommt die Datei automatisch einen neuen Namen, und der Browser
+lädt die zwangsläufig neu. Ohne Hash müsste der Browser bei jedem Besuch unsicher nachfragen "hat
+sich `main.js` vielleicht geändert?" — mit Hash weiß er es einfach am Namen.
+
+**Was ist `vite preview`?** Ein ganz simpler Server (ähnlich dem `python -m http.server` aus
+UE1!), der **nur** das ausliefert, was tatsächlich in `dist/` liegt — kein Bauen, kein HMR,
+keine Extras. Damit testest du: "funktioniert wirklich die Version, die ich später hochladen
+würde?" — nicht "funktioniert meine Entwicklungsumgebung".
+
+### Task 1 — Build ausgeführt, `dist/` inspiziert
+
+Befehl (Nutzer): `npm run build` → `vite build`.
+
+```
+vite v8.3.0 building client environment for production...
+✓ 17 modules transformed.
+dist/index.html                 10.83 kB │ gzip: 2.80 kB
+dist/assets/index-ZAWMSz9M.css  11.44 kB │ gzip: 2.77 kB
+dist/assets/index-B1hG0RuO.js   23.26 kB │ gzip: 6.17 kB
+✓ built in 136ms
+```
+
+Inhalt von `dist/` danach:
+```
+dist/
+├── index.html
+├── assets/
+│   ├── index-B1hG0RuO.js        <- gebündelt + minifiziert, unsere 13 js/*.js-Dateien
+│   ├── index-ZAWMSz9M.css       <- gebündelt + minifiziert, styles.css
+│   ├── logo/logo.svg            <- 1:1 kopiert aus public/assets/
+│   └── people/*.png (6 Stück)   <- 1:1 kopiert aus public/assets/
+└── data/*.json (5 Stück)        <- 1:1 kopiert aus public/data/
+```
+
+Bemerkenswert: `dist/assets/` enthält **sowohl** die neuen gehashten Bundle-Dateien **als auch**
+die unveränderten Bilder aus `public/assets/` — reiner Zufall, dass beide „assets" heißen (Vites
+Standardordner für Build-Output trägt zufällig denselben Namen wie unser `public/assets/`), aber
+kein Konflikt, weil die Dateinamen sich nie überschneiden.
+
+### Task 2 — mit `vite preview` serviert, End-to-End geprüft
+
+Befehl (Nutzer): `npm run preview` → Server auf `http://localhost:4173`, liefert **ausschließlich**
+`dist/` aus — kein Vite-Dev-Server, keine Quell-Dateien mehr im Zugriff.
+
+Im Browser geprüft: alle 5 Views identisch (`18/6/6/0/1`-Stats), Personen-Avatare laden, Timeline
+ohne Fehler. Zusätzlich ein **echter End-to-End-Test** über die gebaute Version: ein Beweisstück
+bookmarken → `localStorage`-Eintrag `remotion_bookmarks` enthält danach `["E14"]` — bestätigt,
+dass nicht nur das Anzeigen, sondern auch die Interaktivität (Klick-Handler, `localStorage`) im
+gebauten, minifizierten Code noch korrekt funktioniert.
+
+Netzwerk-Log: nur noch **drei** eigene Kern-Requests (`index-B1hG0RuO.js`, `index-ZAWMSz9M.css`,
+`logo.svg`) statt der zwölf einzelnen Modul-Requests im Dev-Modus — plus `data/*.json` und
+`assets/people/*.png` unverändert aus `public/`. **Kein** `/@vite/client`, **kein**
+`/node_modules/...`-Request mehr — die ganze Dev-/HMR-Maschinerie ist komplett weg. Konsole:
+komplett leer (kein `[vite] connecting...` mehr — das gibt's nur im Dev-Server).
+
+### Task 3 — Dev-Quelle vs. gebautes Ergebnis verglichen
+
+**`js/*.js` (Quelle, 13 Dateien) vs. `dist/assets/index-B1hG0RuO.js` (gebaut, 1 Datei):**
+
+| | Vorher (Dev-Quelle) | Nachher (Build) |
+|---|---|---|
+| Anzahl Dateien | 13 einzelne `.js`-Dateien | 1 einzige Datei |
+| Größe (gesamt) | 51.197 Bytes | 23.269 Bytes (**−54 %**) |
+| Zeilen | z. B. `js/main.js` 92 Zeilen, `js/data.js` 111 Zeilen — lesbar formatiert | **0** Zeilenumbrüche — der komplette Inhalt steht auf **einer** Zeile |
+| Variablennamen | sprechend: `state`, `caseRes`, `loadCorePeopleAndLocations` | eingedampft auf `e`, `t`, `n`, … |
+| Kommentare | alle unsere UE1/UE2-Erklärkommentare | komplett entfernt |
+| Dateiname | `main.js`, `data.js`, … (fest) | `index-B1hG0RuO.js` (Name hängt vom Inhalt ab) |
+
+**`index.html` (Quelle vs. gebaut) — drei verschiedene Sorten von Änderung an einer Datei:**
+1. `<script type="module" src="js/main.js">` (Original: ganz am Ende von `<body>`) → im Build **nach `<head>` verschoben**, umgeschrieben zu `<script type="module" crossorigin src="/assets/index-B1hG0RuO.js">`.
+2. `<link rel="stylesheet" href="styles.css">` → ebenfalls in `<head>`, umgeschrieben zu `/assets/index-ZAWMSz9M.css`, `crossorigin` ergänzt.
+3. `<img src="assets/logo/logo.svg">` (Logo) → **byte-identisch unverändert** — weil das eine `public/`-Datei ist, fasst Vite sie bewusst nicht an.
+
+Genau dieser dritte Punkt ist die beste Live-Demonstration dafür, was `public/` bedeutet: **zwei** Referenzen in derselben `index.html`, eine wird komplett transformiert (Bundling+Hash), die andere bleibt exakt gleich — je nachdem, ob die Datei über `public/` läuft oder über den Modul-Graphen.
+
+### Verifikation
+Voller Feature-Durchlauf über `vite preview` (nicht mehr `vite dev`, nicht mehr `python -m http.server`): alle 5 Views, Bookmark-Klick + `localStorage`-Eintrag als echter End-to-End-Beweis, Konsole leer, Netzwerk-Log zeigt nur noch die 3 gebauten Kern-Dateien + die unveränderten `public/`-Inhalte.
+
+### 🎤 Live-Demo — was du im Unterricht herzeigst
+
+**1. Build live ausführen**
+```bash
+npm run build
+```
+Zeig die Terminal-Ausgabe live — "17 modules transformed", die drei Zeilen mit Dateigröße + gzip-Größe, "built in 136ms". Sag: "Vite hat gerade 13 Dateien zu einer gemacht und alles verkleinert."
+
+**2. `dist/`-Ordner im Explorer/VS Code aufklappen**
+Zeig die Struktur: `index.html`, `assets/index-*.js`, `assets/index-*.css`, plus `data/` und `assets/logo`/`assets/people` unverändert. Sag den einen Satz: "Die Namen mit dem komischen Anhang sind neu gebaut, `data/` und die Bilder sind einfach 1:1 rüberkopiert."
+
+**3. Den gebauten JS-Code aufmachen (`dist/assets/index-*.js`)**
+Kurz reinscrollen (oder Editor-Zeilenzähler zeigen: "0 Zeilenumbrüche, alles auf einer Zeile") — Kontrast zu `js/data.js` danebenlegen (111 lesbare Zeilen mit Kommentaren). Das ist der überzeugendste visuelle Beweis für Minifizierung.
+
+**4. `dist/index.html` neben der Quell-`index.html` aufmachen**
+Zeig die drei Änderungen: `<script>`/`<link>` jetzt in `<head>`, mit gehashtem Dateinamen; `<img src="assets/logo/logo.svg">` **exakt gleich** in beiden Dateien — "eine Referenz wurde umgebaut, die andere absichtlich nicht, weil sie aus `public/` kommt."
+
+**5. Preview starten, DevTools → Network**
+```bash
+npm run preview
+```
+`http://localhost:4173` öffnen, `F12` → Network-Tab, Seite laden. Zeig: nur noch 3 eigene Dateien (JS, CSS, Logo) + die `data/`/`assets`-Dateien aus `public/` — **kein** `@vite/client`, **kein** `node_modules`-Request mehr. Sag: "das ist exakt das, was später online steht, keine Entwickler-Extras mehr dabei."
+
+**6. Interaktivität live beweisen**
+Ein Beweisstück bookmarken (Stern anklicken), dann DevTools → Application/Storage → Local Storage öffnen, den Eintrag `remotion_bookmarks` zeigen — "das läuft alles im minifizierten Code genauso wie vorher, nur kleiner."

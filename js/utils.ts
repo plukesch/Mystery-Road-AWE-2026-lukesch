@@ -12,7 +12,7 @@
 // json-daten wirklich benutzt - kann fehlen, ist aber nie eine zahl/objekt.
 // demo 5 live-vorfuehrung: naechste zeile kurz reinlassen -> "npm run build"
 // bricht schon bei tsc ab, "vite build" laeuft gar nicht erst an.
-// const kaputterTest: string = 5;
+const kaputterTest: string = 5;
 
 export const formatDate = (ts: string | undefined | null): string => {
   if (!ts) return "Unknown date";

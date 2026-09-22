@@ -6,8 +6,16 @@
 //   (per fetch() geladen) und assets/... (per <img src> aus JSON-daten gerendert)
 //   passen genau in dieses schema, weil beides zur build-zeit NICHT statisch analysierbar
 //   ist (fetch-pfad ist ein string, img-src wird erst zur laufzeit aus JSON gebaut).
-// diese datei existiert trotzdem schon jetzt als fester platz fuer spaetere config
-// (z.b. "base" fuer github pages in demo 9).
+// demo 9 (ue2): "base" ergaenzt - github pages liefert ein projekt (kein
+// user/org-Pages-repo) nicht unter "/", sondern unter "/<repo-name>/" aus
+// (https://plukesch.github.io/Mystery-Road-AWE-2026-lukesch/). ohne "base"
+// wuerde vite alle asset-pfade im build relativ zu "/" schreiben -> 404 fuer
+// js/css/bilder, sobald die seite unter dem repo-unterpfad laeuft. betrifft
+// NICHT nur den build: vite haengt "base" auch beim dev-server/preview an
+// die url an (z.b. localhost:5173/Mystery-Road-AWE-2026-lukesch/) - ein
+// aufruf von localhost:5173/ alleine leitet automatisch dorthin um.
 import { defineConfig } from "vite";
 
-export default defineConfig({});
+export default defineConfig({
+  base: "/Mystery-Road-AWE-2026-lukesch/",
+});

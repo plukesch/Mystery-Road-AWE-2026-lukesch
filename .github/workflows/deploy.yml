@@ -1,0 +1,70 @@
+# ---------------------------------------------------------------------
+# DEPLOYMENT-WORKFLOW (Demo 9, UE2)
+# laeuft nur bei push auf main (+ manuell ueber workflow_dispatch) - baut
+# die produktions-version (vite build) und veroeffentlicht dist/ auf
+# GitHub Pages. voellig getrennt vom dev-workflow (ci.yml, demo 8), der
+# nichts deployed und bei JEDEM branch/PR laeuft.
+# ---------------------------------------------------------------------
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# dieser workflow SCHREIBT etwas (die live-seite) - braucht deshalb mehr
+# rechte als der reine lese-workflow aus demo 8:
+#   pages: write    -> darf ueber die pages-api tatsaechlich veroeffentlichen
+#   id-token: write -> darf sich per OIDC gegenueber github als "ich bin
+#                       dieser workflow-lauf" ausweisen (siehe demo 10 F2)
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# verhindert, dass zwei deploys gleichzeitig laufen (z.b. zwei schnelle
+# pushes hintereinander) - der zweite wartet, bis der erste fertig/abgebrochen ist.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Repo auschecken
+        uses: actions/checkout@v4
+
+      - name: Node.js einrichten
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - name: Abhaengigkeiten installieren
+        run: npm ci
+
+      - name: Linter laufen lassen
+        run: npm run lint
+
+      - name: Produktions-build
+        run: npm run build
+
+      - name: GitHub Pages vorbereiten
+        uses: actions/configure-pages@v5
+
+      - name: dist/ als deploybares Artefakt hochladen
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Auf GitHub Pages veroeffentlichen
+        id: deployment
+        uses: actions/deploy-pages@v4

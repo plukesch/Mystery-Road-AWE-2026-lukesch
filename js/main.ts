@@ -3,6 +3,7 @@
 // wird als <script type="module" src="js/main.js"> geladen.
 // verdrahtet navigation + event listener beim start.
 // ---------------------------------------------------------------------
+// demo 7 (ue2): letzte konvertierte datei.
 import { navigateTo, handleHashChange } from "./navigation.js";
 import { loadAllData } from "./data.js";
 import { loadBookmarksFromStorage, loadNotesFromStorage } from "./storage.js";
@@ -17,6 +18,25 @@ import {
 import { renderTimeline } from "./views/timeline.js";
 import { switchPeopleTab } from "./views/people.js";
 import { saveHypothesis } from "./views/workspace.js";
+import { requireElement } from "./dom.js";
+
+// demo 7 fund: "window.navigateTo = ..." ist ohne weiteres ein TS-fehler -
+// die eingebauten Window-typen kennen unsere eigenen, an window gehaengten
+// funktionen natuerlich nicht ("Property 'navigateTo' does not exist on
+// type 'Window'"). "declare global { interface Window { ... } }" ist TS's
+// vorgesehener weg, ein eingebautes interface um eigene felder zu erweitern
+// ("declaration merging") - sagt dem compiler ehrlich, was hier zur laufzeit
+// tatsaechlich an window haengt, statt es mit "any"/"as any" zu verstecken.
+declare global {
+  interface Window {
+    navigateTo: (viewName: string) => void;
+    switchPeopleTab: (tab: string) => void;
+    handleSortChange: () => void;
+    saveHypothesis: () => void;
+    closeEvidenceDetail: () => void;
+    saveCurrentNote: () => void;
+  }
+}
 
 // ---------------------------------------------------------------------
 // module scope ist NICHT global. index.html hat noch inline onclick/onchange
@@ -34,7 +54,7 @@ window.saveCurrentNote = saveCurrentNote;
 // EVENT LISTENER SETUP
 // ---------------------------------------------------------------------
 
-function setupEventListeners() {
+function setupEventListeners(): void {
   window.addEventListener("hashchange", handleHashChange);
 
   // demo 8: hier stand ein for-(var i)-loop, der jedem .nav-btn einen click-listener
@@ -44,27 +64,27 @@ function setupEventListeners() {
   //   throw "Cannot read properties of undefined (reading 'getAttribute')".
   // ersatzlos entfernt.
 
-  document.getElementById("evidenceSearch").addEventListener("input", handleSearchInput);
+  requireElement("evidenceSearch").addEventListener("input", handleSearchInput);
 
-  document.getElementById("filterType").addEventListener("change", renderEvidenceList);
-  document.getElementById("filterPerson").addEventListener("change", renderEvidenceList);
-  document.getElementById("filterLocation").addEventListener("change", renderEvidenceList);
+  requireElement("filterType").addEventListener("change", renderEvidenceList);
+  requireElement("filterPerson").addEventListener("change", renderEvidenceList);
+  requireElement("filterLocation").addEventListener("change", renderEvidenceList);
   // demo 8: filterStatus war doppelt verdrahtet - addEventListener UND
   // setAttribute("onchange", "renderEvidenceList()") -> render lief 2x pro aenderung,
   // und nur wegen der onchange-zeile brauchte es window.renderEvidenceList. beides raus.
-  document.getElementById("filterStatus").addEventListener("change", renderEvidenceList);
-  document.getElementById("filterRelevance").addEventListener("change", renderEvidenceList);
+  requireElement("filterStatus").addEventListener("change", renderEvidenceList);
+  requireElement("filterRelevance").addEventListener("change", renderEvidenceList);
 
-  document.getElementById("clearFiltersBtn").addEventListener("click", clearFilters);
+  requireElement("clearFiltersBtn").addEventListener("click", clearFilters);
 
-  document.getElementById("timelineOrder").addEventListener("change", renderTimeline);
-  document.getElementById("timelinePersonFilter").addEventListener("change", renderTimeline);
-  document.getElementById("timelineLocationFilter").addEventListener("change", renderTimeline);
-  document.getElementById("timelineTypeFilter").addEventListener("change", renderTimeline);
+  requireElement("timelineOrder").addEventListener("change", renderTimeline);
+  requireElement("timelinePersonFilter").addEventListener("change", renderTimeline);
+  requireElement("timelineLocationFilter").addEventListener("change", renderTimeline);
+  requireElement("timelineTypeFilter").addEventListener("change", renderTimeline);
 
   // demo 10: anonymer addEventListener-callback -> arrow (nutzt e.target, kein `this`)
-  document.getElementById("hypConfidence").addEventListener("input", (e) => {
-    document.getElementById("hypConfidenceValue").textContent = e.target.value;
+  requireElement("hypConfidence").addEventListener("input", (e) => {
+    requireElement("hypConfidenceValue").textContent = (e.target as HTMLInputElement).value;
   });
 }
 
@@ -72,7 +92,7 @@ function setupEventListeners() {
 // INIT
 // ---------------------------------------------------------------------
 
-function initApp() {
+function initApp(): void {
   loadBookmarksFromStorage();
   loadNotesFromStorage();
   setupEventListeners();

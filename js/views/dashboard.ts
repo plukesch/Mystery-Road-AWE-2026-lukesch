@@ -1,10 +1,15 @@
 // ---------------------------------------------------------------------
 // DASHBOARD VIEW
 // ---------------------------------------------------------------------
+// demo 7 (ue2): konvertiert. die reinen lese-schleifen (kein index noetig)
+// sind dabei auf for-of umgestellt - das umgeht das ganze
+// noUncheckedIndexedAccess-"koennte undefined sein"-thema von vornherein,
+// statt es an jeder stelle mit einer capture+check-zeile abzufangen.
 import state from "../state.js";
 import { formatDate, getStatusBadgeClass } from "../utils.js";
+import type { Evidence } from "../types.js";
 
-export function renderDashboard() {
+export function renderDashboard(): void {
   const container = document.getElementById("dashboardContent");
   if (!container) return;
 
@@ -12,8 +17,8 @@ export function renderDashboard() {
   // demo 4 live-vorfuehrung: naechste zeile einkommentieren, dann zeigt
   // "npm run lint": 'unreviewedCount' is assigned a value but never used  no-unused-vars
   //const unreviewedCount = 0;
-  for (let i = 0; i < state.allEvidence.length; i++) {
-    if ((state.allEvidence[i].status || "").toLowerCase() === "reviewed") reviewedCount++;
+  for (const ev of state.allEvidence) {
+    if ((ev.status || "").toLowerCase() === "reviewed") reviewedCount++;
   }
 
   const progressPct =
@@ -51,12 +56,11 @@ export function renderDashboard() {
   html += '<div class="dashboard-columns">';
 
   html += '<div class="dashboard-panel"><h3>Recent evidence</h3>';
-  const recentEvidence = state.allEvidence.slice(-5).reverse();
+  const recentEvidence: Evidence[] = state.allEvidence.slice(-5).reverse();
   if (recentEvidence.length === 0) {
     html += "<p>No evidence loaded yet.</p>";
   }
-  for (let e = 0; e < recentEvidence.length; e++) {
-    const ev = recentEvidence[e];
+  for (const ev of recentEvidence) {
     html +=
       '<div class="mini-list-item"><strong>' +
       ev.id +
@@ -75,8 +79,7 @@ export function renderDashboard() {
   if (recentTimeline.length === 0) {
     html += "<p>No timeline events loaded yet.</p>";
   }
-  for (let t = 0; t < recentTimeline.length; t++) {
-    const evt = recentTimeline[t];
+  for (const evt of recentTimeline) {
     html +=
       '<div class="mini-list-item"><strong>' +
       formatDate(evt.time) +
@@ -92,7 +95,7 @@ export function renderDashboard() {
 }
 
 // nur das dashboard braucht das -> nicht exportiert
-function statCardHTML(value, label) {
+function statCardHTML(value: number, label: string): string {
   return (
     '<div class="stat-card"><div class="stat-value">' +
     value +

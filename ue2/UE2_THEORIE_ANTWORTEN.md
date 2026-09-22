@@ -405,3 +405,118 @@ hatten. **`type`** dagegen für `ReviewStatus`, `Relevance`, `Certainty` — das
 ein `interface` kann grundsätzlich **keine** Vereinigung aus String-Literalen ausdrücken (ein
 Interface beschreibt immer eine Objekt-Form mit benannten Feldern, keinen "entweder-oder"-Wert).
 Für diese drei Fälle war `type` also nicht Stil, sondern die einzig mögliche Wahl.
+
+---
+
+## Demo 7 — Die komplette App migrieren
+
+*(nicht präsentiert/angekreuzt, siehe Absprache — kurz gehalten)*
+
+Alle 10 verbliebenen `.js`-Module zu `.ts` konvertiert, App kompiliert erstmals als Ganzes mit
+0 Fehlern, kein `any` irgendwo. Details in `UE2_CHANGES.md`.
+
+### F1: Zeig eine konkrete Stelle aus der Migration, an der TypeScript dich zu echtem Nachdenken gezwungen hat — nicht nur zu mechanischem Tippen von Typen.
+
+**Einfach gesagt:** an den meisten Stellen war Konvertieren reine Fleißarbeit — Typ dazuschreiben,
+fertig. An genau einer Stelle (`window.navigateTo = ...` in `main.ts`) hat TypeScript aber einen
+echten Fehler gemeldet, für den es keine mechanische Lösung gab, sondern eine bewusste Entscheidung
+brauchte.
+
+Konkrete Stelle: `main.ts` hängt sechs Funktionen an `window` (`window.navigateTo = navigateTo;`
+usw.), weil `index.html` noch inline `onclick="navigateTo(...)"`-Attribute aus der Zeit vor dem
+ES-Modul-Split (UE1) hat — diese Attribute können nur globale, auf `window` liegende Funktionen
+aufrufen. TypeScripts eingebautes `Window`-Interface kennt unsere sechs Custom-Properties aber
+naturgemäß nicht: `window.navigateTo = ...` ist ohne Weiteres ein Fehler
+(`Property 'navigateTo' does not exist on type 'Window'`).
+
+Die **mechanische, aber falsche** Lösung wäre `(window as any).navigateTo = ...` gewesen — hätte
+den Fehler zum Schweigen gebracht, ohne irgendwas über die eigentliche Situation auszusagen.
+Stattdessen musste ich nachdenken: *warum* hängen diese sechs Funktionen überhaupt an `window`
+(Antwort: die alten inline-`onclick`-Attribute, ein bewusst noch nicht bereinigter Rest aus einer
+früheren Demo), und *was ist der ehrliche Weg*, TypeScript das mitzuteilen? Die Antwort war
+TypeScripts eigener Mechanismus für genau diesen Fall — **Declaration Merging**: ein bereits
+bestehendes `interface` (hier `Window`) erneut öffnen und um die eigenen Felder erweitern:
+```ts
+declare global {
+  interface Window {
+    navigateTo: (viewName: string) => void;
+    // … 5 weitere
+  }
+}
+```
+Der Unterschied zu `as any`: jede der sechs Zuweisungen bleibt danach weiterhin **strukturell
+geprüft** — eine falsche Parameteranzahl oder ein falscher Rückgabetyp würde TypeScript immer noch
+melden. Nur die *Existenz* dieser sechs zusätzlichen Felder auf `window` wird zugesichert, nicht
+jede Prüfung an dieser Stelle abgeschaltet.
+
+### F2: Wann ist `any` tatsächlich die richtige Wahl, und wann ist es ein Zeichen, dass man den Typ eigentlich richtig modellieren sollte? Wo genau hast du in dieser Migration die Grenze gezogen?
+
+**Einfach gesagt:** `any` wäre an jeder Stelle dieser Migration die *schnellere* Lösung gewesen —
+aber "schnell einen roten Fehler wegmachen" und "den Typ tatsächlich richtig verstehen" sind zwei
+verschiedene Dinge. Die Grenze, die ich gezogen habe: sobald ich **wusste**, welche Form ein Wert
+wirklich hat (auch wenn TypeScript das selbst nicht herleiten konnte), war eine gezielte
+Zusicherung (`as X`) der richtige Weg — `any` wäre dort nur Bequemlichkeit auf Kosten der
+Sicherheit gewesen.
+
+**Grundsätzlich gilt:** `any` ist gerechtfertigt, wenn ein Wert **wirklich** zur Compile-Zeit jede
+beliebige Form haben könnte und es keine sinnvolle engere Aussage gibt, die man machen kann — z. B.
+das direkte, ungeprüfte Ergebnis eines `JSON.parse()` auf beliebigem Fremd-Input, bevor man es
+überhaupt angeschaut hat. Es ist dagegen ein **Warnsignal**, dass man den Typ eigentlich richtig
+modellieren sollte, wenn man in Wahrheit sehr wohl weiß, was für eine Form der Wert hat — man ihn
+TypeScript nur (noch) nicht auf eine Art mitgeteilt hat, die der Compiler selbst herleiten kann.
+
+**Wo genau ich die Grenze gezogen habe, an den zwei konkretesten Fällen:**
+- **`(e.target as HTMLSelectElement).value as ReviewStatus`** (`views/evidence.ts`): kein `any`,
+  weil ich zwei Dinge sicher wusste — erstens, dass das Change-Event von genau diesem `<select>`
+  kommt (nicht irgendeinem beliebigen Element), zweitens, dass die drei `<option value="...">`
+  dieses `<select>`s von **unserem eigenen Code** erzeugt werden (`statusOptionHTML`, ein paar
+  Zeilen weiter oben in derselben Datei) — der Wertebereich ist also tatsächlich exakt
+  `ReviewStatus`, nur über zwei getrennte Funktionen verteilt, die TypeScript nicht miteinander
+  verknüpfen kann. Eine gezielte Zusicherung ist hier ehrlich, `any` wäre eine Notlüge gewesen.
+- **`JSON.parse(raw)` beim Laden von `localStorage`** (`storage.ts`, `workspace.ts`): hier **habe**
+  ich bewusst einen Zwischenschritt über `unknown` gemacht statt direkt zu casten
+  (`const parsed: unknown = JSON.parse(raw); ... Array.isArray(parsed) ? (parsed as string[]) :
+  []`), weil ich hier *nicht* sicher weiß, was wirklich drinsteht — der Nutzer könnte den
+  `localStorage`-Eintrag von Hand editiert oder eine ältere App-Version könnte ein anderes Format
+  geschrieben haben. `unknown` zwingt dazu, den Wert erst zu **prüfen** (`Array.isArray`,
+  `typeof === "object"`), bevor man ihn benutzt — der sicherere Zwischenschritt zwischen "ich weiß
+  es genau" (direkte Zusicherung) und "ich weiß es gar nicht" (`any`).
+
+**Fazit der Grenze:** `as X` überall dort, wo eine Zusicherung durch echtes Wissen über die Quelle
+des Werts gedeckt ist (unser eigener Code erzeugt die Daten). `unknown` + expliziter Laufzeit-Check
+dort, wo die Quelle außerhalb unserer Kontrolle liegt (Nutzereingabe, `localStorage`,
+Netzwerk-Antwort). `any` an **keiner** Stelle — es gab in der ganzen Migration keinen Fall, an dem
+ich wirklich nichts über die erwartete Form eines Werts wusste.
+
+### F3: Hat die Migration einen echten, vorher unbemerkten Bug aufgedeckt — oder war es reines "Rauschen" (Fehler, die nur TypeScripts Pedanterie waren, aber nie ein reales Problem gewesen wären)?
+
+**Einfach gesagt:** überwiegend Rauschen — TypeScript, das auf Dinge besteht, die zur Laufzeit nie
+wirklich ein Problem gewesen wären (z. B. `getElementById("view-" + hash)!`, wo der Code selbst
+schon durch die `validViews`-Prüfung sicherstellt, dass das Element existiert). Aber **ein** Fund
+war genau die Art Stelle, die TypeScript-Migrationen eigentlich rechtfertigt: der
+`window.navigateTo = ...`-Fall aus F1 war kein *Laufzeit*-Bug (die App funktionierte vorher
+einwandfrei), aber er hat eine **stillschweigende, nirgends dokumentierte Abhängigkeit** sichtbar
+gemacht, die vorher komplett implizit war — dass `index.html`s inline-`onclick`-Attribute sich
+darauf verlassen, dass `main.js` beim Laden genau diese sechs Namen an `window` hängt. In reinem
+JavaScript hätte ein Tippfehler in einem dieser sechs Namen (z. B. `window.navigateto` statt
+`window.navigateTo`) erst beim **Klicken** im Browser als `"navigateTo is not a function"`
+aufgeschlagen — jetzt steht die vollständige Liste explizit als Typ in `main.ts`, und ein
+Tippfehler wäre sofort beim `npm run typecheck` aufgefallen, lange bevor irgendjemand geklickt
+hätte.
+
+Die meisten übrigen Funde waren dagegen tatsächlich reines Rauschen im Sinne der Frage — echte
+Compiler-Meldungen, aber ohne realen Bug dahinter:
+- `document.getElementById("view-" + hash)!` in `navigation.ts`: die `!`-Zusicherung ist reine
+  "Compiler-Pedanterie" (mein eigener Kommentar im Code) — der Code stellt über die
+  `validViews`-Liste ohnehin schon sicher, dass das Element existiert, TypeScript kann das nur nicht
+  über die String-Verkettung hinweg selbst sehen.
+- Die ganzen `noUncheckedIndexedAccess`-Meldungen bei `NodeList`-Index-Zugriffen: in jedem
+  einzelnen Fall war der Index tatsächlich immer gültig (die Schleife lief ja genau `list.length`
+  mal) — TypeScript kann das nur grundsätzlich nicht beweisen, unabhängig vom konkreten Code.
+
+**Fazit:** die Migration war in erster Linie eine **Absicherung nach vorne** (künftige Tippfehler
+an genau diesen Stellen werden jetzt sofort gemeldet), nicht primär eine Bug-Jagd — anders als
+z. B. die `noUncheckedIndexedAccess`-Funde in Demo 5/6 gab es in Demo 7 keinen Fall, wo ein
+tatsächlich fehlerhaftes Laufzeitverhalten aufgedeckt wurde. Der `window`-Fund ist trotzdem mehr
+als reines Rauschen: er macht eine vorher unsichtbare Kopplung zwischen zwei Dateien
+(`index.html` und `main.ts`) zum ersten Mal explizit und maschinenprüfbar.

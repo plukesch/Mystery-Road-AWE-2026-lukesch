@@ -845,3 +845,130 @@ kein echtes `any` in `data.ts`/`lookup.ts`/`types.ts`. `npm run dev` + Feature-D
 zeigt Case-Titel korrekt (`caseData` jetzt als `CaseFile` typisiert), alle 18/6/15 Einträge laden,
 Konsole sauber. `npm run build` läuft grün (`tsc --noEmit && vite build`), Bundle-Größe praktisch
 unverändert (~23 KB).
+
+---
+
+## Demo 7 — Die komplette App migrieren
+
+*(Hinweis: Demo 6/7 werden nicht präsentiert/angekreuzt — der Code muss trotzdem sauber
+funktionieren, weil Demo 8/9s CI genau darauf aufbaut. Diese Doku ist deshalb etwas knapper
+gehalten als bei den Demos, die wirklich vorgeführt werden.)*
+
+Alle 10 verbliebenen `.js`-Module (`main`, `navigation`, `data`, `storage`, `state`, `utils`,
+`dropdowns`, sowie `views/dashboard`, `views/evidence`, `views/people`, `views/timeline`,
+`views/workspace`) auf `.ts` umgestellt (per `git mv`). Zusammen mit den bereits vorhandenen
+`types.ts`/`utils.ts`/`lookup.ts`/`data.ts` (Demo 5/6) und dem neuen `dom.ts` besteht die App jetzt
+komplett aus TypeScript-Dateien. `npm run typecheck` (das ganze Programm als ein zusammenhängendes
+Ganzes, nicht mehr nur einzelne, isoliert geprüfte Dateien) läuft mit **0 Fehlern**.
+
+### Task 1 — Rest-Migration, ganze App kompiliert mit 0 Fehlern
+
+Reihenfolge der Konvertierung (jede Datei einzeln typisiert, `npm run typecheck` nach jeder
+größeren Datei zwischendurch laufen lassen, um Fehler dort zu fixen, wo sie entstanden sind):
+
+1. **`js/dom.ts`** (neu) — ein kleiner, wiederverwendbarer Helfer:
+   ```ts
+   export function requireElement<T extends HTMLElement = HTMLElement>(id: string): T {
+     const el = document.getElementById(id);
+     if (!el) {
+       throw new Error(`Expected #${id} to exist in the DOM`);
+     }
+     return el as T;
+   }
+   ```
+   `getElementById` liefert laut Typ immer `HTMLElement | null` — jede id *könnte* fehlen. Bei uns
+   sind die IDs aber fest in `index.html` verdrahtet und garantiert da, sobald die jeweilige View
+   rendert. Statt an jeder der ~40 Fundstellen im Code `as HTMLSelectElement` + `!` zu wiederholen,
+   bündelt `requireElement<T>()` das an einer Stelle — mit generischem `<T>`, damit man z. B.
+   `requireElement<HTMLSelectElement>("filterType")` schreiben kann und direkt `.value` typsicher
+   dran hat, statt danach nochmal selbst zu casten.
+2. **`js/state.ts`** — bekommt jetzt sein eigenes vollständiges `AppState`-Interface (nutzt die
+   echten Domain-Typen aus `types.ts`). Das macht den `as unknown as AppStateShape`-Umweg aus Demo
+   5/6 überflüssig: `state.js` selbst *war* die Lücke, die diesen Umweg nötig gemacht hat — `lookup.ts`
+   und `data.ts` importieren `state` ab jetzt direkt, ohne jede Zusicherung.
+   `caseData: {} as CaseFile` bleibt als dokumentierter Platzhalter-Wert stehen (echter Inhalt kommt
+   erst nach dem ersten `fetch`), aus demselben Grund wie schon in Demo 5/6: eine gezielte,
+   kommentierte Zusicherung statt einer invasiveren `CaseFile | null`-Änderung überall im Code.
+3. **`js/storage.ts`, `js/dropdowns.ts`, `js/navigation.ts`** — mechanisch: Rückgabetypen (`void`),
+   Lese-Schleifen über `NodeList`en auf `for...of` umgestellt (siehe Task 2), `unknown` + Typ-Check
+   für `JSON.parse`-Ergebnisse aus `localStorage` (gleiches Muster wie Demo 5.5s
+   `try/catch`-Fix, nur jetzt auch typsicher: `const parsed: unknown = JSON.parse(raw); ...
+   Array.isArray(parsed) ? (parsed as string[]) : []`).
+4. **`js/views/dashboard.ts`, `js/views/people.ts`, `js/views/timeline.ts`** — durchgängig
+   `requireElement()` statt ungeguardeter `getElementById`-Aufrufe, Klick-Callbacks typisieren
+   `event.target as HTMLElement`.
+5. **`js/views/evidence.ts`** (die größte Datei, 388 Zeilen) — siehe Task 2 für die zwei
+   nennenswerten Funde darin (`<select>`-Wert-Zusicherung, `closest<T>()`).
+6. **`js/views/workspace.ts`** — `HypothesisDraft`-Interface neu in `types.ts`, `Partial<HypothesisDraft>`
+   beim Einlesen aus `localStorage` (siehe Task 2).
+7. **`js/main.ts`** (zuletzt, weil es alle anderen Module gleichzeitig importiert — der Test, ob
+   wirklich alles zusammenpasst) — siehe Task 2 für den `window`-Fund.
+
+### Task 2 — mindestens drei Stellen, die echtes Nachdenken brauchten (nicht nur mechanisches Tippen von Typen)
+
+1. **`window.navigateTo = navigateTo;` (und 5 weitere) in `main.ts`.** `index.html` hat noch
+   inline `onclick="navigateTo('evidence')"`-Attribute aus der Zeit vor dem ES-Modul-Split (UE1) —
+   die zugehörigen Funktionen müssen deshalb auf `window` liegen, damit HTML sie überhaupt findet.
+   TypeScripts eingebautes `Window`-Interface kennt diese sechs Custom-Properties aber
+   naturgemäß nicht — `window.navigateTo = ...` wäre ohne Weiteres ein Fehler
+   (`Property 'navigateTo' does not exist on type 'Window'`). Die *falsche*, aber naheliegende
+   Lösung wäre `(window as any).navigateTo = ...` gewesen. Stattdessen: TypeScripts eigener
+   Mechanismus für genau diesen Fall, **Declaration Merging** — ein bereits existierendes
+   `interface` (hier: das globale `Window`) erneut öffnen und um die eigenen Felder erweitern:
+   ```ts
+   declare global {
+     interface Window {
+       navigateTo: (viewName: string) => void;
+       // ... 5 weitere
+     }
+   }
+   ```
+   Damit bleibt jede der sechs Zuweisungen weiterhin **strukturell geprüft** (falsche
+   Parameteranzahl/-typen würden immer noch auffallen) — nur die *Existenz* dieser sechs
+   zusätzlichen Felder auf `window` wird ehrlich zugesichert, statt jede Prüfung an dieser Stelle
+   komplett abzuschalten.
+2. **`(e.target as HTMLSelectElement).value as ReviewStatus` in `views/evidence.ts`
+   (`renderEvidenceDetail`).** Ein `<select>`-Element liefert `.value` immer als reinen `string` —
+   das ist so in der DOM-Spezifikation festgelegt und kann TypeScript nicht enger machen. Unser
+   Domain-Modell (`Evidence.status: ReviewStatus`) ist aber die engere Union
+   `"unreviewed" | "reviewed" | "flagged"`. Eine blinde Zuweisung (`ev.status = e.target.value`)
+   wäre ein Typfehler — zu Recht, denn *irgendein* `<select>` könnte theoretisch jeden beliebigen
+   String als `value` haben. Die Zusicherung `as ReviewStatus` ist hier **bewusst gerechtfertigt**
+   (nicht einfach der bequeme Weg um den Fehler herum), weil die drei `<option value="...">` für
+   genau dieses `<select>` von **unserem eigenen Code** erzeugt werden (`statusOptionHTML`,
+   ein paar Zeilen weiter oben in derselben Datei) — der Wertebereich ist also tatsächlich
+   garantiert, nur eben nicht auf eine Art, die TypeScript über zwei getrennte Funktionen hinweg
+   selbst herleiten kann.
+3. **`noUncheckedIndexedAccess` bei jedem `NodeList`-Loop.** Praktisch jede Schleife über
+   `document.querySelectorAll(...)` stand im JS-Original als klassischer Index-Loop
+   (`for (let i = 0; i < list.length; i++) { list[i]... }`). Mit `noUncheckedIndexedAccess`
+   (Demo 5, bewusst zusätzlich zu `strict` an) ist `list[i]` vom Typ `T | undefined` — TypeScript
+   kann bei einem Index-Zugriff nie beweisen, dass er im gültigen Bereich liegt. Statt an jeder
+   einzelnen Stelle `list[i]` + Null-Check zu schreiben (das Muster aus Demo 5/6 für
+   `state.allEvidence[i]`, wo der Index selbst noch gebraucht wurde), war hier die bessere Lösung,
+   den **Index selbst wegzulassen**: `for (const item of list)` braucht `noUncheckedIndexedAccess`
+   gar nicht erst zu berücksichtigen, weil nie indiziert wird. Betrifft u. a.
+   `navigation.ts` (`.view`/`.nav-btn`-Listen), `evidence.ts`, `people.ts`, `timeline.ts`,
+   `workspace.ts`. Kein Verhaltensunterschied, aber deutlich weniger Code pro Stelle als die
+   capture-und-prüf-Variante.
+
+### Task 3 — Verifikation, kein `any`, App verhält sich unverändert
+
+`grep -rn '\bany\b'` über den kompletten `js/`-Ordner: **kein einziger echter `any`-Typ** — die
+paar Treffer sind ausschließlich Erklär-Kommentare (`main.ts`: *warum* kein `any`; `data.ts`: dass
+`res.json()` von Natur aus `Promise<any>` ist). `find js -name "*.js"` findet **keine** Datei mehr
+— alle 15 Dateien unter `js/` sind `.ts` (die 10 Module aus dieser Demo + `dom.ts`/`types.ts` aus
+Demo 5–7 + `utils.ts`/`lookup.ts`/`data.ts` aus Demo 5/6).
+
+`npm run typecheck` → **0 Fehler**, geprüft als das erste Mal, dass **alle** Module gleichzeitig
+gegeneinander typgeprüft werden (vorher war jede Datei mehr oder weniger isoliert dran). `main.ts`
+war der eigentliche Belastungstest dafür, weil es als einziges Modul praktisch alle anderen
+gleichzeitig importiert und benutzt.
+
+`npm run dev` + voller Browser-Durchlauf (alle 5 Views, Suche/Filter/Sortierung, Bookmark setzen,
+Status/Relevance in der Detail-Ansicht ändern, Notiz speichern, Timeline-Filter + Quick-View-Modal,
+Workspace-Hypothese ausfüllen/speichern/nach Reload prüfen): App verhält sich **identisch** zum
+Stand vor der Migration — reine Typ-Ergänzung, keine Logikänderung. `npm run build`
+(`tsc --noEmit && vite build`) läuft grün, 18 Module transformiert, Bundle ~21 KB (minimal kleiner
+als vorher, weil im Zuge der Konvertierung auch ein paar tote Debug-Codezeilen aus früheren Demos
+mit aufgeräumt wurden — siehe Kommentare in `main.ts`).

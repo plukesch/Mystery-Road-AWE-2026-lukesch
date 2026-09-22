@@ -1,18 +1,20 @@
 // ---------------------------------------------------------------------
 // PEOPLE & LOCATIONS VIEW
 // ---------------------------------------------------------------------
+// demo 7 (ue2): konvertiert.
 import state from "../state.js";
 import { countEvidenceForPerson } from "../lookup.js";
 import { navigateTo } from "../navigation.js";
 import { renderEvidenceList } from "./evidence.js";
+import { requireElement } from "../dom.js";
 
 // window-export (index.html: onclick="switchPeopleTab('people')")
-export function switchPeopleTab(tab) {
+export function switchPeopleTab(tab: string): void {
   state.currentPeopleTab = tab;
-  const peoplePanel = document.getElementById("peoplePanel");
-  const locationsPanel = document.getElementById("locationsPanel");
-  const peopleTabBtn = document.getElementById("tabPeopleBtn");
-  const locationsTabBtn = document.getElementById("tabLocationsBtn");
+  const peoplePanel = requireElement("peoplePanel");
+  const locationsPanel = requireElement("locationsPanel");
+  const peopleTabBtn = requireElement("tabPeopleBtn");
+  const locationsTabBtn = requireElement("tabLocationsBtn");
 
   if (tab === "people") {
     peoplePanel.classList.remove("hidden");
@@ -27,11 +29,10 @@ export function switchPeopleTab(tab) {
   }
 }
 
-export function renderPeople() {
-  const container = document.getElementById("peoplePanel");
+export function renderPeople(): void {
+  const container = requireElement("peoplePanel");
   let html = "";
-  for (let i = 0; i < state.allPeople.length; i++) {
-    const person = state.allPeople[i];
+  for (const person of state.allPeople) {
     const count = countEvidenceForPerson(person);
 
     html += '<div class="person-card">';
@@ -47,8 +48,8 @@ export function renderPeople() {
     html += "</div>";
     html += "<p><strong>Speciality:</strong> " + person.speciality + "</p>";
     html += "<ul>";
-    for (let r = 0; r < person.responsibilities.length; r++) {
-      html += "<li>" + person.responsibilities[r] + "</li>";
+    for (const responsibility of person.responsibilities) {
+      html += "<li>" + responsibility + "</li>";
     }
     html += "</ul>";
     html += '<div class="person-statement">&ldquo;' + person.statement + "&rdquo;</div>";
@@ -62,28 +63,27 @@ export function renderPeople() {
   container.innerHTML = html;
 
   const links = container.querySelectorAll(".evidence-count-link");
-  for (let l = 0; l < links.length; l++) {
+  for (const link of links) {
     // demo 10: click-callback + setTimeout-callback als arrows (lesen e.target, kein `this`)
-    links[l].addEventListener("click", (e) => {
-      const personId = e.target.getAttribute("data-person-id");
-      document.getElementById("filterPerson").value = personId;
+    link.addEventListener("click", (e) => {
+      const personId = (e.target as HTMLElement).getAttribute("data-person-id") || "";
+      requireElement<HTMLSelectElement>("filterPerson").value = personId;
       navigateTo("evidence");
       setTimeout(() => renderEvidenceList(), 0);
     });
   }
 }
 
-export function renderLocations() {
-  const container = document.getElementById("locationsPanel");
+export function renderLocations(): void {
+  const container = requireElement("locationsPanel");
   let html = "";
-  for (let i = 0; i < state.allLocations.length; i++) {
-    const loc = state.allLocations[i];
+  for (const loc of state.allLocations) {
     html += '<div class="location-card">';
     html += "<h3>" + loc.id + " &mdash; " + loc.name + "</h3>";
     html += "<p>" + loc.description + "</p>";
     html += "<p><strong>Contains:</strong></p><ul>";
-    for (let c = 0; c < loc.contains.length; c++) {
-      html += "<li>" + loc.contains[c] + "</li>";
+    for (const item of loc.contains) {
+      html += "<li>" + item + "</li>";
     }
     html += "</ul></div>";
   }

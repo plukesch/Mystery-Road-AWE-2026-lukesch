@@ -86,18 +86,21 @@ export interface CaseFile {
   notes: string;
 }
 
-// demo 5/6: state.js selbst ist noch nicht typisiert (kommt in demo 7).
-// bis dahin: die minimale form, die lookup.ts/data.ts von "state" brauchen,
-// jetzt mit den ECHTEN domain-typen statt den demo-5-platzhaltern
-// (EvidenceRecord/PersonRecord/LocationRecord) - die sind damit ueberholt.
-export interface AppStateShape {
-  allEvidence: Evidence[];
-  filteredEvidence: Evidence[];
-  allPeople: Person[];
-  allLocations: Location[];
-  allTimeline: TimelineEvent[];
-  caseData: CaseFile;
-  currentPage: string;
-  evidenceViewLoading: boolean;
-  loadingStepsRemaining: number;
+// demo 7: form der gespeicherten hypothesen-entwuerfe (workspace.ts).
+// Partial<HypothesisDraft> beim einlesen benutzt, weil ein aus localStorage
+// geladenes objekt (moeglicherweise von hand editiert/veraltet) nicht
+// garantiert alle felder hat.
+export interface HypothesisDraft {
+  suspectId: string;
+  nature: string;
+  evidenceIds: string[];
+  confidence: string;
+  explanation: string;
+  alternative: string;
+  savedAt: string;
 }
+
+// demo 5/6 hatten hier ein "AppStateShape"-interface als provisorium, solange
+// state.js selbst noch nicht typisiert war. demo 7 konvertiert state.js zu
+// state.ts (das jetzt sein eigenes, vollstaendiges "AppState"-interface hat)
+// -> dieses provisorium ist ueberholt und wurde entfernt.

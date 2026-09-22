@@ -9,17 +9,15 @@
 // echten typen statt den ungetypten fetch().json()-ergebnissen (die waeren
 // sonst stillschweigend "any").
 // ---------------------------------------------------------------------
-import stateJs from "./state.js";
+// demo 7: state.js ist jetzt auch konvertiert -> der "as unknown as
+// AppStateShape"-umweg aus demo 5/6 ist weg, state importiert sich direkt
+// mit echten typen.
+import state from "./state.js";
 import { renderDashboard } from "./views/dashboard.js";
 import { renderEvidenceList, applyStoredBookmarkFlags } from "./views/evidence.js";
 import { renderTimeline } from "./views/timeline.js";
 import { populateAllDropdowns } from "./dropdowns.js";
-import type { AppStateShape, Evidence, Person, Location, TimelineEvent, CaseFile } from "./types.js";
-
-// state.js ist noch nicht konvertiert (demo 7) - siehe lookup.ts fuer die
-// ausfuehrliche begruendung des "as AppStateShape" statt "any", und warum
-// hier der umweg ueber "unknown" noetig ist (state.js's "caseData: {}").
-const state = stateJs as unknown as AppStateShape;
+import type { Evidence, Person, Location, TimelineEvent, CaseFile } from "./types.js";
 
 function showLoadingOverlay(msg: string): void {
   const overlay = document.getElementById("loadingOverlay");

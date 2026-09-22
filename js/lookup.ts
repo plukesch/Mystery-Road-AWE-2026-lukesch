@@ -2,32 +2,12 @@
 // GENERIC LOOKUP HELPERS
 // lesen nur aus dem state, schreiben nie -> eigenes modul
 // ---------------------------------------------------------------------
-// demo 5 (ue2): zweite .ts-datei. state.js selbst ist noch NICHT konvertiert
-// (kommt in demo 6/7 mit den echten domain-typen Evidence/Person/Location).
-// bis dahin tippen wir hier bewusst die GRENZEN unserer eigenen funktionen
-// (parameter, rueckgabewerte) explizit selbst, statt uns auf ts's raterei aus
-// dem untypisierten state.js zu verlassen -> unser code schreibt nirgends "any".
-// demo 6: die anfangs lokalen EvidenceRecord/PersonRecord/LocationRecord sind
-// jetzt durch die echten domain-typen aus types.ts ersetzt (ueberholt, siehe
-// UE2_CHANGES.md).
-import stateJs from "./state.js";
-import type { Evidence, Person, Location, AppStateShape } from "./types.js";
-
-// state.js ist selbst noch nicht typisiert (kommt in demo 7). ts leitet aus
-// dem leeren array-literal "allEvidence: []" in state.js foelschlicherweise
-// "never[]" ab, weil es nirgends im fuer ts sichtbaren code befuellt wird -
-// das passiert erst zur laufzeit per fetch(), unsichtbar fuer den compiler.
-// deshalb hier ein gezielter, eng begrenzter type-assertion statt "any": wir
-// sagen ts nur fuer DIESE eine importstelle, was state tatsaechlich enthaelt.
-// kein any, weil "any" JEDE pruefung fuer den wert abschalten wuerde (auch
-// tippfehler bei property-namen) - "as AppStateShape" prueft weiterhin
-// strukturell mit. der umweg ueber "unknown" ist noetig, weil state.js's
-// eigenes "caseData: {}" (leeres objekt als startwert) laut ts zu wenig mit
-// CaseFile (9 pflichtfelder) gemeinsam hat, um es ts direkt glauben zu
-// lassen - "as unknown as X" ist ts's eigener, ausdruecklicher weg zu sagen
-// "ich weiss es hier wirklich besser", nur EINMAL an dieser stelle, nicht
-// (wie bei any) fuer immer und ueberall wo der wert danach hinfliesst.
-const state = stateJs as unknown as AppStateShape;
+// demo 5: hier stand anfangs ein "as unknown as AppStateShape"-umweg, weil
+// state.js selbst noch nicht typisiert war (ts riet faelschlich "never[]"
+// fuer die leeren array-literale). demo 7 konvertiert jetzt auch state.js
+// selbst -> state ist ab hier einfach direkt echt getypt, kein umweg mehr noetig.
+import state from "./state.js";
+import type { Evidence, Person, Location } from "./types.js";
 
 // noUncheckedIndexedAccess (bewusst angeschaltet, siehe tsconfig.json) macht
 // state.allEvidence[i] zu "Evidence | undefined" statt blind "Evidence" -

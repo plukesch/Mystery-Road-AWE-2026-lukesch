@@ -169,3 +169,79 @@ Konkret, direkt aus dem Vergleich unserer beiden Netzwerk-Logs:
 - **Mehr Einblick als nötig.** Im Dev-Modus liegt der Code offen und lesbar da (mit Dateinamen, Kommentaren, Struktur) — im Produktions-Build ist er gebündelt/minifiziert. Für fremde Besucher:innen sollen nur so viele Interna wie nötig sichtbar sein.
 
 Live beobachtet: über `vite preview` war die Konsole **komplett leer** (kein `[vite] connecting...` mehr) — der Beweis, dass die ganze Dev-Maschinerie im echten Build gar nicht mehr da ist.
+
+---
+
+## Demo 4 — Lint & Format
+
+ESLint + Prettier installiert und konfiguriert, `lint`/`lint:fix`/`format`-Scripts ergänzt, eine echte ungenutzte Variable gefunden (und für die Präsentation als Ein-Klick-Demo geparkt), Prettier auf den kompletten, bisher nie formatierten Code losgelassen (13 Dateien geändert, rein kosmetisch). Details in `UE2_CHANGES.md`.
+
+### F1: Unterschied zwischen dem, was ein Linter prüft/fixt, und dem, was ein Formatter prüft/fixt? Je einen konkreten Fund aus diesem Projekt nennen.
+
+**Einfach gesagt:** Lektor (Linter, prüft Inhalt/Logik) vs. Schriftsetzer (Formatter, prüft nur
+die Optik). Beide verbessern den Text, aus komplett unterschiedlichen Gründen.
+
+- **Linter (ESLint) prüft Logik/Verhalten** — Dinge, die vermutlich echte Fehler sind, unabhängig
+  davon, wie der Code aussieht. **Konkreter Fund hier:** `js/views/dashboard.js`, eine absichtlich
+  eingebaute ungenutzte Variable → `'unreviewedCount' is assigned a value but never used
+  no-unused-vars`. Das hat nichts mit Formatierung zu tun — die Zeile hätte perfekt eingerückt
+  und mit den richtigen Anführungszeichen dastehen können, der Linter hätte trotzdem gemeckert.
+- **Formatter (Prettier) prüft/erzwingt nur das Aussehen** — Einrückung, Zeilenumbrüche,
+  Anführungszeichen, Kommas. **Konkreter Fund hier:** `js/utils.js` hatte eine Zeile, die länger
+  als unser eingestelltes `printWidth: 100` war — Prettier hat sie automatisch umgebrochen und in
+  Klammern gesetzt, ohne dass sich am Ergebnis (dem zurückgegebenen String) auch nur ein Zeichen
+  geändert hat.
+
+Die beiden überschneiden sich bei uns bewusst **nicht**: `eslint-config-prettier` schaltet die
+paar ESLint-eigenen Optik-Regeln ab, damit die zwei Werkzeuge sich nicht gegenseitig
+widersprechende Anweisungen geben.
+
+### F2: Warum sind `lint` und `lint:fix` zwei getrennte Scripts statt einem, das immer automatisch fixt? Wann willst du bewusst die nicht-fixende Version?
+
+**Einfach gesagt:** nicht jeder gefundene Fehler ist gefahrlos automatisch reparierbar. Eine
+ungenutzte Variable könnte ein Tippfehler sein (löschen ist sicher) — oder ein Zeichen, dass du
+vergessen hast, sie irgendwo zu **benutzen** (löschen würde dann einen echten Bug verstecken).
+Das kann nur ein Mensch entscheiden.
+
+Genau das haben wir live gesehen: `npm run lint:fix` auf unseren absichtlichen Fehler angewendet
+— die Meldung blieb **trotzdem stehen**, `no-unused-vars` gehört zu den Regeln, die ESLint
+bewusst **nicht** automatisch anfasst, weil eine automatische Lösung (Variable löschen ODER an
+irgendeiner Stelle plötzlich "benutzen") in beide Richtungen falsch sein könnte.
+
+**Wann willst du bewusst die nicht-fixende Version (`lint`) statt `lint:fix`?**
+- **In der CI** (Demo 8): ein automatischer Prüflauf soll **nie heimlich deinen Code umschreiben**
+  und das Ergebnis committen — er soll nur **melden**, dass etwas nicht stimmt, und den Build rot
+  färben. Ein Mensch entscheidet dann, wie der Fix aussieht.
+- **Beim Reviewen fremden Codes**, wenn du erstmal nur sehen willst, *was* gemeldet wird, bevor du
+  irgendetwas automatisch veränderst.
+- **Immer dann**, wenn ein gemeldetes Problem (wie eine ungenutzte Variable) mehrdeutig ist und
+  eine automatische Lösung genauso gut die falsche sein könnte wie die richtige.
+
+### F3: Was macht `npm run lint` (bzw. `pnpm lint`) eigentlich "unter der Haube"? Wo sucht npm nach dem `lint`-Kommando, und würde es funktionieren, wenn dein Linter nicht als Projekt-Abhängigkeit, sondern nur global installiert wäre?
+
+**Einfach gesagt:** npm schaut in `package.json` unter `scripts.lint` nach, findet den Text
+`"eslint ."`, und führt den aus — dabei schaut es **zuerst** im Projekt selbst nach einem
+passenden Programm, nicht irgendwo auf dem ganzen Rechner.
+
+Genauer: `npm run lint` liest den String bei `scripts.lint` in `package.json` (`"eslint ."`) und
+führt ihn wie einen Terminal-Befehl aus. Damit das mit dem *unqualifizierten* Namen `eslint`
+funktioniert (kein Pfad davor), hängt npm für die Dauer dieses einen Befehls den Ordner
+`node_modules/.bin/` **vorne** an den Suchpfad (`PATH`) an. Genau in diesem Ordner legt npm beim
+Installieren jedes Pakets, das ein Kommandozeilen-Werkzeug mitbringt (wie `eslint` oder `vite`),
+automatisch eine kleine ausführbare Verknüpfung an. Deshalb findet `npm run lint` unser lokal
+installiertes ESLint, ganz ohne dass wir irgendwo einen Pfad dazu angeben mussten.
+
+**Würde es auch mit einer nur global installierten Version funktionieren?** Technisch oft ja —
+wenn im Projekt selbst kein `node_modules/.bin/eslint` existiert, fällt die normale
+Shell-Pfadsuche auf den Rest deines System-`PATH` zurück, und ein global installiertes `eslint`
+würde dort gefunden. **Aber das wäre die falsche, fragile Lösung:**
+- Ein Teammitglied oder die CI, das/die dieses globale Programm nicht installiert hat, bekommt
+  schlicht `eslint: command not found` — das Projekt ist auf einmal nicht mehr „von selbst"
+  lauffähig, nur noch mit stillem Vorwissen über die eigene Maschine.
+- Selbst wenn alle zufällig irgendein globales ESLint haben, könnten das **unterschiedliche
+  Versionen** sein — dieselbe Versions-Drift-Problematik wie bei einer fehlenden Lockfile in
+  Demo 1 ("bei mir meldet der Linter das, bei dir nicht").
+
+Deshalb installieren wir ESLint/Prettier als **`devDependencies`**: sie werden dadurch Teil des
+reproduzierbaren Projekt-Setups (in `package.json` + `package-lock.json` festgehalten, genau wie
+`dayjs` oder `vite`), nicht eine zufällige Eigenschaft von irgendjemandes Rechner.

@@ -1,0 +1,12 @@
+# generiert / nicht unser code-stil
+node_modules/
+dist/
+public/
+package-lock.json
+
+# eingefrorene ue1-vor-refactor-datei, nie mehr angefasst
+app.js
+
+# hand-formatierte doku (tabellen, emoji-ueberschriften) - prettier wuerde das zerreissen
+ue1/
+ue2/

@@ -5,7 +5,12 @@
 // ---------------------------------------------------------------------
 import state from "../state.js";
 import { formatDate, getStatusBadgeClass, getRelevanceBadgeClass } from "../utils.js";
-import { findEvidenceById, findPersonById, findLocationById, evidenceMentionsPerson } from "../lookup.js";
+import {
+  findEvidenceById,
+  findPersonById,
+  findLocationById,
+  evidenceMentionsPerson,
+} from "../lookup.js";
 import { saveBookmarksToStorage, saveNoteForEvidence, loadNoteForEvidence } from "../storage.js";
 
 export function populateEvidenceDropdowns() {
@@ -26,12 +31,20 @@ export function populateEvidenceDropdowns() {
 
   personSelect.innerHTML = '<option value="">All people</option>';
   for (let p = 0; p < state.allPeople.length; p++) {
-    personSelect.innerHTML += '<option value="' + state.allPeople[p].id + '">' + state.allPeople[p].name + "</option>";
+    personSelect.innerHTML +=
+      '<option value="' + state.allPeople[p].id + '">' + state.allPeople[p].name + "</option>";
   }
 
   locationSelect.innerHTML = '<option value="">All locations</option>';
   for (let l = 0; l < state.allLocations.length; l++) {
-    locationSelect.innerHTML += '<option value="' + state.allLocations[l].id + '">' + state.allLocations[l].id + " - " + state.allLocations[l].name + "</option>";
+    locationSelect.innerHTML +=
+      '<option value="' +
+      state.allLocations[l].id +
+      '">' +
+      state.allLocations[l].id +
+      " - " +
+      state.allLocations[l].name +
+      "</option>";
   }
 }
 
@@ -61,7 +74,8 @@ function getFilteredEvidence() {
     }
     if (matches && locationVal && item.locationIds.indexOf(locationVal) === -1) matches = false;
     if (matches && statusVal && (item.status || "").toLowerCase() !== statusVal) matches = false;
-    if (matches && relevanceVal && (item.relevance || "").toLowerCase() !== relevanceVal) matches = false;
+    if (matches && relevanceVal && (item.relevance || "").toLowerCase() !== relevanceVal)
+      matches = false;
 
     if (matches) results.push(item);
   }
@@ -124,16 +138,33 @@ function sortEvidenceInPlace(list) {
 function renderEvidenceCardHTML(ev) {
   const isBookmarked = state.bookmarks.indexOf(ev.id) !== -1;
   let html = '<div class="evidence-card" data-id="' + ev.id + '">';
-  html += '<button class="bookmark-btn ' + (isBookmarked ? "active" : "") + '" data-action="bookmark" data-id="' + ev.id + '" aria-label="Toggle bookmark for ' + ev.title + '"><span class="bookmark-icon">' + (isBookmarked ? "★" : "☆") + "</span></button>";
+  html +=
+    '<button class="bookmark-btn ' +
+    (isBookmarked ? "active" : "") +
+    '" data-action="bookmark" data-id="' +
+    ev.id +
+    '" aria-label="Toggle bookmark for ' +
+    ev.title +
+    '"><span class="bookmark-icon">' +
+    (isBookmarked ? "★" : "☆") +
+    "</span></button>";
   html += "<h3>" + ev.title + "</h3>";
-  html += '<div class="evidence-meta">' + ev.id + " &middot; " + ev.type + " &middot; " + formatDate(ev.timestamp) + "</div>";
+  html +=
+    '<div class="evidence-meta">' +
+    ev.id +
+    " &middot; " +
+    ev.type +
+    " &middot; " +
+    formatDate(ev.timestamp) +
+    "</div>";
   html += '<div class="evidence-summary">' + ev.summary + "</div>";
 
   if (ev.tags.indexOf("critical") !== -1) {
     html += '<span class="badge badge-critical">Critical</span>';
   }
   html += '<span class="badge ' + getStatusBadgeClass(ev.status) + '">' + ev.status + "</span>";
-  html += '<span class="badge ' + getRelevanceBadgeClass(ev.relevance) + '">' + ev.relevance + "</span>";
+  html +=
+    '<span class="badge ' + getRelevanceBadgeClass(ev.relevance) + '">' + ev.relevance + "</span>";
   html += "<div>";
   for (let t = 0; t < ev.tags.length; t++) {
     html += '<span class="tag-chip">' + ev.tags[t] + "</span>";
@@ -260,8 +291,16 @@ function renderEvidenceDetail(ev) {
   let html = "";
   html += '<div class="evidence-detail-header">';
   html += "<div><h2>" + ev.title + "</h2>";
-  html += '<div class="evidence-meta">' + ev.id + " &middot; " + ev.type + " &middot; " + formatDate(ev.timestamp) + "</div></div>";
-  html += '<button type="button" class="btn btn-secondary btn-small" onclick="closeEvidenceDetail()">Close</button>';
+  html +=
+    '<div class="evidence-meta">' +
+    ev.id +
+    " &middot; " +
+    ev.type +
+    " &middot; " +
+    formatDate(ev.timestamp) +
+    "</div></div>";
+  html +=
+    '<button type="button" class="btn btn-secondary btn-small" onclick="closeEvidenceDetail()">Close</button>';
   html += "</div>";
 
   if (ev.tags.indexOf("critical") !== -1) {
@@ -270,8 +309,12 @@ function renderEvidenceDetail(ev) {
 
   html += '<div class="detail-field"><strong>Summary</strong>' + ev.summary + "</div>";
   html += '<div class="evidence-detail-content">' + ev.content + "</div>";
-  html += '<div class="detail-field"><strong>Related people</strong>' + personNames.join(", ") + "</div>";
-  html += '<div class="detail-field"><strong>Related locations</strong>' + locationNames.join(", ") + "</div>";
+  html +=
+    '<div class="detail-field"><strong>Related people</strong>' + personNames.join(", ") + "</div>";
+  html +=
+    '<div class="detail-field"><strong>Related locations</strong>' +
+    locationNames.join(", ") +
+    "</div>";
   html += '<div class="detail-field"><strong>Tags</strong>' + tagsHtml + "</div>";
 
   html += '<div class="detail-field"><strong>Review status</strong>';
@@ -289,11 +332,20 @@ function renderEvidenceDetail(ev) {
   html += "</select></div>";
 
   html += '<div class="detail-field"><strong>Investigator note</strong>';
-  html += '<textarea id="evidenceNoteInput" class="note-textarea" rows="3" data-evidence-id="' + ev.id + '" placeholder="Add a private note about this evidence...">' + storedNote + "</textarea>";
-  html += '<button type="button" class="btn btn-primary btn-small" style="margin-top:6px;" onclick="saveCurrentNote()">Save note</button>';
+  html +=
+    '<textarea id="evidenceNoteInput" class="note-textarea" rows="3" data-evidence-id="' +
+    ev.id +
+    '" placeholder="Add a private note about this evidence...">' +
+    storedNote +
+    "</textarea>";
+  html +=
+    '<button type="button" class="btn btn-primary btn-small" style="margin-top:6px;" onclick="saveCurrentNote()">Save note</button>';
   html += "</div>";
 
-  html += '<div class="detail-field"><strong>Note preview</strong><div id="notePreview">' + storedNote + "</div></div>";
+  html +=
+    '<div class="detail-field"><strong>Note preview</strong><div id="notePreview">' +
+    storedNote +
+    "</div></div>";
 
   section.innerHTML = html;
 

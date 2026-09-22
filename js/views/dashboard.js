@@ -9,16 +9,25 @@ export function renderDashboard() {
   if (!container) return;
 
   let reviewedCount = 0;
+  // demo 4 live-vorfuehrung: naechste zeile einkommentieren, dann zeigt
+  // "npm run lint": 'unreviewedCount' is assigned a value but never used  no-unused-vars
+  //const unreviewedCount = 0;
   for (let i = 0; i < state.allEvidence.length; i++) {
     if ((state.allEvidence[i].status || "").toLowerCase() === "reviewed") reviewedCount++;
   }
 
-  const progressPct = state.allEvidence.length === 0 ? 0 : Math.round((reviewedCount / state.allEvidence.length) * 100);
+  const progressPct =
+    state.allEvidence.length === 0
+      ? 0
+      : Math.round((reviewedCount / state.allEvidence.length) * 100);
 
   let html = "";
   html += '<div class="case-summary-card">';
   html += "<h3>" + (state.caseData.title || "Case") + "</h3>";
-  html += '<p><span class="badge badge-flagged">' + (state.caseData.status || "unknown").toUpperCase() + "</span></p>";
+  html +=
+    '<p><span class="badge badge-flagged">' +
+    (state.caseData.status || "unknown").toUpperCase() +
+    "</span></p>";
   html += "<p>" + (state.caseData.summary || "") + "</p>";
   html += "</div>";
 
@@ -32,7 +41,10 @@ export function renderDashboard() {
 
   html += '<div class="dashboard-panel">';
   html += "<h3>Review progress</h3>";
-  html += '<div class="progress-bar-outer"><div class="progress-bar-inner" style="width:' + progressPct + '%;"></div></div>';
+  html +=
+    '<div class="progress-bar-outer"><div class="progress-bar-inner" style="width:' +
+    progressPct +
+    '%;"></div></div>';
   html += "<p>" + progressPct + "% of evidence reviewed</p>";
   html += "</div>";
 
@@ -45,8 +57,16 @@ export function renderDashboard() {
   }
   for (let e = 0; e < recentEvidence.length; e++) {
     const ev = recentEvidence[e];
-    html += '<div class="mini-list-item"><strong>' + ev.id + "</strong> &mdash; " + ev.title +
-      ' <span class="badge ' + getStatusBadgeClass(ev.status) + '">' + ev.status + "</span></div>";
+    html +=
+      '<div class="mini-list-item"><strong>' +
+      ev.id +
+      "</strong> &mdash; " +
+      ev.title +
+      ' <span class="badge ' +
+      getStatusBadgeClass(ev.status) +
+      '">' +
+      ev.status +
+      "</span></div>";
   }
   html += "</div>";
 
@@ -57,7 +77,12 @@ export function renderDashboard() {
   }
   for (let t = 0; t < recentTimeline.length; t++) {
     const evt = recentTimeline[t];
-    html += '<div class="mini-list-item"><strong>' + formatDate(evt.time) + "</strong><br>" + evt.title + "</div>";
+    html +=
+      '<div class="mini-list-item"><strong>' +
+      formatDate(evt.time) +
+      "</strong><br>" +
+      evt.title +
+      "</div>";
   }
   html += "</div>";
 
@@ -68,5 +93,11 @@ export function renderDashboard() {
 
 // nur das dashboard braucht das -> nicht exportiert
 function statCardHTML(value, label) {
-  return '<div class="stat-card"><div class="stat-value">' + value + '</div><div class="stat-label">' + label + "</div></div>";
+  return (
+    '<div class="stat-card"><div class="stat-value">' +
+    value +
+    '</div><div class="stat-label">' +
+    label +
+    "</div></div>"
+  );
 }

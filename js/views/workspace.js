@@ -21,15 +21,22 @@ function renderBookmarksList() {
   const bookmarkedItems = state.allEvidence.filter((ev) => ev.bookmarked);
 
   if (bookmarkedItems.length === 0) {
-    container.innerHTML = "<p>No bookmarked evidence yet. Bookmark items from the Evidence view.</p>";
+    container.innerHTML =
+      "<p>No bookmarked evidence yet. Bookmark items from the Evidence view.</p>";
     return;
   }
 
   let html = "";
   for (let i = 0; i < bookmarkedItems.length; i++) {
     const ev = bookmarkedItems[i];
-    html += '<div class="mini-list-item"><strong>' + ev.id + "</strong> &mdash; " + ev.title +
-      ' <button type="button" class="btn btn-small btn-secondary" data-open-evidence="' + ev.id + '">Open</button></div>';
+    html +=
+      '<div class="mini-list-item"><strong>' +
+      ev.id +
+      "</strong> &mdash; " +
+      ev.title +
+      ' <button type="button" class="btn btn-small btn-secondary" data-open-evidence="' +
+      ev.id +
+      '">Open</button></div>';
   }
   container.innerHTML = html;
 
@@ -51,7 +58,12 @@ function renderNotesList() {
   for (let i = 0; i < state.allEvidence.length; i++) {
     const note = state.notesStore[state.allEvidence[i].id];
     if (note) {
-      noteEntries.push({ index: i, evidenceId: state.allEvidence[i].id, title: state.allEvidence[i].title, text: note });
+      noteEntries.push({
+        index: i,
+        evidenceId: state.allEvidence[i].id,
+        title: state.allEvidence[i].title,
+        text: note,
+      });
     }
   }
 
@@ -63,7 +75,11 @@ function renderNotesList() {
   let html = "";
   for (let n = 0; n < noteEntries.length; n++) {
     const entry = noteEntries[n];
-    html += '<div class="mini-list-item"><strong>' + entry.evidenceId + "</strong> &mdash; " + entry.title;
+    html +=
+      '<div class="mini-list-item"><strong>' +
+      entry.evidenceId +
+      "</strong> &mdash; " +
+      entry.title;
     html += '<div id="noteText-' + entry.index + '">' + entry.text + "</div></div>"; // TODO: user-text via innerHTML - XSS-smell, siehe CHANGES demo 8
   }
   container.innerHTML = html;
@@ -77,13 +93,21 @@ export function populateHypothesisDropdowns() {
   const currentSuspect = suspectSelect.value;
   suspectSelect.innerHTML = '<option value="">Select a person…</option>';
   for (let p = 0; p < state.allPeople.length; p++) {
-    suspectSelect.innerHTML += '<option value="' + state.allPeople[p].id + '">' + state.allPeople[p].name + "</option>";
+    suspectSelect.innerHTML +=
+      '<option value="' + state.allPeople[p].id + '">' + state.allPeople[p].name + "</option>";
   }
   suspectSelect.value = currentSuspect;
 
   evidenceSelect.innerHTML = "";
   for (let i = 0; i < state.allEvidence.length; i++) {
-    evidenceSelect.innerHTML += '<option value="' + state.allEvidence[i].id + '">' + state.allEvidence[i].id + " - " + state.allEvidence[i].title + "</option>";
+    evidenceSelect.innerHTML +=
+      '<option value="' +
+      state.allEvidence[i].id +
+      '">' +
+      state.allEvidence[i].id +
+      " - " +
+      state.allEvidence[i].title +
+      "</option>";
   }
 }
 
@@ -96,7 +120,7 @@ export function saveHypothesis() {
     confidence: document.getElementById("hypConfidence").value,
     explanation: document.getElementById("hypExplanation").value,
     alternative: document.getElementById("hypAlternative").value,
-    savedAt: new Date().toISOString()
+    savedAt: new Date().toISOString(),
   };
 
   try {

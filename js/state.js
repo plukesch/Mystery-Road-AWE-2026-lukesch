@@ -29,10 +29,10 @@ const state = {
     evidence: false,
     people: false,
     timeline: false,
-    workspace: false
+    workspace: false,
   },
 
-  notesStore: {}
+  notesStore: {},
 };
 
 export default state;
@@ -41,5 +41,5 @@ export default state;
 export const STORAGE_KEYS = {
   bookmarks: "remotion_bookmarks",
   notes: "remotion_notes",
-  hypothesis: "remotion_hypothesis"
+  hypothesis: "remotion_hypothesis",
 };

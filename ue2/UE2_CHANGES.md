@@ -431,3 +431,187 @@ npm run preview
 
 **6. Interaktivität live beweisen**
 Ein Beweisstück bookmarken (Stern anklicken), dann DevTools → Application/Storage → Local Storage öffnen, den Eintrag `remotion_bookmarks` zeigen — "das läuft alles im minifizierten Code genauso wie vorher, nur kleiner."
+
+---
+
+## Demo 4 — `package.json`-Scripts: Lint & Format
+
+### 🔰 Einfach erklärt — worum geht's hier überhaupt?
+
+Bis jetzt hat niemand geprüft, ob unser Code eigentlich **gut** ist — nur ob er läuft. Demo 4
+bringt zwei neue Helfer rein, die das automatisch für uns tun. Wichtig: das sind **zwei
+verschiedene Jobs**, die man leicht verwechselt.
+
+**Der Linter (bei uns: ESLint) ist ein Korrekturleser für die LOGIK.** Er liest deinen Code und
+sucht nach Dingen, die vermutlich ein echter **Fehler** sind — eine Variable, die du deklarierst
+und nie benutzt (meistens ein Zeichen, dass du was vergessen hast), ein Vergleich, der nie wahr
+sein kann, etc. Ihm ist völlig egal, wie dein Code **aussieht** (Leerzeichen, Anführungszeichen).
+
+**Der Formatter (bei uns: Prettier) ist ein Layouter fürs AUSSEHEN.** Er ändert **niemals**, was
+dein Code tut — nur wie er aussieht: Einrückung, Leerzeichen, Anführungszeichen, wann eine Zeile
+umgebrochen wird. Komplett automatisch, komplett konsistent, im ganzen Projekt gleich.
+
+*Analogie:* stell dir ein Buchmanuskript vor. Ein **Lektor** (Linter) liest es und sagt "dieser
+Satz ergibt keinen Sinn, den musst du ändern" — das betrifft den **Inhalt**. Ein **Schriftsetzer**
+(Formatter) sorgt dafür, dass jeder Absatz gleich eingerückt ist, dieselbe Schriftgröße hat — das
+betrifft nur die **Optik**, der Text bleibt wortwörtlich derselbe. Beide machen das Buch besser,
+aber aus komplett unterschiedlichen Gründen — und sie widersprechen sich nicht, weil wir dem
+Lektor (`eslint-config-prettier`) explizit gesagt haben: "um Optik kümmert sich der Setzer, misch
+dich da nicht ein."
+
+**Warum zwei getrennte Befehle, `lint` und `lint:fix`?** Nicht jeder gefundene Fehler ist sicher
+automatisch reparierbar. Konkretes Beispiel, das wir gleich selbst ausgelöst haben: eine
+ungenutzte Variable. ESLint **weigert sich**, die einfach zu löschen — es kann nicht wissen, *ob*
+das ein Tippfehler ist (dann löschen, sicher) oder ob du eigentlich **vergessen** hast, die
+Variable irgendwo zu benutzen (dann wäre Löschen ein neuer Bug!). Deshalb meldet `lint` es nur
+und lässt **dich** entscheiden. `lint:fix` wendet nur die Korrekturen an, bei denen ESLint sich
+zu 100 % sicher ist, dass nichts kaputtgeht.
+
+**Was passiert bei `npm run lint` "unter der Haube"?** npm schaut in `package.json` unter
+`scripts.lint` nach, findet dort den Text `"eslint ."`, und sucht dann nach einem Programm
+namens `eslint`, das es ausführen kann. Es sucht dabei **zuerst** in einem versteckten Ordner
+namens `node_modules/.bin/` — genau dort legt npm automatisch eine kleine "Startdatei" für jedes
+installierte Werkzeug ab, das ein Kommandozeilen-Programm mitbringt (wie unser `eslint`).
+
+### Task 1 — ESLint + Prettier installiert und konfiguriert
+
+Befehl (Nutzer): `npm install -D eslint @eslint/js eslint-config-prettier globals prettier` →
+`devDependencies`: `eslint ^10.11.0`, `@eslint/js ^10.0.1`, `eslint-config-prettier ^10.1.8`,
+`globals ^17.12.0`, `prettier ^3.9.8`. Alle fünf als **`-D`** (DevDependency) — laufen nur beim
+Entwickeln, ihr Code landet nie im Browser der Besucher:innen (Demo-1-Prinzip).
+
+**`eslint.config.js`** neu (das moderne „Flat Config"-Format):
+- `js.configs.recommended` — ESLints eigenes Regel-Set gegen echte Logikfehler (`no-unused-vars`,
+  `no-undef`, `no-unreachable`, `no-dupe-keys`, …).
+- `globals.browser` — sagt ESLint, dass Dinge wie `window`, `document`, `fetch`, `localStorage`
+  ganz normal existieren (sonst würde es sie fälschlich als "unbekannte Variable" melden).
+- `ignores`: `dist/`, `public/`, `node_modules/`, `app.js`, `ue1/`, `ue2/`. `app.js` bewusst dabei
+  — die eingefrorene Vor-Refactor-Datei aus UE1 wird nie mehr bearbeitet, sie zu linten würde nur
+  jede Menge irrelevanter, längst bekannter Alt-Probleme melden.
+- `eslint-config-prettier` ganz am Ende — schaltet die paar ESLint-eigenen Optik-Regeln ab, die
+  sich mit Prettier streiten könnten.
+
+**`.prettierrc.json`** — drei bewusste Einstellungen (nicht blind Standard übernommen):
+- `"printWidth": 100` (Standard wäre 80) — unser Code hat viele lange HTML-String-Bauzeilen
+  (`html += '<div class="...">' + ev.title + ...`), bei 80 würde Prettier die noch aggressiver
+  umbrechen, als nötig ist.
+- `"singleQuote": false` — passt zu unserem bisherigen Stil (doppelte Anführungszeichen außen).
+- `"trailingComma": "es5"` — Kommas nach dem letzten Element in mehrzeiligen Listen/Imports, wo
+  das gültiges JavaScript ist (macht künftige Diffs kleiner: eine neue Zeile hinzufügen ändert
+  dann nicht auch noch die Zeile davor).
+
+**`.prettierignore`** — dieselbe Logik wie `.eslintignore`, plus `package-lock.json` (wird von
+npm selbst verwaltet, ein Formatter sollte das nie anfassen).
+
+**`package.json`**: drei neue Scripts ergänzt: `"lint": "eslint ."`, `"lint:fix": "eslint . --fix"`,
+`"format": "prettier --write ."`.
+
+### Task 2 — `lint` fängt einen echten Fehler
+
+Absichtlich eine ungenutzte Variable in `js/views/dashboard.js` eingebaut:
+```js
+const unreviewedCount = 0;
+```
+`npm run lint` meldet:
+```
+D:\...\js\views\dashboard.js
+  12:9  error  'unreviewedCount' is assigned a value but never used  no-unused-vars
+
+✖ 1 problem (1 error, 0 warnings)
+```
+Danach die Zeile **auskommentiert** (nicht gelöscht) und mit einem Erklär-Kommentar versehen,
+damit sie sich für die Live-Präsentation mit einem Klick reaktivieren lässt. `npm run lint`
+danach wieder **0 Fehler** — bestätigt, dass genau diese eine Zeile der Auslöser war.
+
+### Task 3 — `format` ändert echte Dateien
+
+`npm run format` (`prettier --write .`) auf den kompletten, bisher nie formatierten Code
+losgelassen. Ergebnis laut `git diff --stat`:
+```
+13 files changed, 1610 insertions(+), 311 deletions(-)
+```
+Drei kleine, gut lesbare Beispiele aus dem echten Diff:
+
+**`.vscode/settings.json`** — 4-Leerzeichen-Einrückung → 2, fehlender Zeilenumbruch am Dateiende ergänzt:
+```diff
+ {
+-    "liveServer.settings.port": 5501
+-}
++  "liveServer.settings.port": 5501
++}
+```
+
+**`js/utils.js`** — eine zu lange Zeile (über `printWidth: 100`) wird umgebrochen und in Klammern gesetzt:
+```diff
+-  return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) +
+-    " " + d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
++  return (
++    d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) +
++    " " +
++    d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })
++  );
+```
+
+**`js/main.js`** — Trailing Comma nach dem letzten Import-Namen ergänzt (unsere `trailingComma: "es5"`-Einstellung):
+```diff
+   closeEvidenceDetail,
+-  saveCurrentNote
++  saveCurrentNote,
+ } from "./views/evidence.js";
+```
+
+`app.js` (in `.prettierignore`) blieb **komplett unangetastet** — `git status` zeigt keinerlei
+Änderung an dieser Datei, bestätigt die Ignore-Konfiguration.
+
+Wichtig: **in keinem einzigen Diff ändert sich Logik** — nur Whitespace, Klammern, Kommas,
+Zeilenumbrüche. Direkt danach mit `npm run dev` + vollem Feature-Durchlauf im Browser bestätigt
+(18 Evidenz-Karten, 6 Personen, 15 Timeline-Events, Dashboard-Stats, Sortierung) — die App
+verhält sich exakt wie vorher, nur der Quelltext sieht jetzt überall gleich aus.
+
+### Verifikation
+`npm run lint` sauber (0 Fehler, der Test-Fall ist auskommentiert geparkt). `npm run format` läuft
+idempotent (ein zweiter Aufruf meldet für bereits formatierte Dateien `(unchanged)`). Voller
+Feature-Durchlauf über `npm run dev` nach dem Formatieren: alle 5 Views, Bookmark + Sortierung
+funktionieren, Konsole zeigt nur Vites eigene Verbindungs-Meldungen.
+
+### 🎤 Live-Demo — was du im Unterricht herzeigst
+
+**1. `npm run lint` sauber zeigen**
+```bash
+npm run lint
+```
+Keine Ausgabe = 0 Fehler. Sag: "unser Code ist aktuell sauber laut Linter."
+
+**2. Den geparkten Fehler live reaktivieren**
+In `js/views/dashboard.js` die Zeile `// const unreviewedCount = 0;` einkommentieren (das `//`
+weg), speichern. Dann nochmal:
+```bash
+npm run lint
+```
+Zeig die rote Fehlermeldung `'unreviewedCount' is assigned a value but never used`. Sag: "das ist
+eine Logik-Warnung, keine Optik-Frage — deshalb macht das der Linter, nicht der Formatter."
+
+**3. Zeigen, dass `lint:fix` das NICHT einfach wegräumt**
+```bash
+npm run lint:fix
+```
+Der Fehler ist **immer noch da** — sag: "ESLint traut sich nicht, eine ungenutzte Variable
+einfach zu löschen, das könnte einen echten Bug verstecken. Das muss ein Mensch entscheiden."
+Danach die Zeile wieder auskommentieren, `npm run lint` zeigt wieder 0 Fehler.
+
+**4. Einen Formatierungs-Unterschied live erzeugen**
+In `styles.css` irgendwo bewusst unsauber einrücken (z. B. Tabs statt Leerzeichen, oder
+`color:red` ohne Leerzeichen nach dem Doppelpunkt) und speichern. Dann:
+```bash
+npm run format
+```
+Datei nochmal aufmachen — automatisch wieder sauber. Sag: "das hat mit Logik nichts zu tun, nur
+mit Aussehen — genau der Job des Formatters."
+
+**5. `git diff` zeigen (Statistik reicht)**
+```bash
+git diff --stat
+```
+Zeig die Zeile `13 files changed, 1610 insertions(+), 311 deletions(-)` — "das war der einmalige
+große Aufräum-Diff, weil der Formatter den Code zum ersten Mal gesehen hat. Ab jetzt bleiben
+solche Diffs winzig, weil jeder neue Code gleich richtig formatiert reinkommt."

@@ -10,6 +10,10 @@ Gewählt: **npm** (eigene Vorerfahrung). `package.json` sauber ausgefüllt (sieh
 
 ### F1: Welches Problem löst ein Package Manager wirklich, das „Bibliothek runterladen und in einen Ordner legen" nicht löst? Konkret werden.
 
+**Einfach gesagt:** Beim reinen Runterladen musst du selbst Buch führen — welche Version hab
+ich, braucht das noch was anderes, gibt's was Neueres. npm macht das automatisch, wie ein
+Lagerverwalter statt eigener Zettelwirtschaft.
+
 Ganz konkret an `dayjs`:
 
 - **Reproduzierbarkeit über Versionen.** `package.json` sagt „irgendeine `1.x`-Version ab `1.11.23`" (`^1.11.23`), die Lockfile friert die *exakte* installierte Version ein. `npm install` liefert bei mir, bei dir, und in der CI **dieselbe** Version. Ein manuell heruntergeladenes `dayjs.min.js` sagt niemandem, welche Version das war oder ob es die neueste/eine gepatchte ist.
@@ -20,6 +24,10 @@ Ganz konkret an `dayjs`:
 
 ### F2: Unterschied `dependencies` vs. `devDependencies`? In welche Kategorie kommen Vite, Linter/Formatter und TypeScript — und warum?
 
+**Einfach gesagt:** Werkzeugkiste (Hammer, Bohrmaschine — bleibt in der Werkstatt) vs. das
+fertige Haus selbst (Ziegel, Fenster — steckt drin). `devDependencies` = Werkzeug zum Bauen,
+`dependencies` = das, was im fertigen, ausgelieferten Produkt tatsächlich mitläuft.
+
 - **`dependencies`**: Code, den die **ausgelieferte, laufende App** zur Laufzeit braucht — bei einer Browser-App: alles, was am Ende tatsächlich im Bundle landet, das im Browser der Nutzer:innen ausgeführt wird. `dayjs` gehört hierher, *sobald* wir es tatsächlich in App-Code importieren, der im Browser läuft.
 - **`devDependencies`**: Werkzeuge, die nur **während der Entwicklung/des Builds** gebraucht werden — laufen auf meinem Rechner bzw. in der CI, aber ihr eigener Code landet nie im Browser der Nutzer:innen. **Vite** (baut/serviert die App, läuft selbst nie im Browser), **ESLint/Prettier** (prüfen/formatieren Quelltext, laufen nie im Browser), **TypeScript** (Compiler, übersetzt zu JS, das Ergebnis läuft im Browser — der Compiler selbst nie) gehören alle hierher.
 
@@ -27,11 +35,19 @@ Der praktische Unterschied: `npm install --omit=dev` (z. B. auf einem reinen Dep
 
 ### F3: Wofür ist eine Lockfile da, und was könnte für Teammitglieder (oder die CI) schiefgehen, wenn sie nicht committet wäre?
 
+**Einfach gesagt:** `package.json` ist ein Rezept, das nur "füg Mehl hinzu" sagt (ungenau).
+Die Lockfile ist dasselbe Rezept mit exakten Grammangaben. Nur mit der Lockfile bekommen alle
+garantiert denselben "Kuchen".
+
 `package.json` gibt **Bereiche** an (`^1.11.23` erlaubt jede spätere `1.x.x`-Version). Die Lockfile (`package-lock.json`) friert den **exakt aufgelösten Baum** ein — jede einzelne (auch transitive) Version plus einen Integrity-Hash, der die heruntergeladene Datei gegen Manipulation prüft. `npm install` mit vorhandener Lockfile reproduziert exakt diesen Baum; ohne Lockfile löst npm die Bereiche bei **jedem** `install` neu auf.
 
 **Ohne committete Lockfile**, konkret an `dayjs`: veröffentlicht dayjs morgen `1.12.0` (erlaubt durch `^1.11.23`), bekommt ein Teammitglied oder die CI beim Klonen + `npm install` eine **andere** Version als die, mit der der Code geschrieben und getestet wurde. Folgen: „geht bei mir, geht bei dir nicht"-Bugs, eine ungetestete transitive Versions-Änderung bricht etwas oder bringt eine Schwachstelle mit, ein Build ist lokal grün und in der CI rot (oder umgekehrt) — rein durch Versions-Drift, nicht durch einen echten Code-Fehler. Und: die Integrity-Hashes (Schutz gegen ein manipuliertes/kompromittiertes Registry-Paket) gehen mit verloren.
 
 ### F4: npm gewählt — was würde man bei einem größeren Projekt durch pnpm gewinnen/verlieren?
+
+**Einfach gesagt:** pnpm hebt jeden Baustein nur **einmal** auf der ganzen Festplatte auf
+(statt einmal pro Projekt) und leiht ihn sich aus, wenn ein Projekt ihn braucht — spart Platz
+und Zeit. Kostet: ein Zusatzprogramm, das npm (immer mit Node dabei) nicht braucht.
 
 **Gewinn durch pnpm:**
 - **Ein globaler, inhaltsadressierter Store** auf der Platte: eine physische Kopie von z. B. `dayjs@1.11.23` liegt **einmal** auf dem Rechner und wird über Hardlinks in jedes Projekt „eingehängt", das genau diese Version braucht — statt (wie bei npm klassisch) in jedem Projekt eine eigene volle Kopie von `node_modules` zu haben. Bei vielen Node-Projekten auf einer Maschine: massiv weniger Plattenplatz, spürbar schnellere Installs.
@@ -50,6 +66,10 @@ Der praktische Unterschied: `npm install --omit=dev` (z. B. auf einem reinen Dep
 
 ### F1: Unterschied zwischen dem alten statischen Server und Vites Dev-Server? Mindestens eine Sache nennen, die Vite tut und ein reiner statischer Server nicht.
 
+**Einfach gesagt:** der alte Server ist ein stummer Briefträger — liefert nur Dateien aus, wie
+sie daliegen. Vite ist ein schlauer Assistent — merkt Änderungen automatisch, kennt installierte
+Pakete, kompiliert nur bei Bedarf.
+
 Der alte Server (`python -m http.server` aus UE1) macht **genau eine Sache**: eine angefragte Datei byte-für-byte so ausliefern, wie sie auf der Platte liegt. Er weiß nichts von `import`-Anweisungen, npm-Paketen oder Modul-Abhängigkeiten.
 
 Vites Dev-Server tut mehrere Dinge, die ein reiner statischer Server nicht kann — im Netzwerk-Log konkret beobachtet:
@@ -59,6 +79,11 @@ Vites Dev-Server tut mehrere Dinge, die ein reiner statischer Server nicht kann 
 - Er kompiliert/transformiert **on demand**, nur die Datei, die gerade angefragt wird — kein Vorab-Bundle des ganzen Projekts, bevor der Server überhaupt startet.
 
 ### F2: Was ist Hot Module Replacement, und was genau hast du beobachtet (und was **nicht**, z. B. beim App-Zustand)?
+
+**Einfach gesagt:** HMR = **H**ot **M**odule **R**eplacement, "heißer Teil-Austausch" — während
+die Seite noch läuft (heiß), wird ein einzelner Baustein (Modul) ausgetauscht, ohne alles andere
+anzufassen. Wie wenn jemand dir beim Lesen nur eine korrigierte Buchseite reinschiebt, statt dir
+das ganze Buch wegzunehmen und du bei Seite 1 neu anfangen musst (= kompletter Reload).
 
 **HMR** heißt: wenn sich eine Datei ändert, schickt der Dev-Server über die schon offene WebSocket-Verbindung **nur das geänderte Modul** (bzw. bei CSS: das geänderte Stylesheet) an die bereits laufende Seite, und der im Browser laufende Vite-Client tauscht es **an Ort und Stelle** aus — ohne das Dokument neu zu laden. Der komplette JS-Ausführungskontext (Variablen, In-Memory-Zustand, aktuelle Ansicht) bleibt dabei erhalten.
 
@@ -75,6 +100,11 @@ Vites Dev-Server tut mehrere Dinge, die ein reiner statischer Server nicht kann 
 **Warum der Unterschied:** unsere Module haben keinerlei `import.meta.hot.accept()`-Code. CSS-HMR bekommt man bei Vite automatisch ohne eigenes Zutun; JS-HMR mit Zustandserhalt braucht dagegen explizites Opt-in im Modul selbst (oder ein Framework, das das für einen erledigt — z. B. React/Vue über ihre Vite-Plugins). Ohne das fällt Vite bewusst auf einen sauberen Full-Reload zurück, statt ein Modul zu ersetzen und dabei möglicherweise einen inkonsistenten Zustand zu riskieren.
 
 ### F3: Warum integriert sich eine schon in ES-Module gesplittete App natürlich mit einem Tool wie Vite, verglichen mit der ursprünglichen Ein-`<script>`-Version?
+
+**Einfach gesagt:** Vite muss genau wissen, welcher einzelne Baustein sich geändert hat, um nur
+den auszutauschen. Das kann es nur, weil unsere App seit UE1 in benannte, über `import`/`export`
+verbundene Bausteine aufgeteilt ist. Bei der alten, einen riesigen `app.js`-Datei hätte Vite
+nicht erkennen können, "welcher Teil" sich geändert hat — es hätte immer alles neu laden müssen.
 
 Vites komplettes Dev-Serving- und Bundling-Modell **basiert** auf dem nativen ES-Modul-Graphen: `<script type="module" src="…">` plus `import`/`export`-Anweisungen geben Vite einen echten, statisch analysierbaren Abhängigkeitsbaum. Dadurch kann Vite:
 - jede Datei **einzeln, on demand** ausliefern (im Netzwerk-Log genau so beobachtet — 12 einzelne `js/*.js`-Requests statt einer riesigen Datei),

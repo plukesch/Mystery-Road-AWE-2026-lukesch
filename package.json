@@ -4,7 +4,9 @@
   "private": true,
   "description": "Investigate the failure of an AI-assisted rehabilitation robot. Browser-based case-file investigation portal, built and tooled up across the CSDC Advanced Web Engineering exercises (Exercise 1: ES modules & refactoring; Exercise 2: build tooling, TypeScript, CI/CD).",
   "type": "module",
-  "scripts": {},
+  "scripts": {
+    "dev": "vite"
+  },
   "keywords": [
     "case-study",
     "vanilla-js",
@@ -22,5 +24,8 @@
   "homepage": "https://github.com/plukesch/Mystery-Road-AWE-2026-lukesch#readme",
   "dependencies": {
     "dayjs": "^1.11.23"
+  },
+  "devDependencies": {
+    "vite": "^8.3.0"
   }
 }

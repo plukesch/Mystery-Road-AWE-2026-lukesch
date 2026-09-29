@@ -96,3 +96,80 @@ der **frühen, vor-Router-Bibliothek-SPA-Ära** — nicht, weil die App alt ist,
 genau das Muster reproduziert, das man damals von Hand bauen musste, bevor Router-Bibliotheken
 (und später React selbst, über z. B. React Router) diese Entscheidung standardisiert und
 vereinfacht haben.
+
+---
+
+## Demo 2 — SSR vs. CSR
+
+Vergleichstabelle SSR/CSR erstellt, Wikipedia live per Browser-Netzwerk-Tab als echtes SSR-Beispiel
+verifiziert (`class="client-nojs"`, `generator: MediaWiki` im rohen HTML-Response). Details in
+`UE3_CHANGES.md`.
+
+### F1: Erkläre, warum diese Übungs-App SSR oder CSR ist, und warum. Geh Schritt für Schritt durch, was zwischen der Browser-Anfrage der Seite und dem tatsächlichen Sichtbarwerden des Dashboards passiert.
+
+**Einfach gesagt:** unsere App ist **komplett CSR** — der Server schickt immer exakt dasselbe,
+fast leere HTML (für jede Anfrage identisch, keine Berechnung), und **alles**, was wie "die App"
+aussieht, baut JavaScript im Browser erst danach zusammen.
+
+**Warum CSR, konkret begründet:** der "Server" hinter unserer App ist entweder `vite preview`
+(lokal) oder GitHub Pages (live) — beides **reine statische Datei-Server**. Sie führen bei einer
+Anfrage **keinerlei Code aus**, der die HTML-Antwort individuell zusammenbaut — sie liefern
+byte-identisch dieselbe, zur Build-Zeit (`npm run build`, UE2 Demo 3) bereits fertig erzeugte
+`index.html` aus, egal wer fragt oder wann. Das ist das Gegenteil von SSR, wo der Server bei
+**jeder** Anfrage aktiv HTML generiert.
+
+**Schritt für Schritt, vom Request bis zum sichtbaren Dashboard:**
+
+1. Browser fordert die Seiten-URL an (z. B. die GitHub-Pages-URL).
+2. Server liefert `index.html` aus — ein **statisches**, vorproduziertes Dokument. Es enthält
+   zwar schon das komplette Grundgerüst (Header, Navigations-Buttons, die 5 `<section>`-Bereiche),
+   aber die eigentlich **interessanten** Container sind leer, z. B. `<div id="evidenceList"
+   class="evidence-grid"></div>` — kein einziges Beweisstück, keine Dashboard-Zahl steht schon im
+   HTML.
+3. Browser parst das HTML, sieht `<script type="module" src=".../index-XXXX.js">`, startet den
+   **Download** dieser (gebündelten, minifizierten) JS-Datei.
+4. Browser **führt das JS aus** — das ist der Moment, ab dem überhaupt etwas passiert: `main.ts`s
+   `initApp()` läuft, meldet Event-Listener an, zeigt das `loadingOverlay` ("Loading case
+   file…") und ruft `loadAllData()` auf.
+5. `loadAllData()` (`js/data.ts`) startet **weitere, separate Netzwerk-Anfragen** — diesmal an die
+   JSON-Dateien (`data/case.json`, `data/people.json`, `data/locations.json`, sequenziell
+   `await`et, dann `evidence.json`/`timeline.json`). Das sind waschechte eigene Requests, die der
+   Browser **erst jetzt**, nach dem Ausführen von JS, überhaupt auslöst.
+6. Sobald die Antworten da sind, ruft der Code `renderDashboard()` (`js/views/dashboard.ts`) auf —
+   diese Funktion baut aus den geladenen Daten einen HTML-String und schreibt ihn per
+   `container.innerHTML = html` in den zuvor leeren `<div id="dashboardContent">`.
+7. **Erst jetzt**, am Ende dieser Kette, ist das Dashboard mit echten Zahlen/Inhalten tatsächlich
+   sichtbar — mehrere Netzwerk-Anfragen und ein kompletter JS-Ausführungsdurchlauf **nach** dem
+   ursprünglichen HTML liegen dazwischen.
+
+Genau diese Lücke zwischen Schritt 2 (HTML da) und Schritt 7 (Inhalt sichtbar) ist der Grund,
+warum die App überhaupt einen `loadingOverlay`-Spinner braucht — bei echtem SSR (Wikipedia, siehe
+Task 2) gibt es diese Lücke nicht, der Inhalt ist im selben Moment da wie das HTML selbst.
+
+### F2: Nenne einen echten Preis, den diese Architektur-Entscheidung zahlt (denk an das, was ein:e Nutzer:in mit deaktiviertem JavaScript, einer langsamen Verbindung, oder ein Suchmaschinen-Crawler sehen würde), und warum.
+
+**Einfach gesagt:** eine Person ohne JavaScript (oder ein einfacher Suchmaschinen-Crawler, der
+kein JS ausführt) sieht bei unserer App **nichts von der eigentlichen App** — nur die leere Hülle
+und einen Lade-Spinner, der niemals verschwindet.
+
+**Konkret, Schritt für Schritt, was passiert wäre (kein hypothetisches Szenario — direkt aus dem
+Ablauf oben ableitbar):** ohne JavaScript bleibt der Browser exakt bei Schritt 3 stehen — die
+`.js`-Datei wird zwar heruntergeladen, aber **nie ausgeführt**. Das bedeutet: `initApp()` läuft
+nie, `loadAllData()` läuft nie, `renderDashboard()` läuft nie. Sichtbar wäre: Header, Navigations-
+Buttons (die aber selbst nicht funktionieren würden — sie hängen an `onclick="navigateTo(...)"`,
+einer JS-Funktion, die nie existiert) und der statische Hinweistext im Dashboard ("How to use this
+portal" — der einzige Teil, der wirklich schon im HTML steht). Der Lade-Spinner ("Loading case
+file…") bliebe **für immer** sichtbar, weil nichts ihn je wieder ausblendet. **Keine** Beweisstücke,
+**keine** Personen, **keine** Timeline — die komplette eigentliche Funktion der App wäre
+unsichtbar.
+
+**Warum das ein echter, bewusster Kompromiss ist, kein Versehen:** die Alternative (SSR) würde
+bedeuten, dass ein **echter Server** bei jeder Anfrage aktiv HTML mit den aktuellen Case-Daten
+zusammenbaut — das würde einen Server-Prozess/Backend voraussetzen, das diese App bewusst **nicht
+hat** (sie ist als reine statische Datei-Sammlung konzipiert, siehe UE2 Demo 9: GitHub Pages kann
+das kostenlos hosten, genau **weil** kein Server-Code nötig ist). Dieselbe Eigenschaft, die den
+Host so einfach/kostenlos macht (kein Backend nötig), ist exakt das, was JS-lose Besucher:innen
+und einfache Crawler leer ausgehen lässt. Bei einer echten, öffentlich zu findenden Webseite (im
+Gegensatz zu diesem Kursprojekt) wäre das ein ernstzunehmender Nachteil für Suchmaschinen-Sichtbarkeit
+(SEO) — ein Crawler ohne vollständige JS-Ausführung würde im HTML praktisch nur die Wörter "How to
+use this portal" finden, nicht die eigentlichen Fallakten-Inhalte, die die Seite ja ausmachen.

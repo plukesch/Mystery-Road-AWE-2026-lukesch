@@ -68,3 +68,63 @@ einziger voller Seiten-Reload, obwohl sich die URL (`#evidence`) ändert."
 **3. `js/navigation.ts` kurz aufmachen**
 Zeig `handleHashChange()` — die `if`/`else if`-Kette, die manuell entscheidet, was gerendert wird.
 Sag: "das ist genau die Handarbeit, die ein Framework wie React später standardisiert."
+
+---
+
+## Demo 2 — SSR vs. CSR
+
+### 🔰 Einfach erklärt — worum geht's hier überhaupt?
+
+**SSR (Server-Side Rendering)** heißt: der Server baut das **fertige** HTML mit den echten
+Inhalten und schickt es so. **CSR (Client-Side Rendering)** heißt: der Server schickt nur ein
+fast leeres HTML-Gerüst + JavaScript, und **der Browser selbst** baut daraus erst den eigentlichen
+Inhalt zusammen, per Code.
+
+*Analogie:* SSR ist ein Restaurant, das dir ein **fertig gekochtes** Gericht bringt. CSR ist ein
+Restaurant, das dir eine **Kochbox mit rohen Zutaten und einem Rezept** bringt — du (der Browser)
+musst erst selbst kochen, bevor überhaupt etwas Essbares auf dem Tisch steht.
+
+### Task 1 — Vergleichstabelle
+
+| | **SSR** | **CSR** |
+|---|---|---|
+| **Was der Server bei der ersten Anfrage schickt** | vollständiges HTML, **bereits mit echten Inhalten gefüllt** — Text ist sofort da, sobald das HTML ankommt | ein fast leeres HTML-"Gerüst" (oft nur ein `<div id="root"></div>`) + Links auf JS-/CSS-Dateien — der eigentliche Inhalt fehlt komplett |
+| **Was der Browser tun muss, BEVOR Inhalt sichtbar ist** | nur: HTML empfangen und parsen — Inhalt ist von Anfang an im HTML enthalten | HTML laden → JS-Datei(en) laden → JS parsen und ausführen → JS baut den DOM selbst zusammen (oft erst nach eigenem Nachladen von Daten) |
+| **Was bei nachfolgender Navigation passiert** | klassisch: komplett neue Anfrage an den Server, komplett neue HTML-Antwort (moderne SSR-Frameworks mischen das oft mit späterer clientseitiger Navigation) | **keine** neue Anfrage für die Seite selbst — JS tauscht nur den betroffenen DOM-Teil aus, lädt bei Bedarf nur neue **Daten** nach (nicht die ganze Seite) |
+
+### Task 2 — echte Webseite, mit beobachtbarem Beweis eingeordnet
+
+**Wikipedia = SSR.** Live per Browser-Tools geprüft (nicht nur behauptet): die Netzwerk-Antwort auf
+die erste Anfrage einer Artikelseite (`en.wikipedia.org/wiki/Single-page_application`) ist ein
+vollständiges HTML-Dokument, das bereits die komplette Seitenstruktur (Kopfzeile, Navigation,
+Artikel-Gerüst) enthält — **kein** leeres `<div id="root">`. Zwei konkrete, direkt im HTML sichtbare
+Belege:
+
+1. Das `<html>`-Tag trägt von Anfang an die Klasse **`client-nojs`** — ein Fallback-Zustand, den
+   MediaWiki (Wikipedias Software) extra für Besucher:innen **ohne** JavaScript pflegt. Eine
+   Software würde sich diese Mühe nicht machen, wenn die Seite ohne JS gar nicht funktionieren
+   würde (klassisches CSR-Verhalten) — das ist ein starkes Indiz, dass der eigentliche Inhalt schon
+   ohne JS da ist.
+2. `<meta name="generator" content="MediaWiki 1.47.0-wmf.21">` — der Server selbst hat dieses HTML
+   gerade eben, für genau diese Anfrage, aus einer Wiki-Datenbank **serverseitig generiert**.
+
+Ein direkter Blick in den restlichen HTML-Body (nicht in dieser Doku abgedruckt, im Netzwerk-Tab
+selbst nachvollziehbar) zeigt: der komplette Artikeltext ist bereits Teil dieser ersten Antwort.
+
+### Verifikation
+Task 2 live über die Browser-Netzwerk-Antwort geprüft (kein reines "sollte SSR sein" aus dem
+Gedächtnis) — siehe Belege oben.
+
+### 🎤 Live-Demo — was du im Unterricht herzeigst
+
+**1. Wikipedia als SSR-Beweis**
+`en.wikipedia.org` auf einen beliebigen Artikel, `F12` → Network-Tab → die erste Dokument-Anfrage
+anklicken → Response-Tab. Zeig: der komplette Artikeltext steht schon im rohen HTML, **bevor**
+irgendein JS gelaufen ist. Zeig `class="client-nojs"` im `<html>`-Tag.
+
+**2. Unsere App als CSR-Gegenbeweis**
+Unsere deployte GitHub-Pages-URL öffnen, `F12` → Network-Tab, Seite neu laden. Zeig: die erste
+Dokument-Antwort (`index.html`) ist **winzig** im Vergleich — öffne sie im Response-Tab, zeig,
+dass z. B. `<div id="evidenceList" class="evidence-grid"></div>` **leer** ist. Zeig danach die
+JS-Datei (`assets/index-*.js`) und die nachfolgenden `data/*.json`-Requests — "der Inhalt kommt
+hier komplett separat, nach dem HTML, über JavaScript."

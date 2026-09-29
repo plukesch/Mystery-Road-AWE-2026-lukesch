@@ -608,3 +608,72 @@ In der Adressleiste manuell `#nonsense` anhängen, Enter drücken — landet auf
 Sag den einen Satz: "gleiche Grundidee — Hash lesen, auf `hashchange` hören, unbekannte Werte
 abfangen — aber hier als React-Hook, der bei Änderung automatisch alles neu rendert, was ihn
 benutzt, statt dass ich von Hand `renderX()`-Aufrufe verteilen muss."
+
+---
+
+## Demo 10 — Die Dashboard-View migrieren
+
+### 🔰 Einfach erklärt — worum geht's hier überhaupt?
+
+Der letzte Demo dieser Übung: das Dashboard bekommt **echten Inhalt** — dieselben Daten, dieselbe
+Optik, dieselben berechneten Werte wie die vanilla-Version, aber als Baum aus React-Komponenten
+(nach dem Bauplan aus Demo 7) statt einer einzigen String-Bau-Funktion.
+
+### Task 1 — Dashboard als React-Komponenten neu gebaut
+
+Neue Dateien, orientiert an der Demo-7-Hierarchie:
+
+| Datei | Rolle |
+|---|---|
+| `src/hooks/useCaseData.ts` (neu) | eigener Daten-Lade-Hook — lädt dieselben 5 JSON-Dateien wie `js/data.ts`, aber **parallel** statt teils sequenziell, mit Renn-Bedingungs-Schutz (siehe Verifikation) |
+| `src/lib/navigation.ts`, `src/lib/bookmarks.ts` (neu) | kleine, gezielt wiederverwendbare Helfer (siehe Task 1 unten für die genaue Grenzziehung, was aus `js/` wiederverwendet wird und was bewusst dupliziert bleibt) |
+| `src/components/IntroCard.tsx`, `CaseSummaryCard.tsx`, `StatCard.tsx`, `ReviewProgressBar.tsx`, `RecentEvidenceList.tsx`, `RecentTimelineList.tsx` (neu) | die Bausteine aus dem Demo-7-Diagramm, jetzt wirklich gebaut |
+| `src/pages/DashboardPage.tsx` (ersetzt den Demo-9-Platzhalter) | setzt alles zusammen, berechnet `reviewedCount`/`progressPct` genau wie `renderDashboard()` |
+
+**Eine bewusste, dokumentierte Grenzziehung beim Wiederverwenden von `js/`-Code:**
+
+| Was | Wiederverwendet oder dupliziert? | Warum |
+|---|---|---|
+| Domain-Typen (`Evidence`, `CaseFile`, …) aus `js/types.ts` | **wiederverwendet** (`import type`) | reine Typinformation, verschwindet komplett beim Kompilieren — keine echte Laufzeit-Kopplung |
+| `getStatusBadgeClass`, `formatDate` aus `js/utils.ts` | **wiederverwendet** (echter Import) | reine, seiteneffektfreie Funktionen, kein Modul-Zustand — sicher zu teilen |
+| `STORAGE_KEYS.bookmarks`-String aus `js/state.ts` | **bewusst dupliziert** (`src/lib/bookmarks.ts`) | `state.ts` hat ein eigenes, mutable Singleton-Objekt auf Modulebene — ein Import davon würde genau die Laufzeit-Kopplung wieder einführen, die die Trennung aus Demo 6/9 vermeiden soll |
+
+Alle CSS-Klassen (`.stat-card`, `.dashboard-panel`, `.mini-list-item`, …) sind 1:1 aus dem
+bestehenden `styles.css` wiederverwendet — keine einzige neue CSS-Regel für das Dashboard nötig.
+
+### Task 2 — mit echten Daten geprüft, Navigation weg-und-zurück getestet
+
+Live im Browser (`npm run dev`, `/react.html`):
+- Dashboard zeigt **exakt** dieselben Zahlen wie die vanilla-Version: 18 Evidence-Einträge, 6
+  Personen, 6 Orte, 0 Bookmarks, 1 Reviewed, 6 % Review-Fortschritt, identische "Recent
+  evidence"/"Recent timeline"-Listen.
+- Navigation Dashboard → Evidence → zurück zu Dashboard: **dieselben** korrekten Zahlen erneut,
+  keine Verfälschung, kein Absturz, 0 Konsolenfehler.
+- **Interessanter Nebenbefund beim Netzwerk-Log:** 40 Requests für nur 3 Dashboard-Aufrufe (statt
+  der erwarteten 15 = 3 × 5 Dateien). Grund: React **StrictMode** (aktiv seit `src/main.tsx`, Demo
+  6) ruft Effects im Entwicklungsmodus absichtlich **doppelt** auf — genau der Mechanismus aus UE3
+  Demo 5 F3, hier zum ersten Mal tatsächlich live beobachtet, nicht nur besprochen. Im
+  Produktions-Build (kein StrictMode-Doppelaufruf) wären es die erwarteten 15.
+
+### Verifikation
+`npm run typecheck` → 0 Fehler trotz des bisher größten Umfangs. Live-Werte 1:1 mit der
+vanilla-Version verglichen (siehe Task 2). Netzwerk-Log bestätigt sowohl den StrictMode-Doppelaufruf
+als auch das Neuladen bei jedem Dashboard-Besuch (Grundlage für Theorie-F1). `useCaseData()`s
+Cancel-Schutz (`cancelled`-Flag) verhindert genau die Renn-Bedingung, die `js/data.ts` laut UE3 Demo
+4, F2 **nicht** hat.
+
+### 🎤 Live-Demo — was du im Unterricht herzeigst
+
+**1. Direktvergleich nebeneinander**
+`/` (vanilla) und `/react.html` (React) in zwei Tabs offen, beide auf Dashboard. Zeig: identische
+Zahlen, identisches Layout — "gleiche App, anderes Werkzeug."
+
+**2. Weg-und-zurück live vorführen**
+Dashboard → Evidence → zurück zu Dashboard. Sag: "keine Verfälschung, keine eingefrorenen alten
+Zahlen — genau das Gegenteil des vanilla-Render-Cache-Bugs, siehe Theorie F2."
+
+**3. Netzwerk-Tab zeigen, StrictMode erklären**
+`F12` → Network, nach `data/` filtern, Dashboard einmal neu laden. Zeig die verdoppelten
+Request-Paare. Sag: "das ist React, das absichtlich zweimal rendert, um genau solche
+Seiteneffekt-im-Render-Probleme früh zu finden — dieselbe Mechanik aus Demo 5, jetzt live
+sichtbar."

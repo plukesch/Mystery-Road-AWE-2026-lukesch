@@ -1,3 +1,4 @@
+import { navigateTo } from "../lib/navigation";
 import type { ViewName } from "../hooks/useHashRoute";
 
 interface NavButtonProps {
@@ -16,12 +17,7 @@ export function NavButton({ viewName, label, isActive }: NavButtonProps) {
       type="button"
       className={"nav-btn" + (isActive ? " active" : "")}
       data-view={viewName}
-      onClick={() => {
-        // spiegelbild von navigateTo(viewName) aus js/navigation.ts - der
-        // eigentliche seitenwechsel passiert weiterhin ueber das hash-aendern
-        // selbst, nicht durch direktes react-state-setzen hier.
-        window.location.hash = viewName;
-      }}
+      onClick={() => navigateTo(viewName)}
     >
       {label}
     </button>

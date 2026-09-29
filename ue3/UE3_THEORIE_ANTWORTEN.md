@@ -850,3 +850,120 @@ geschrieben (siehe F1-Tabelle) — dieselbe Bedingung, nur als Ausdruck statt al
 "nicht gefunden"-Konzept (eine dedizierte Route/Komponente) — das hier bewusst noch **nicht**
 gebaut wurde, weil Demo 9 selbst nur ein "auch ohne volle Router-Bibliothek" (siehe
 Aufgabenstellung) verlangt, kein vollwertiges Routing-System.
+
+---
+
+## Demo 10 — Die Dashboard-View migrieren
+
+Dashboard als React-Komponentenbaum neu gebaut (`useCaseData`-Hook + `IntroCard`, `CaseSummaryCard`,
+`StatCard`, `ReviewProgressBar`, `RecentEvidenceList`, `RecentTimelineList`), live mit echten Daten
+geprüft — exakte Übereinstimmung mit der vanilla-Version (18/6/6/0/1, 6 %), Navigation
+weg-und-zurück getestet, StrictMode-Doppel-Fetch im Netzwerk-Log live beobachtet. Details, Tabellen
+in `UE3_CHANGES.md`.
+
+### F1: Woher kommen die Dashboard-Daten (Case-Info, Evidence, Timeline) in deiner React-Version, und wie gelangen sie zu den Komponenten, die sie rendern? Ist das die endgültige Architektur, die du behalten willst, oder ein Platzhalter, von dem du schon weißt, dass du ihn später änderst?
+
+**Einfach gesagt:** ein eigener Hook (`useCaseData`) lädt dieselben 5 JSON-Dateien direkt per
+`fetch()` — komplett unabhängig von `js/data.ts`/`js/state.ts` (Demo 6/9-Trennung). Die geladenen
+Daten wandern von dort als **Props** nach unten zu genau den Komponenten, die sie brauchen — exakt
+das Muster aus der Demo-7-Props-Tabelle, jetzt real umgesetzt. Und nein, ausdrücklich **kein**
+endgültiger Zustand — ein bewusst benannter Platzhalter.
+
+**Der Weg der Daten, konkret:**
+1. `DashboardPage` ruft `useCaseData()` auf — der Hook feuert beim ersten Render einen `fetch()` auf
+   `data/case.json`, `data/people.json`, `data/locations.json`, `data/evidence.json`,
+   `data/timeline.json` (parallel, per `Promise.all`).
+2. Solange die Antwort aussteht, gibt der Hook `{ status: "loading" }` zurück — `DashboardPage`
+   zeigt currently einen einfachen Lade-Text.
+3. Sind alle Antworten da, setzt der Hook `{ status: "ready", data: {...} }` — React rendert
+   `DashboardPage` deshalb **automatisch neu** (State-Änderung, kein manueller Aufruf nötig).
+4. `DashboardPage` destrukturiert die Daten und reicht **gezielt genau das durch**, was jede
+   Unterkomponente braucht: `CaseSummaryCard` bekommt `caseData`, `StatCard` je eine fertige Zahl,
+   `RecentEvidenceList`/`RecentTimelineList` die schon zugeschnittenen "letzten 5"-Arrays — keine
+   Komponente greift selbst auf eine globale Datenquelle zu, alles kommt als Prop von oben.
+
+**Warum das ausdrücklich ein Platzhalter ist, nicht die endgültige Architektur:**
+- **Kein Teilen zwischen Seiten.** Die geladenen Daten leben **nur** innerhalb der einen
+  `useCaseData()`-Instanz in `DashboardPage` — sobald in UE4/UE5 z. B. `EvidencePage` dieselben
+  Evidence-Daten braucht, gibt es aktuell **keinen** Weg, sie sich zu teilen, ohne den Fetch dort
+  komplett zu wiederholen. Das wird eine echte Umstrukturierung brauchen (z. B. die Daten eine Ebene
+  höher in `App` laden und per Context durchreichen, oder eine richtige Daten-Bibliothek).
+- **Kein Caching über Navigation hinweg.** Live im Netzwerk-Log beobachtet: jeder Besuch von
+  Dashboard lädt **alle 5 Dateien erneut** (siehe `UE3_CHANGES.md`, das 40-Requests-für-3-Besuche-
+  Ergebnis) — weil `DashboardPage` beim Verlassen komplett entmountet und beim Zurückkommen komplett
+  neu gemountet wird (siehe F2). Die vanilla App lädt dagegen **einmal**, beim App-Start, und
+  behält die Daten dauerhaft im `state`-Objekt.
+- **Der Bookmark-Zähler ist eine bewusste Übergangslösung.** Er liest direkt aus `localStorage`
+  (`src/lib/bookmarks.ts`) statt aus einer echten, geteilten React-Datenquelle — weil die Seite, wo
+  Bookmarks tatsächlich gesetzt werden (Evidence), in React noch gar nicht existiert.
+
+**Fazit:** für **diese** Übung (nur Dashboard braucht echte Daten) ist der Umfang richtig
+zugeschnitten — mehr zu bauen (geteilter Cache, Context) wäre Vorgriff auf ein Problem, das aktuell
+noch gar nicht existiert (niemand sonst braucht die Daten). Sobald UE4/UE5 weitere Seiten mit
+echtem Datenbedarf bringen, wird genau dieser Punkt der erste sein, der überarbeitet werden muss.
+
+### F2: Das alte vanilla-Dashboard hatte einen echten Bug, bei dem es veraltete Zahlen zeigen konnte, weil es nur beim *ersten* Besuch einer View neu gerendert hat (ein manuelles Render-Cache-Flag). Hat deine React-Version ein vergleichbares Risiko? Warum (nicht), angesichts dessen, wie React neu rendert?
+
+**Einfach gesagt:** **strukturell nicht auf dieselbe Art möglich.** Der vanilla-Bug entstand, weil
+`state.viewRendered.dashboard` als **dauerhaftes** Flag existierte, das "schon einmal gerendert"
+merken konnte — React hat für `DashboardPage` gar keine vergleichbare, persistente Instanz, die
+sich so etwas merken könnte.
+
+**Der vanilla-Bug zur Erinnerung** (Kommentar direkt im Code, `js/views/dashboard.ts`/
+`js/navigation.ts`): ursprünglich lief `renderDashboard()` nur, wenn `!state.viewRendered.dashboard`
+— nach dem ersten Besuch blieb das Dashboard eingefroren, selbst wenn sich z. B. `bookmarks.length`
+durch einen Bookmark-Klick auf einer anderen View geändert hatte. Der Fix (UE2 Demo 5) war, dieses
+Cache-Flag für Dashboard **auszubauen** und stattdessen bei jedem Besuch neu zu rendern.
+
+**Warum React strukturell nicht anfällig für denselben Bug ist:**
+- **Es gibt keine dauerhafte Instanz, die sich "schon gerendert" merken könnte.** `PageRouter`
+  rendert immer nur **eine** der fünf Seiten-Komponenten — verlässt man Dashboard, wird die
+  `DashboardPage`-Instanz komplett **entmountet** (zerstört), nicht nur unsichtbar geschaltet (siehe
+  UE3 Demo 9, F1: React hält anders als vanilla nicht alle 5 Views gleichzeitig im DOM). Kommt man
+  zurück, entsteht eine **komplett neue** Instanz — `useCaseData()` läuft wieder bei null los, holt
+  frische Daten, berechnet alles neu. Live bestätigt: 40 Netzwerk-Anfragen für 3 Dashboard-Besuche,
+  nicht 5 (siehe `UE3_CHANGES.md`) — jeder Besuch lädt wirklich neu.
+- **Reacts Grundverhalten ist das genaue Gegenteil des vanilla-Defaults.** Vanilla musste sich aktiv
+  entscheiden, bei jedem Besuch neu zu rendern (das war der Demo-5-Fix) — der **Ausgangszustand**
+  war "einmal rendern, dann cachen". Bei React ist **"bei jeder relevanten Änderung neu rendern"**
+  der Standardfall — Caching/Überspringen von Re-Renders (`React.memo`, `useMemo`) ist etwas, das
+  man **explizit** dazuschalten muss. Um denselben Bug in React nachzubauen, müsste man aktiv gegen
+  diesen Standard ankämpfen (z. B. Daten in einem `useRef` verstecken und den Render-Body bewusst so
+  schreiben, dass er sie ignoriert) — technisch nicht unmöglich, aber so unidiomatisch, dass es
+  niemand versehentlich tut.
+
+**Fazit:** kein identisches Risiko, weil die Voraussetzung dafür (eine persistente, zustandsbehaftete
+Instanz mit einem manuell gepflegten "schon gerendert"-Flag) in dieser Architektur schlicht nicht
+existiert — React rendert bei jedem Besuch komplett frisch, ohne dass dafür irgendjemand einen
+Fix schreiben musste.
+
+### F3: Was, wenn überhaupt, macht dein React-Dashboard anders als das vanilla-Dashboard, was den *Zeitpunkt* angeht, zu dem es abgeleitete Werte (wie den Review-Fortschritt-Prozentsatz) neu berechnet?
+
+**Einfach gesagt:** überraschend **wenig** unterschiedlich, tatsächlich — beide berechnen
+`reviewedCount`/`progressPct` als einfache lokale Variablen, **frisch bei jedem Render-Durchlauf**,
+direkt bevor der eigentliche Inhalt gebaut wird. Der größere Unterschied liegt nicht am *Wann*,
+sondern daran, *wie oft dieser Render-Durchlauf überhaupt passiert* (siehe F2).
+
+**Konkret, Seite an Seite:**
+- **Vanilla:** `renderDashboard()` berechnet `reviewedCount`/`progressPct` ganz am Anfang der
+  Funktion, jedes Mal, wenn die Funktion **überhaupt aufgerufen wird** — und dank des Demo-5-Fixes
+  ist das inzwischen bei jedem Dashboard-Besuch der Fall.
+- **React:** `DashboardPage` berechnet dieselben Werte als lokale `let`/`const`-Variablen **direkt
+  im Funktionskörper**, bevor das JSX zurückgegeben wird — und weil Komponenten "einfach nur
+  Funktionen" sind, die React bei jedem Render erneut aufruft (UE3 Demo 5, F3), passiert das
+  automatisch bei **jedem** Render von `DashboardPage`, ganz ohne dass ich das explizit anstoßen
+  muss.
+
+**Eine bewusste Entscheidung, die ich getroffen habe:** ich habe `useMemo()` **nicht** benutzt, um
+diese Berechnung zwischen Renders zwischenzuspeichern — obwohl React genau dafür dieses Werkzeug
+anbietet. Begründung: `useMemo()` lohnt sich vor allem bei **wirklich teuren** Berechnungen oder
+wenn ein Kind-Component auf **referenzielle Stabilität** eines Werts angewiesen ist — hier läuft
+die Schleife über höchstens ein paar Dutzend Evidence-Einträge, ein für moderne Browser komplett
+vernachlässigbarer Aufwand. `useMemo()` hier trotzdem einzusetzen wäre zusätzliche Komplexität ohne
+echten Gewinn — eine Art vorzeitige Optimierung, die React selbst in seiner eigenen Dokumentation
+explizit davon abrät, ohne konkreten, gemessenen Bedarf einzusetzen.
+
+**Fazit:** der eigentliche Unterschied zwischen vanilla und React liegt nicht in einer anderen
+*Berechnungs-Strategie* (beide: "einfach bei jedem Aufruf neu rechnen"), sondern darin, dass React
+diesen Aufruf **zuverlässig und automatisch** bei jeder relevanten Änderung auslöst — vanilla musste
+dafür einen expliziten Bugfix schreiben (Demo-5-Fix), React verhält sich von Haus aus schon so.

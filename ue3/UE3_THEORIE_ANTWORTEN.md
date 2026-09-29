@@ -373,3 +373,129 @@ vorigen History-Eintrag (Dashboard). Genau das ist ein konkretes, live beobachtb
 die in F2 beschriebene Lücke: ein echter Router hätte fürs Öffnen eines Details typischerweise
 einen eigenen History-Eintrag (z. B. `/evidence/E14`) angelegt — unsere handgestrickte Lösung tut
 das nur für die fünf groben Views, nicht für Zustände innerhalb einer View.
+
+---
+
+## Demo 5 — React-Einführung
+
+Eine winzige, statische JSX-Komponente (`CaseSummaryCard`, kein State/Props) geschrieben, "Komponente"
+in eigenen Worten definiert und direkt gegen `renderEvidenceCardHTML()` aus dem originalen `app.js`
+abgegrenzt (String-Rückgabe vs. strukturiertes Objekt). Details, Code, Analogie in `UE3_CHANGES.md`.
+
+### F1: Was ist JSX eigentlich? Wozu wird es kompiliert?
+
+**Einfach gesagt:** JSX ist **kein** eigenständiges neues Feature des Browsers oder von
+JavaScript selbst — es ist nur eine **bequemere Schreibweise**, die ein Build-Werkzeug (bei uns
+später Vite/esbuild, Demo 6) in ganz normale JavaScript-Funktionsaufrufe übersetzt, **bevor** der
+Code je im Browser landet. Der Browser sieht JSX nie.
+
+**Genauer:** JSX sieht aus wie HTML mitten in JavaScript (`<div className="...">...</div>`), ist
+aber tatsächlich reine **Syntax für Funktionsaufrufe**. Unsere Beispiel-Komponente aus Task 1:
+
+```tsx
+function CaseSummaryCard() {
+  return (
+    <div className="case-summary">
+      <h2>Project ReMotion</h2>
+      <p>Investigate the failure of an AI-assisted rehabilitation robot.</p>
+    </div>
+  );
+}
+```
+
+wird vom Compiler (moderne "automatische" JSX-Transformation, Standard seit React 17) ungefähr zu
+diesem reinen JavaScript:
+
+```js
+import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
+
+function CaseSummaryCard() {
+  return _jsxs("div", {
+    className: "case-summary",
+    children: [
+      _jsx("h2", { children: "Project ReMotion" }),
+      _jsx("p", { children: "Investigate the failure of an AI-assisted rehabilitation robot." }),
+    ],
+  });
+}
+```
+
+Jeder `_jsx(...)`/`_jsxs(...)`-Aufruf gibt dabei **kein** echtes DOM-Element zurück, sondern ein
+**einfaches JavaScript-Objekt** — ein sogenanntes "React-Element": `{ type: "div", props: {
+className: "case-summary", children: [...] } }` (vereinfacht dargestellt). Genau **das** ist der
+Rohstoff des virtuellen DOM aus UE3 Demo 3 — leichtgewichtige Objekte, die React später
+miteinander vergleicht ("diffen"), bevor irgendetwas am echten DOM verändert wird.
+
+**Fazit:** JSX ist reiner **syntaktischer Zucker** über `React.createElement()`-artigen
+Funktionsaufrufen — geschrieben, damit man UI-Struktur nicht als verschachtelte Funktionsaufrufe
+mit vielen Klammern tippen muss, sondern in einer vertrauten, HTML-ähnlichen Form. Ohne
+Build-Schritt (Vite/Babel/esbuild) ist JSX **nicht lauffähig** — kein Browser versteht `<div>`
+mitten in JavaScript-Code von sich aus.
+
+### F2: Vergleiche deine winzige Komponente mit der alten `renderEvidenceCardHTML(ev)`-Funktion (String-Verkettung, die einen HTML-String zurückgibt). Was ist grundlegend unterschiedlich daran, wie das Ergebnis jeweils zu echtem DOM wird?
+
+**Einfach gesagt:** `renderEvidenceCardHTML()` liefert **Text**, der vom Browser komplett neu
+**gelesen und interpretiert** werden muss. Meine JSX-Komponente liefert ein **fertig
+strukturiertes Objekt**, das React direkt **auslesen und vergleichen** kann, ohne jemals Text zu
+parsen.
+
+**Der Weg von `renderEvidenceCardHTML()` zu echtem DOM:**
+1. Funktion gibt einen **String** zurück (`'<div class="evidence-card">...' `).
+2. Irgendein Aufrufer weist diesen String einem `.innerHTML` zu.
+3. Der Browser **parst diesen Text als HTML** (derselbe Parser, den er auch für eine komplette
+   heruntergeladene Webseite benutzt) und erzeugt daraus **komplett neue** DOM-Knoten.
+4. Alle zuvor an dieser Stelle vorhandenen DOM-Knoten werden dabei **zerstört**, egal ob sich ihr
+   Inhalt wirklich geändert hat (siehe UE3 Demo 3, das Bookmark-Beispiel).
+
+**Der Weg von `CaseSummaryCard()` zu echtem DOM (über React):**
+1. Funktion gibt ein **JavaScript-Objekt** zurück (kein Text) — `_jsxs("div", { ... })`, siehe F1.
+2. React liest dieses Objekt **strukturell** (Tag-Name, Props, Kinder als eigene, direkt
+   zugreifbare Felder) — **kein** Text-Parsing nötig.
+3. React **vergleicht** dieses Objekt mit dem vorigen Render-Ergebnis (Diffing, siehe Demo 3).
+4. React erzeugt/ändert **nur** die echten DOM-Knoten, bei denen der Vergleich einen Unterschied
+   gefunden hat — alles andere bleibt exakt das bestehende, unangetastete DOM-Element.
+
+**Der fundamentale Unterschied:** bei `renderEvidenceCardHTML()` ist der HTML-**Text** der einzige
+Kontaktpunkt zum Browser — jede Aktualisierung bedeutet zwangsläufig "neuer Text → neu parsen →
+neu bauen". Bei JSX/React ist das Zwischenergebnis ein **strukturiertes, direkt vergleichbares
+Objekt** — die Aktualisierung bedeutet "vergleiche Struktur → ändere nur das wirklich
+Unterschiedliche". Ersteres kennt nur "alles" oder "nichts", Letzteres kennt "genau das eine Feld".
+
+### F3: Was bedeutet es, dass "Komponenten einfach nur Funktionen sind" in React? Was würde kaputtgehen, wenn der Funktionskörper einer Komponente bei jedem Rendern einen Seiteneffekt hätte (z. B. eine globale Variable verändert)?
+
+**Einfach gesagt:** eine React-Komponente ist eine ganz normale JS-Funktion — mit einer
+zusätzlichen, stillschweigenden **Verhaltens-Regel**: React ruft diese Funktion **wann und wie oft
+es selbst will** (nicht der Code, der sie "benutzt"), und erwartet, dass zweimaliges Aufrufen mit
+denselben Eingaben **keinen** Unterschied macht, außer im zurückgegebenen JSX. Verletzt man diese
+Regel mit einem Seiteneffekt im Funktionskörper, bricht genau diese Annahme — mit teils sehr
+verwirrenden Folgen.
+
+**Warum React sich das Recht nimmt, eine Komponentenfunktion beliebig oft aufzurufen:** React
+plant und optimiert Rendering selbst — z. B. ruft der **Strict Mode** in der Entwicklung
+Komponentenfunktionen absichtlich **zweimal** pro Update auf, gezielt um genau solche
+Seiteneffekt-Bugs frühzeitig sichtbar zu machen. Modernere React-Features können einen begonnenen
+Render sogar komplett **verwerfen**, ohne ihn je am echten DOM anzuwenden (z. B. wenn währenddessen
+eine wichtigere Aktualisierung dazwischenkommt). Die Grundannahme dahinter: eine
+Komponentenfunktion aufzurufen ist "billig" und **folgenlos**, bis React sich aktiv entscheidet,
+das Ergebnis wirklich zu übernehmen.
+
+**Konkret, was kaputtgeht bei einem Seiteneffekt im Funktionskörper** (z. B.
+`window.__renderCount++;` direkt im Komponenten-Code, nicht in einem dafür vorgesehenen Hook):
+- **Der Effekt feuert öfter, als sichtbare Updates passieren.** Unter Strict Mode würde
+  `__renderCount` bei jedem sichtbaren Update **doppelt** hochzählen — der Wert stimmt nicht mehr
+  mit dem überein, was die Nutzer:in tatsächlich an Änderungen gesehen hat.
+- **Der Effekt feuert sogar für Renders, die nie angezeigt werden.** Wird ein begonnener Render
+  verworfen (Concurrent-Rendering-Features), hat der Seiteneffekt trotzdem schon stattgefunden —
+  ein globaler Zähler steigt, eine Netzwerk-Anfrage feuert vielleicht sogar, **obwohl** am
+  Bildschirm nie etwas davon sichtbar wurde. Sehr schwer nachvollziehbare Bugs ("warum steigt der
+  Zähler schneller, als ich klicke?").
+- **Reacts eigene Optimierungen (Batching, Neu-Ordnen von Arbeit, Wiederverwendung) verlassen
+  sich genau auf diese Nebenwirkungsfreiheit.** Ist sie verletzt, wird das Verhalten der App vom
+  internen Scheduling-Zeitpunkt von React abhängig — nicht mehr deterministisch vorhersagbar aus
+  Sicht des eigenen Codes, Bugs werden zeitpunkt-/reihenfolgeabhängig und damit schwer reproduzierbar.
+
+**Zum Vergleich mit unserer aktuellen App:** genau diese Disziplin fehlt (und muss auch nicht
+existieren) in unserem heutigen Code — `renderEvidenceCardHTML()` darf problemlos direkt globalen
+Zustand lesen, weil **wir selbst** exakt kontrollieren, wann und wie oft sie aufgerufen wird (kein
+Framework ruft sie eigenmächtig auf). React führt diese "reine Funktion"-Disziplin bewusst neu ein,
+gerade **weil** es selbst die Kontrolle über den Aufrufzeitpunkt übernimmt.

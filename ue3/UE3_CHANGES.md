@@ -304,3 +304,70 @@ History-Eintrag."
 Ein Beweisstück bookmarken, DevTools → Application → Local Storage zeigen (`remotion_bookmarks`
 enthält die ID). Seite mit `F5` neu laden — Bookmark ist noch da. Dann eine Notiz in ein Textfeld
 tippen, **ohne** zu speichern, `F5` drücken — Text ist weg.
+
+---
+
+## Demo 5 — React-Einführung
+
+### 🔰 Einfach erklärt — worum geht's hier überhaupt?
+
+Bevor React überhaupt ins Projekt kommt (das ist erst Demo 6), geht's hier nur darum, JSX einmal
+wirklich **selbst geschrieben und verstanden** zu haben — noch in keiner echten App, nur zum
+Beweis, dass man's kann und weiß, was dabei technisch passiert.
+
+### Task 1 — eine winzige, statische JSX-Komponente
+
+Kein State, keine Props — nur eine feste Zeile Text als JSX, exakt wie gefordert:
+
+```tsx
+function CaseSummaryCard() {
+  return (
+    <div className="case-summary">
+      <h2>Project ReMotion</h2>
+      <p>Investigate the failure of an AI-assisted rehabilitation robot.</p>
+    </div>
+  );
+}
+```
+
+Das ist eine ganz normale JavaScript-Funktion — sie nimmt nichts entgegen (keine Parameter) und
+gibt etwas zurück, das aussieht wie HTML, aber **kein** HTML-String ist (dazu mehr bei Theorie F1).
+
+### Task 2 — was "Komponente" bedeutet, in eigenen Worten, im Vergleich zu `renderEvidenceCardHTML()`
+
+**In eigenen Worten:** eine React-**Komponente** ist eine Funktion, die eine **Beschreibung** der
+Oberfläche zurückgibt — eine Struktur, die React selbst versteht und aktiv verwaltet (Tag,
+Attribute, Kinder als echte JS-Objekte). Das ist etwas **grundlegend anderes** als eine Funktion,
+die einfach zufällig HTML-artigen **Text** zurückgibt.
+
+**Der Unterschied zu `renderEvidenceCardHTML(ev)`** (aus dem originalen `app.js`, UE3 Demo 3):
+diese Funktion baut einen HTML-**String** zusammen (`"<div class=\"evidence-card\">..." + ... `) —
+für JavaScript ist das Ergebnis einfach eine Zeichenkette, bedeutungslos, bis irgendjemand sie
+später per `container.innerHTML = html` an den Browser übergibt. Der Browser muss diesen String
+dann komplett **neu parsen** und daraus **komplett neue** DOM-Elemente erzeugen — er hat keine
+Ahnung, was vorher an dieser Stelle stand, er sieht nur "hier ist neuer Text, bau das". Eine
+React-Komponentenfunktion gibt dagegen **kein** Text zurück, sondern ein **Objekt** (bzw. einen
+Baum aus Objekten), das React strukturell versteht: "ein `div`, mit diesen Attributen, mit diesen
+Kindern" — und genau das ist die Grundlage für das Diffing aus Demo 3: React kann dieses Objekt
+mit dem vorigen vergleichen, **ohne** jemals einen String zu parsen.
+
+*Analogie:* `renderEvidenceCardHTML()` schreibt einen Brief in Fließtext ("Liebe:r Browser, bau
+bitte einen Div mit dieser Klasse…") — der Empfänger muss den ganzen Brief lesen und interpretieren.
+Eine React-Komponente füllt stattdessen ein **strukturiertes Formular** aus (Feld "Tag": `div`,
+Feld "Attribute": `{...}`, Feld "Kinder": `[...]`) — der Empfänger kann einzelne Felder direkt
+auslesen und vergleichen, ohne erst einen ganzen Text zu verstehen.
+
+### Verifikation
+Kein Code im Projekt geändert (Task 1 ist bewusst "throwaway", noch keine React-Installation —
+das ist Demo 6). Die Komponente oben ist syntaktisch gültiges JSX/TSX, mental gegen die
+Transformation in Theorie-F1 durchgespielt.
+
+### 🎤 Live-Demo — was du im Unterricht herzeigst
+
+**1. Die winzige Komponente zeigen**, laut vorlesen: "eine ganz normale Funktion, gibt aber kein
+Text zurück, sondern JSX."
+
+**2. Direkt daneben `renderEvidenceCardHTML()` aus `app.js` aufmachen**
+Zeig die `html += "..."`-Zeilen. Sag den einen Satz: "das ist ein String-Fließband, meine
+Komponente oben ist ein ausgefülltes Formular — beides beschreibt am Ende denselben `div`, aber auf
+völlig unterschiedliche Art."

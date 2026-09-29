@@ -371,3 +371,95 @@ Text zurück, sondern JSX."
 Zeig die `html += "..."`-Zeilen. Sag den einen Satz: "das ist ein String-Fließband, meine
 Komponente oben ist ein ausgefülltes Formular — beides beschreibt am Ende denselben `div`, aber auf
 völlig unterschiedliche Art."
+
+---
+
+## Demo 6 — React + TypeScript Entry Point im Vite-Projekt
+
+### 🔰 Einfach erklärt — worum geht's hier überhaupt?
+
+Ab hier ist React nicht mehr nur Theorie — es steckt jetzt wirklich im Projekt, **parallel** zur
+bestehenden, voll funktionsfähigen vanilla-App. Nichts an der alten App wurde angefasst oder
+entfernt — React lebt komplett eigenständig daneben, erreichbar über eine zweite Seite.
+
+### Task 1 — React + TypeScript ins Vite-Projekt geholt
+
+| Installiert | Art | Wofür |
+|---|---|---|
+| `react`, `react-dom` | `dependencies` (läuft im Browser mit) | React selbst + die Funktionen, die React-Elemente tatsächlich ins echte DOM schreiben |
+| `@vitejs/plugin-react` | `devDependencies` (nur beim Bauen/Entwickeln) | übersetzt JSX/TSX (per esbuild) und bringt Fast-Refresh (HMR für Komponenten, UE2 Demo 2) |
+| `@types/react`, `@types/react-dom` | `devDependencies` | TypeScript-Typdefinitionen für React selbst (React-Quellcode ist reines JS, `@types/*` liefert die `.d.ts`-Beschreibung nach, damit `tsc` React-Aufrufe typprüfen kann) |
+
+**`vite.config.js`**: `react()`-Plugin eingebunden. Zusätzlich `build.rollupOptions.input` mit
+**zwei** Einträgen (`index.html` + `react.html`) — ohne das würde `vite build` nur `index.html`
+mitnehmen, `react.html` würde im späteren Deploy (`dist/`) schlicht fehlen.
+
+**`tsconfig.json`**: `"jsx": "react-jsx"` ergänzt (die automatische JSX-Transformation, siehe
+UE3 Demo 5 F1), `include` um `src/**/*.tsx`/`src/**/*.ts` erweitert.
+
+### Task 2 — minimaler Einstiegspunkt, sichtbar, ohne die vanilla-App zu entfernen
+
+Drei neue Dateien:
+
+| Datei | Rolle |
+|---|---|
+| `react.html` (Projekt-Root, neben `index.html`) | eigene, **komplett separate** HTML-Seite — eigener `<div id="react-root">`, eigenes `<script type="module" src="/src/main.tsx">`. Nutzt dasselbe `styles.css` (gleiche Optik), aber sonst nichts Gemeinsames mit `index.html` |
+| `src/main.tsx` (neu) | React-Bootstrap: `createRoot(rootElement).render(<StrictMode><App /></StrictMode>)` |
+| `src/App.tsx` (neu) | die Root-Komponente selbst — noch ein reiner Platzhalter, kein Shell/Routing (kommt Demo 9), kein Dashboard (kommt Demo 10) |
+
+Live geprüft (`npm run dev`): `/react.html` zeigt die React-Platzhalterseite, **0 Konsolenfehler**.
+`/` (die bestehende vanilla-App) läuft **unverändert weiter** — 18 Evidenz-Einträge, alle Stats,
+alle Views, exakt wie vor dieser Demo.
+
+### Task 3 — wie koexistieren vanilla und React während der Migration, und warum?
+
+**Entscheidung: zwei komplett getrennte HTML-Einstiegspunkte** (`index.html` = vanilla, `react.html`
+= React) statt eines gemeinsamen Einstiegspunkts mit Laufzeit-Umschaltung (z. B. ein Query-Parameter
+`?react=1`, der zur Laufzeit entscheidet, welche App gemountet wird).
+
+**Warum diese Variante:**
+- **Null Interferenz-Risiko.** Die vanilla-App hat ihr eigenes globales `state`-Objekt, hängt
+  Funktionen an `window` (UE2 Demo 7), registriert `hashchange`-Listener. Liefen beide Apps auf
+  derselben Seite (auch nur eine davon "inaktiv" im Hintergrund), müsste man aktiv verhindern, dass
+  sich beide in die Quere kommen (doppelte `window`-Zuweisungen, doppelte Listener). Mit zwei
+  komplett getrennten Seiten lädt **immer nur eine** App überhaupt, die andere existiert für diesen
+  Seitenaufruf schlicht nicht.
+- **Einfachstes Nebeneinander für Vergleich/Präsentation.** "Hier die alte, hier die neue" ist ein
+  Klick (bzw. eine URL) auseinander — ideal für die Live-Demo, wenn man beide Stände direkt
+  gegenüberstellen will.
+- **Kein zusätzliches Werkzeug nötig.** Vite unterstützt mehrere `.html`-Einstiegspunkte
+  ("Multi-Page-App") von Haus aus — nur der `rollupOptions.input`-Eintrag oben war nötig, keine
+  Extra-Bibliothek.
+
+**Was mit der Gegenrichtung schiefgehen würde:** eine Laufzeit-Umschaltung in **einem** gemeinsamen
+`index.html` würde bedeuten, dass **beide** Apps' JS potenziell im selben Bundle/derselben Seite
+landen — auch wenn nur eine "sichtbar" gemountet ist, könnte z. B. `js/main.ts`s
+`window.navigateTo = ...`-Zuweisungen (UE2 Demo 7) weiterhin laufen und mit React um denselben
+`window`-Namespace konkurrieren, oder beide Apps' `DOMContentLoaded`-Listener gleichzeitig feuern.
+Das wäre zusätzliche, unnötige Komplexität genau in der Phase, wo man am wenigsten Überraschungen
+will — und würde spätestens beim endgültigen Ablösen (Demo 9/10 baut die echte Shell) wieder
+aufgeräumt werden müssen.
+
+### Verifikation
+`npm run typecheck` → 0 Fehler. `npm run dev`: `/react.html` rendert die Platzhalter-Komponente,
+Konsole leer; `/` (vanilla) läuft unverändert (18 Evidenz-Karten, Dashboard-Stats, alle 5 Views) —
+beide live im Browser geprüft, nicht nur angenommen. `npm run build` bestätigt zusätzlich, dass
+`rollupOptions.input` wirklich greift: `dist/react.html` **und** `dist/index.html` werden beide
+erzeugt, dazu ein eigenes `react-*.js`-Bundle (React + ReactDOM, 219 KB gzip: 69 KB) getrennt vom
+bestehenden `main-*.js` (20 KB, die vanilla-App) — React bringt spürbar mehr Grundgewicht mit,
+genau das Trade-off-Thema aus Demo 8 (ADR: warum SPA/React).
+
+### 🎤 Live-Demo — was du im Unterricht herzeigst
+
+**1. Beide Seiten nebeneinander zeigen**
+`npm run dev`, zwei Tabs: einmal `/` (vanilla, voll funktionsfähig), einmal `/react.html`
+(React-Platzhalter). Sag: "beide laufen gleichzeitig, komplett unabhängig voneinander, vom selben
+Vite-Dev-Server ausgeliefert."
+
+**2. `src/App.tsx` + `src/main.tsx` kurz zeigen**
+Sag den einen Satz: "`main.tsx` ist das Spiegelbild von `js/main.ts` — aber für React, komplett
+eigenständig, importiert nichts aus dem alten Code."
+
+**3. `vite.config.js` zeigen, auf `rollupOptions.input` zeigen**
+Sag: "ohne diese zwei Zeilen würde `react.html` beim Produktions-Build einfach fehlen — Vite baut
+sonst nur die Hauptseite."

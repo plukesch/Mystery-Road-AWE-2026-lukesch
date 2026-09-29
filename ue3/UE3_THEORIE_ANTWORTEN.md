@@ -499,3 +499,101 @@ existieren) in unserem heutigen Code — `renderEvidenceCardHTML()` darf problem
 Zustand lesen, weil **wir selbst** exakt kontrollieren, wann und wie oft sie aufgerufen wird (kein
 Framework ruft sie eigenmächtig auf). React führt diese "reine Funktion"-Disziplin bewusst neu ein,
 gerade **weil** es selbst die Kontrolle über den Aufrufzeitpunkt übernimmt.
+
+---
+
+## Demo 6 — React + TypeScript Entry Point im Vite-Projekt
+
+React + TypeScript real ins Vite-Projekt geholt (`react`, `react-dom`, `@vitejs/plugin-react`,
+`@types/react`, `@types/react-dom`), minimaler Einstiegspunkt (`react.html` + `src/main.tsx` +
+`src/App.tsx`) live geprüft — läuft **parallel** zur unveränderten vanilla-App, beide gleichzeitig
+im Browser getestet. Details, Tabellen in `UE3_CHANGES.md`.
+
+### F1: Was musstest du tatsächlich installieren und konfigurieren, um JSX durch Vite kompilieren zu lassen? Wofür ist jedes einzelne Teil zuständig?
+
+**Einfach gesagt:** vier neue Pakete, zwei Konfig-Änderungen — jedes Teil hat eine klar
+abgegrenzte, eigene Aufgabe, keine Überschneidung.
+
+| Teil | Installiert als | Zuständig für |
+|---|---|---|
+| `react` | `dependencies` | die eigentliche React-**Bibliothek** — Komponenten-Konzept, `useState`/Hooks (später), die Logik hinter dem virtuellen DOM (UE3 Demo 3) |
+| `react-dom` | `dependencies` | die Brücke von Reacts virtuellem Modell zum **echten Browser-DOM** — `createRoot(...).render(...)` ist der einzige Punkt, an dem React tatsächlich echte DOM-Knoten erzeugt/ändert |
+| `@vitejs/plugin-react` | `devDependencies` | übersetzt `.tsx`/`.jsx`-Dateien (JSX-Syntax → `_jsx(...)`-Aufrufe, siehe UE3 Demo 5 F1) beim Entwickeln/Bauen, per esbuild. Bringt zusätzlich **Fast Refresh** (React-spezifisches HMR, das Komponenten-Zustand bei Code-Änderungen erhält — eine Erweiterung von Vites normalem HMR aus UE2 Demo 2) |
+| `@types/react`, `@types/react-dom` | `devDependencies` | reine **TypeScript-Typdefinitionen** — React selbst ist in JavaScript geschrieben, diese Pakete liefern die `.d.ts`-Beschreibung nach, damit `tsc` React-Code überhaupt typprüfen kann (ohne sie: `Cannot find module 'react'`) |
+| `tsconfig.json`: `"jsx": "react-jsx"` | Konfiguration, kein Paket | sagt **`tsc`** (nicht dem eigentlichen Compiler!), wie es JSX beim **Typprüfen** interpretieren soll — welches Modul (`react/jsx-runtime`) die JSX-Funktionen bereitstellt. Übersetzt selbst nichts, `tsc` läuft bei uns ohnehin nur zur Prüfung (`noEmit: true`, UE2 Demo 5) |
+| `vite.config.js`: `plugins: [react()]` | Konfiguration | aktiviert das oben installierte Plugin tatsächlich im Build-Prozess |
+
+**Wichtig, damit die Verantwortlichkeiten nicht verschwimmen:** `@vitejs/plugin-react` ist das
+Einzige, was JSX **tatsächlich in lauffähiges JavaScript übersetzt** (genau wie schon bei
+TypeScript: `tsc` prüft nur, esbuild/Vite übersetzt wirklich, UE2 Demo 5). `tsconfig.json`s
+`"jsx"`-Option betrifft ausschließlich, was `tsc` beim **Prüfen** annimmt — beide müssen zur selben
+Transformation passen (hier: die "automatische" Runtime), sonst würde `tsc` etwas anderes
+typprüfen, als esbuild tatsächlich erzeugt.
+
+### F2: Wie kommt deine `<App />`-Komponente vom Quellcode auf die tatsächliche Seite? Verfolge den Weg von deiner `.tsx`-Datei zum DOM.
+
+**Einfach gesagt:** Browser lädt `react.html` → lädt `main.tsx` als Skript → `main.tsx` importiert
+`App` und übergibt sie React → React baut daraus echte DOM-Knoten und hängt sie in den einen,
+vorgesehenen leeren `<div>` ein.
+
+**Schritt für Schritt:**
+
+1. Browser fordert `react.html` an, findet darin `<div id="react-root"></div>` (leer) und
+   `<script type="module" src="/src/main.tsx">`.
+2. Der Browser lädt `main.tsx` — im Dev-Modus übersetzt Vite diese Datei **on demand** beim Abruf
+   (esbuild + `@vitejs/plugin-react`, UE2 Demo 2), im Produktions-Build passiert dieselbe
+   Übersetzung vorab bei `vite build`.
+3. `main.tsx` sucht sich per `document.getElementById("react-root")` genau dieses eine leere
+   `<div>` und ruft `createRoot(rootElement)` auf — das erzeugt eine **React-Root**, den
+   Verwaltungspunkt, über den React ab jetzt diesen einen DOM-Ausschnitt kontrolliert.
+4. `.render(<StrictMode><App /></StrictMode>)` wird aufgerufen. `<App />` ist (nach der
+   JSX-Übersetzung) ein Funktionsaufruf `_jsx(App, {})` — React ruft dabei **die
+   `App`-Funktion selbst auf** und bekommt deren Rückgabewert: ein React-Element-Baum (Objekte,
+   kein DOM, siehe UE3 Demo 5 F1/F2).
+5. React geht diesen Element-Baum durch und erzeugt — **zum ersten Mal in dieser Kette** — echte
+   DOM-Knoten daraus (`document.createElement("div")`, `document.createElement("h1")`, …) und hängt
+   sie unter `#react-root` ein.
+6. **Erst jetzt**, am Ende dieser Kette, ist der Inhalt von `App` tatsächlich im echten,
+   sichtbaren DOM und damit auf dem Bildschirm sichtbar.
+
+Der entscheidende Punkt: **kein** Schritt zwischen 1 und 4 berührt jemals echtes DOM — bis
+Schritt 5 ist alles entweder Quelltext, übersetzter JS-Code, oder reine JavaScript-Objekte
+(React-Elemente). `react-dom` (genauer: die `createRoot`-API daraus) ist die **einzige** Stelle in
+der ganzen Kette, die tatsächlich mit dem echten Browser-DOM spricht.
+
+### F3: Welche Entscheidung hast du getroffen, wie vanilla- und React-Version während der Migration koexistieren, und warum? Was würde bei der entgegengesetzten Wahl schiefgehen?
+
+**Einfach gesagt:** zwei **komplett getrennte** HTML-Seiten (`index.html` bleibt die vanilla-App
+unangetastet, `react.html` ist die neue, separate React-Seite) statt einer einzigen Seite mit
+Laufzeit-Umschaltung zwischen beiden Versionen.
+
+**Die Entscheidung, konkret:** `vite.config.js`s `build.rollupOptions.input` registriert **beide**
+HTML-Dateien als eigene Build-Einstiegspunkte — Vite unterstützt das nativ als "Multi-Page-App",
+ganz ohne Zusatzwerkzeug. Jede der beiden Seiten lädt **nur ihr eigenes** JS-Bundle
+(`js/main.ts` bzw. `src/main.tsx`) — niemals beide gleichzeitig.
+
+**Warum diese Wahl, und nicht eine Laufzeit-Umschaltung** (z. B. ein Flag/Query-Parameter in einer
+einzigen `index.html`, das zur Laufzeit entscheidet, welche App gemountet wird):
+- **Garantierte Isolation.** Die vanilla-App hängt Funktionen an `window` (`window.navigateTo = ...`,
+  UE2 Demo 7), hört auf `hashchange`, hat ein einziges globales `state`-Objekt. Bei einer
+  gemeinsamen Seite müsste man aktiv sicherstellen, dass die React-Version davon nichts abbekommt
+  (und umgekehrt) — mit zwei komplett getrennten Seiten stellt sich diese Frage gar nicht erst,
+  weil zu jedem Zeitpunkt nur **eine** der beiden Apps überhaupt geladen ist.
+- **Einfacher Direktvergleich.** Für die Präsentation (und für mich selbst beim Vergleichen
+  während der Migration) ist "alte Version hier, neue Version da drüben" so einfach wie möglich zu
+  zeigen — ein Tab-Wechsel, keine Sonderlogik zum Umschalten nötig.
+
+**Was bei der Gegenrichtung (eine gemeinsame Seite, Laufzeit-Umschaltung) schiefgehen würde:**
+- **Beide Apps' JS würde potenziell geladen/ausgeführt**, selbst wenn nur eine "sichtbar" gemountet
+  ist — `js/main.ts`s `window.navigateTo = navigateTo;`-Zuweisungen (UE2 Demo 7) und React könnten
+  um denselben `window`-Namensraum konkurrieren, beide könnten eigene `DOMContentLoaded`- bzw.
+  Mount-Logik gleichzeitig auslösen.
+- **Zusätzliche, unnötige Komplexität genau in der fragilsten Phase.** Während der Migration will
+  man möglichst **wenige** bewegliche Teile gleichzeitig — eine Umschaltlogik ist selbst neuer,
+  ungetesteter Code, der wieder eigene Bugs haben könnte, rein um zwei Dinge zu trennen, die man mit
+  zwei Dateien für umsonst bekommt.
+- **Müsste ohnehin wieder aufgeräumt werden.** Sobald Demo 9/10 die echte Shell/das Dashboard
+  fertigstellen und die vanilla-App irgendwann ganz abgelöst wird (spätere Übungen), wäre die
+  Umschaltlogik nur eine temporäre Krücke, die dann wieder entfernt werden müsste — die
+  Zwei-Seiten-Lösung verschwindet dagegen einfach von selbst, sobald `index.html` irgendwann direkt
+  auf die React-App zeigt.

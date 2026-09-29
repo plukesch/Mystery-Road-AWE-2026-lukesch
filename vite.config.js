@@ -14,8 +14,26 @@
 // NICHT nur den build: vite haengt "base" auch beim dev-server/preview an
 // die url an (z.b. localhost:5173/Mystery-Road-AWE-2026-lukesch/) - ein
 // aufruf von localhost:5173/ alleine leitet automatisch dorthin um.
+// ue3 demo 6: react dazu. @vitejs/plugin-react uebersetzt jsx/tsx (per esbuild,
+// mit react-refresh fuer HMR bei komponenten - dieselbe rolle wie das plugin
+// beim originalen "npm create vite -- --template react-ts").
+// zwei html-einstiegspunkte parallel (siehe UE3_CHANGES.md demo 6): index.html
+// (die bestehende vanilla-app, unveraendert) + react.html (der neue, noch leere
+// react-shell). "input" sagt vite build explizit, BEIDE seiten zu bauen -
+// ohne das wuerde vite build nur index.html mitnehmen, react.html waere im
+// deploy (dist/) schlicht nicht vorhanden.
 import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
 
 export default defineConfig({
   base: "/Mystery-Road-AWE-2026-lukesch/",
+  plugins: [react()],
+  build: {
+    rollupOptions: {
+      input: {
+        main: "index.html",
+        react: "react.html",
+      },
+    },
+  },
 });

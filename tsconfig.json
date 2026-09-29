@@ -26,6 +26,12 @@
 
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
+    // ue3 demo 6: "react-jsx" - die "automatische" jsx-transformation (react
+    // 17+), siehe THEORIE_ANTWORTEN ue3 demo 5 F1. tsc uebersetzt <div/> nicht
+    // selbst (das macht weiterhin vite/esbuild, siehe isolatedModules oben) -
+    // dieses flag sagt tsc nur, WIE es jsx beim typpruefen interpretieren soll
+    // (welches modul die jsx-runtime-funktionen bereitstellt: "react").
+    "jsx": "react-jsx",
     // node_modules/vite/...'s eigene .d.ts-dateien nicht nochmal pruefen -
     // spart zeit, wir vertrauen den paketen selbst ihre typen zu.
     "skipLibCheck": true,
@@ -53,9 +59,8 @@
     "noUnusedLocals": false,
     "noUnusedParameters": false
   },
-  // nur unsere schon konvertierten .ts-dateien sind teil des programms.
-  // was sie importieren (state.js) wird ueber allowJs mitgezogen, aber
-  // alles andere (main.js, die anderen views, app.js) ist bis demo 7
-  // schlicht nicht teil dessen, was tsc ueberhaupt anschaut.
-  "include": ["js/**/*.ts"]
+  // js/**/*.ts: die bestehende vanilla-app (UE2). src/**/*.tsx: der neue,
+  // separate react-einstiegspunkt (UE3 demo 6) - bewusst ein eigener ordner,
+  // nicht mit js/ vermischt, siehe "wie koexistieren beide" in UE3_CHANGES.md.
+  "include": ["js/**/*.ts", "src/**/*.tsx", "src/**/*.ts"]
 }

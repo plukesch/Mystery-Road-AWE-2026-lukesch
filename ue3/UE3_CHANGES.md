@@ -463,3 +463,50 @@ eigenständig, importiert nichts aus dem alten Code."
 **3. `vite.config.js` zeigen, auf `rollupOptions.input` zeigen**
 Sag: "ohne diese zwei Zeilen würde `react.html` beim Produktions-Build einfach fehlen — Vite baut
 sonst nur die Hauptseite."
+
+---
+
+## Demo 7 — Komponenten-Hierarchie für die gesamte App
+
+### 🔰 Einfach erklärt — worum geht's hier überhaupt?
+
+Bevor wirklich Code entsteht (Demo 9/10), lohnt sich ein **Bauplan für die ganze App** — nicht nur
+für das Dashboard, das diese Übung tatsächlich baut, sondern für alle 5 Views, obwohl die meisten
+erst in UE4/UE5 dran sind. Ein Bauplan jetzt verhindert, dass man sich später in eine Ecke
+programmiert (mehr dazu in Theorie-F3).
+
+### Task 1+2 — Diagramm + Props/Daten für ≥5 Komponenten
+
+Eigene, dedizierte Datei wegen des Umfangs:
+**[`UE3_DEMO7_COMPONENT_HIERARCHY.md`](UE3_DEMO7_COMPONENT_HIERARCHY.md)**
+
+Kurzer Überblick über die Struktur:
+
+| Ebene | Beispiele |
+|---|---|
+| **Shell** (Demo 9) | `App`, `Header`, `NavBar`, `NavButton`, `PageRouter` |
+| **Seiten** (eine pro aktueller View) | `DashboardPage` (★ diese Übung), `EvidencePage`, `PeoplePage`, `TimelinePage`, `WorkspacePage` (alle UE4/UE5) |
+| **Seiten-spezifische Bausteine** | `StatCard`, `EvidenceGrid`, `PersonCard`, `TimelineEventItem`, `HypothesisForm`, … |
+| **Wiederverwendbare Bausteine** (über mehrere Seiten hinweg genutzt) | `Badge`, `BookmarkButton`, `TagChip`, `Button`, `MiniListItem`, `Modal`, `LoadingSpinner` |
+
+Props/Daten-Tabelle für 6 konkrete Komponenten (`StatCard`, `EvidenceCard`, `Badge`,
+`BookmarkButton`, `NavButton`, `HypothesisForm`) steht in der verlinkten Datei.
+
+### Verifikation
+Kein Code geändert (reine Design-/Diagramm-Demo). Diagramm ist gültiges Mermaid-Markdown (rendert
+direkt auf GitHub).
+
+### 🎤 Live-Demo — was du im Unterricht herzeigst
+
+**1. Das Diagramm auf GitHub zeigen** (rendert automatisch als Grafik, kein Screenshot nötig).
+Einmal die 4 Ebenen benennen: Shell → Seiten → seiten-spezifische Bausteine → wiederverwendbare
+Bausteine.
+
+**2. Auf die gestrichelten Linien zeigen**
+Sag: "`Badge` taucht an drei Stellen im Baum auf — Evidence-Karte, Evidence-Detail, Timeline —
+aber es ist überall **dieselbe** Komponente, keine drei Kopien."
+
+**3. Bezug zur Doku-Tabelle**
+Ein, zwei Zeilen aus der Props-Tabelle vorlesen, den einen Satz sagen: "jede Komponente bekommt
+genau die Daten, die sie braucht, als Props von oben — sie sucht sich nichts selbst global
+zusammen."

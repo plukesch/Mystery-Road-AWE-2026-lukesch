@@ -597,3 +597,108 @@ einzigen `index.html`, das zur Laufzeit entscheidet, welche App gemountet wird):
   Umschaltlogik nur eine temporäre Krücke, die dann wieder entfernt werden müsste — die
   Zwei-Seiten-Lösung verschwindet dagegen einfach von selbst, sobald `index.html` irgendwann direkt
   auf die React-App zeigt.
+
+---
+
+## Demo 7 — Komponenten-Hierarchie für die gesamte App
+
+Komponenten-Baum für die **gesamte** App entworfen (nicht nur Dashboard), als Mermaid-Diagramm in
+[`UE3_DEMO7_COMPONENT_HIERARCHY.md`](UE3_DEMO7_COMPONENT_HIERARCHY.md), inkl. Props/Daten-Tabelle
+für 6 konkrete Komponenten. Details dort, Kurzüberblick in `UE3_CHANGES.md`.
+
+### F1: Welche Kriterien hast du benutzt, um zu entscheiden, ob etwas eine eigene Komponente sein soll, statt inline in einer größeren zu bleiben?
+
+**Einfach gesagt:** eine eigene Komponente lohnt sich, sobald etwas **mehrfach gebraucht wird**,
+**für sich allein verständlich** ist, oder die Eltern-Komponente sonst **zu unübersichtlich**
+würde. Ein einmaliges, eng mit seinem Kontext verwobenes Stück Markup bleibt dagegen einfach
+inline.
+
+Konkret angewandte Kriterien:
+- **Wiederverwendung (das stärkste Kriterium).** Taucht dieselbe visuelle/strukturelle Einheit an
+  mehr als einer Stelle im Baum auf (`Badge`, `BookmarkButton`, `TagChip`, `MiniListItem`), ist sie
+  eine eigene Komponente — alles andere würde bedeuten, dieselbe Markup-Logik mehrfach von Hand zu
+  wiederholen, genau das Problem, das die vanilla App schon hat (siehe F2).
+- **Natürliche Listen-Elemente.** Alles, was aus einem Array gemappt wird (`EvidenceCard`,
+  `PersonCard`, `TimelineEventItem`, `StatCard`), braucht ohnehin eine eigene
+  Komponentengrenze — React verlangt für Listen stabile `key`-Props pro Element, das erzwingt
+  praktisch schon eine Komponentengrenze.
+- **Eigener, klar abgegrenzter Verantwortungsbereich.** `HypothesisForm` verwaltet seinen eigenen
+  Entwurfs-Zustand (Confidence, Texteingaben) unabhängig vom Rest der Workspace-Seite — eine
+  eigene Komponente macht diese Verantwortung sichtbar und testbar, statt sie in einer riesigen
+  `WorkspacePage`-Funktion zu verstecken.
+- **Lesbarkeits-Schwelle.** Würde eine Seiten-Komponente (z. B. `DashboardPage`) sonst 200+ Zeilen
+  JSX in einer einzigen Funktion enthalten, ist das ein Signal, benannte Unterteile herauszuziehen
+  (`StatCard`, `ReviewProgressBar`, `RecentEvidenceList`) — auch wenn jede davon nur **einmal**
+  vorkommt. Hier zählt nicht Wiederverwendung, sondern **Struktur/Benennbarkeit**: ein Name wie
+  `<ReviewProgressBar />` sagt mehr als ein anonymer Block verschachtelter `<div>`s.
+
+**Was bewusst inline bleibt:** rein einmalige, eng an ihren Kontext gebundene Markup-Fragmente ohne
+eigenen sinnvollen Namen — z. B. das reine Layout-Grid, das `StatCard`s nebeneinander anordnet,
+bräuchte keine eigene `StatCardGrid`-Komponente, wenn es nur ein `<div className="stats-grid">` um
+eine `.map()`-Schleife ist.
+
+### F2: Wähle eine Komponente in deinem Diagramm, die an mehr als einer Stelle in der App vorkommt. Was hat dich dazu gebracht, sie zu extrahieren statt ihr Markup zu duplizieren, und wie vergleicht sich das damit, wie die originale vanilla App genau diese Duplikation behandelt hat (oder nicht)?
+
+**Einfach gesagt:** `Badge` — taucht in **drei** verschiedenen Views auf (Evidence-Karte,
+Evidence-Detail, Timeline-Event). Die vanilla App hat diese Wiederholung nur **halb** gelöst: die
+**Logik** (welche CSS-Klasse für welchen Status) ist schon in einer gemeinsamen Funktion
+gebündelt — das **Markup** selbst wird trotzdem an jeder der drei Stellen von Hand neu
+hingeschrieben.
+
+**Konkret, was in der vanilla App passiert:** `js/utils.ts`s `getStatusBadgeClass()` und
+`getRelevanceBadgeClass()` sind bereits geteilte Funktionen — ein Stück Wiederverwendung gibt es
+also schon. Aber das eigentliche `<span class="badge ...">`-HTML wird trotzdem **an jeder
+Aufrufstelle separat** zusammengebaut:
+```js
+// evidence.ts, renderEvidenceCardHTML():
+html += '<span class="badge ' + getStatusBadgeClass(ev.status) + '">' + ev.status + "</span>";
+// evidence.ts, renderEvidenceDetail() - fast identisch, nochmal von Hand:
+// (Status-Select statt Badge, aber dieselbe Grundidee wiederholt sich)
+// timeline.ts hat sogar eine EIGENE, komplett separate Funktion dafür:
+function certaintyBadgeClass(certainty) { ... }  // eigene Logik, eigenes Markup
+```
+Die Logik ist also **teilweise** geteilt (Status/Relevance), aber für Certainty (Timeline) gibt es
+eine **komplett eigene, dritte** Funktion mit eigener, leicht abweichender Fallback-Kette — genau
+die Art von Drift, die entsteht, wenn Wiederholung nur teilweise bekämpft wird.
+
+**Was mich zur Extraktion gebracht hat:** eine `Badge`-Komponente (`variant`, `label` als Props)
+bündelt **Logik UND Markup an einer einzigen Stelle** — alle drei Aufrufer (`EvidenceCard`,
+`EvidenceDetailPanel`, `TimelineEventItem`) reichen nur noch durch, welchen Status sie zeigen
+wollen, statt das `<span class="badge ...">`-Markup selbst zu kennen. Ändert sich morgen das
+Aussehen eines Badges (z. B. ein neues Icon), reicht **eine** Änderung an **einer** Stelle — bei der
+vanilla App müsste man mindestens drei Funktionen einzeln finden und anpassen.
+
+**Der Unterschied zur vanilla App, zusammengefasst:** die vanilla App konnte **Berechnungslogik**
+teilen (reine Funktionen wie `getStatusBadgeClass`), aber **kein Markup** — HTML-Strings lassen
+sich nicht so einfach komponieren wie Funktionsaufrufe (kein natürliches "Baustein einbetten"-
+Konzept). React-Komponenten sind selbst schon Funktionen, die JSX zurückgeben — Markup **und**
+Logik lassen sich dadurch gemeinsam in einer einzigen, benannten Einheit bündeln, nicht nur die
+Logik-Hälfte davon.
+
+### F3: Dein Diagramm enthält Komponenten, die du erst in späteren Übungen baust. Warum ist es sinnvoll, die gesamte Hierarchie jetzt zu entwerfen, statt nur das zu diagrammieren, was du gerade baust?
+
+**Einfach gesagt:** einen Bauplan für ein ganzes Haus zu zeichnen, bevor man das erste Zimmer
+einrichtet, ist billig — ein bereits eingerichtetes Zimmer im Nachhinein umzubauen, weil man erst
+später merkt, dass die Wand woanders hätte stehen müssen, ist teuer. Architektur-Entscheidungen
+sind **vor** der Umsetzung fast kostenlos zu ändern, **nach** der Umsetzung nicht mehr.
+
+Konkrete Gründe:
+- **Verhindert Interface-Nacharbeit.** Würde ich `DashboardPage` isoliert entwerfen, ohne zu
+  wissen, dass `EvidencePage` später eine `EvidenceCard` braucht, könnte ich versehentlich eine
+  dashboard-spezifische Mini-Karte bauen, deren Props-Form für die spätere Evidence-Liste gar nicht
+  passt — mit dem vollständigen Diagramm sehe ich schon jetzt, dass `EvidenceCard` an mehreren
+  Stellen (Grid, evtl. Dashboards "Recent evidence") ähnlich gebraucht wird, und kann die
+  Props-Form gleich passend planen.
+- **Deckt Wiederverwendungs-Chancen auf, bevor Code existiert, der dupliziert werden könnte.** Ohne
+  den Gesamtblick würde ich beim Dashboard-Bau gar nicht merken, dass `Badge`/`TagChip` später in
+  drei weiteren Views gebraucht werden (siehe F2) — ich würde sie isoliert fürs Dashboard bauen und
+  in UE4/UE5 **erneut** von Hand duplizieren. Genau das Problem, das React eigentlich lösen soll
+  (F2), würde man sich sonst selbst neu einhandeln.
+- **Konsistente Namens-/Prop-Konventionen von Anfang an.** Eine einmal für die ganze App getroffene
+  Entscheidung ("Status-Varianten heißen überall `variant`, nicht mal `status`, mal `kind`, mal
+  `type`") verhindert, dass jede Übung ihren eigenen, leicht inkonsistenten Stil entwickelt.
+- **Günstig, weil es nur ein Diagramm ist.** Der Entwurf selbst kostet nichts außer Nachdenkzeit —
+  keine einzige Zeile Code muss geschrieben oder später wieder umgeschrieben werden, nur weil sich
+  die große Linie später als falsch herausstellt. Genau dieselbe Lektion wie bei den TypeScript-
+  Domain-Typen in UE2 (Demo 6): einmal ehrlich über die volle Form nachdenken, **bevor** man
+  anfängt, ist billiger als es Stück für Stück im Nachhinein zu korrigieren.

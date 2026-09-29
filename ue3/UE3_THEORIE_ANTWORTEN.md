@@ -780,3 +780,73 @@ dieses hypothetische Szenario wäre).
 harten Anforderung würde primär die **Rendering-Strategie** wechseln (CSR → SSR/hybrid), nicht
 zwingend das Komponenten-Modell (React könnte bleiben, nur eben serverseitig vorgerendert statt
 rein clientseitig).
+
+---
+
+## Demo 9 — Die App-Shell migrieren
+
+Header, NavBar, Routing-Grundgerüst (`useHashRoute`-Hook + `PageRouter`) in React/TypeScript
+gebaut, fünf Platzhalter-Seiten verdrahtet. Live geprüft: alle 5 Views wechseln korrekt, aktiver
+Nav-Status stimmt, ungültiger Hash fällt auf Dashboard zurück, vanilla-App bleibt unangetastet.
+Details, Datei-Tabelle in `UE3_CHANGES.md`.
+
+### F1: Wie wird "die aktuelle View" in deiner React-Shell verfolgt? Vergleiche das direkt mit `currentPage`/`handleHashChange()` aus der vanilla-Version — was ist tatsächlich unterschiedlich, was ist nur oberflächlich unterschiedlich, aber konzeptionell dasselbe?
+
+**Einfach gesagt:** dieselbe Grund-Idee (Hash der URL auslesen, auf Änderungen hören, unbekannte
+Werte auf "dashboard" abfangen) — aber wo vanilla eine geteilte Variable von Hand pflegt und
+danach von Hand die passenden Render-Funktionen aufruft, übernimmt bei React das **automatisch**,
+sobald sich der zugehörige State-Wert ändert.
+
+**Konzeptionell dasselbe (nur oberflächlich unterschiedlich):**
+
+| vanilla (`js/navigation.ts`) | React (`src/hooks/useHashRoute.ts`) |
+|---|---|
+| `state.currentPage` — ein Feld auf einem globalen, mutable Objekt | `useState<ViewName>` — React-interner State, an die Komponente gebunden, die den Hook aufruft |
+| `window.addEventListener("hashchange", handleHashChange)` — einmalig beim App-Start registriert | `useEffect(() => { window.addEventListener("hashchange", ...) }, [])` — dieselbe native Browser-API, nur innerhalb von Reacts Lifecycle-Mechanismus registriert (inkl. sauberem Aufräumen über die Cleanup-Funktion) |
+| `if (validViews.indexOf(hash) === -1) hash = "dashboard";` | `(VIEWS as readonly string[]).includes(hash) ? hash : "dashboard"` — exakt dieselbe Fallback-Logik, nur als Ausdruck statt als Zuweisung geschrieben |
+| Die Quelle der Wahrheit ist **derselbe** Browser-Mechanismus in beiden Fällen: `window.location.hash` + das native `hashchange`-Event. Nichts an der eigentlichen Routing-Grundlage hat sich geändert. | |
+
+**Tatsächlich unterschiedlich:**
+- **Wie die Änderung sichtbar wird.** In vanilla **muss** `handleHashChange()` selbst explizit
+  wissen, was sich beim View-Wechsel alles aktualisieren muss, und die passenden `renderX()`-
+  Funktionen **von Hand aufrufen** (`if (hash === "dashboard") { renderDashboard(); ... }`). Bei
+  React reicht es, `state.currentPage` (bzw. den Rückgabewert des Hooks) in JSX zu **lesen** — React
+  merkt sich selbst, welche Komponenten diesen Wert benutzen, und rendert **automatisch** genau die
+  neu, die betroffen sind (`NavBar` für die aktive Klasse, `PageRouter` für die sichtbare Seite) —
+  ohne dass irgendwo eine explizite Liste "was muss bei einer Änderung alles neu laufen" gepflegt
+  werden muss.
+- **Was im DOM tatsächlich vorhanden ist.** Die vanilla App hält **alle fünf** `<section class="view">`
+  durchgehend im DOM und blendet vier davon per CSS-Klasse (`.active`/kein `.active`) aus — React
+  rendert dagegen **nur** die eine aktuell aktive Seiten-Komponente, die anderen vier existieren für
+  diesen Render-Durchlauf im DOM **gar nicht**. Kein "unsichtbar, aber trotzdem da"-Zustand mehr.
+- **Kein manuelles `.active`-Umschalten mehr.** Vanilla braucht eine eigene Schleife, die bei jedem
+  View-Wechsel zuerst bei **allen** Nav-Buttons `.active` entfernt und dann bei genau einem wieder
+  setzt (`js/navigation.ts`). Bei React ist `isActive` einfach ein aus dem aktuellen State
+  **abgeleiteter** Wert (`item.viewName === currentView`) — es gibt keinen Zwischenzustand, in dem
+  "die alte Klasse ist noch nicht entfernt", weil jedes Rendern die Klasse komplett neu aus dem
+  aktuellen Zustand berechnet, statt den alten DOM-Zustand schrittweise zu verändern.
+
+### F2: Was passiert in deiner Shell, wenn eine Nutzer:in zu einer nicht existierenden View navigiert? Wie vergleicht sich das mit dem Fallback-auf-Dashboard-Verhalten der vanilla-App?
+
+**Einfach gesagt:** **identisch** — bewusst so entschieden, nicht zufällig. Ein ungültiger Hash
+(z. B. `#nonsense`) fällt in beiden Versionen auf `"dashboard"` zurück, live geprüft in beiden.
+
+**Konkret geprüft:** `http://localhost:5173/.../react.html#nonsense` aufgerufen → die React-Shell
+zeigt das Dashboard, exakt wie die vanilla App das bei genau demselben ungültigen Hash tut
+(`js/navigation.ts`: `if (validViews.indexOf(hash) === -1) hash = "dashboard";`).
+
+**Warum ich das bewusst 1:1 übernommen habe, statt etwas "Besseres" zu bauen** (z. B. eine eigene
+"Seite nicht gefunden"-Ansicht, wie sie ein echter Router typischerweise anbieten würde, siehe UE3
+Demo 4, F2): das Ziel dieser Migration ist laut Aufgabenstellung **Verhaltens-Parität** — dieselbe
+App, nur mit einem anderen Werkzeug gebaut, nicht eine gleichzeitige Neugestaltung. Ein
+abweichendes Fallback-Verhalten wäre eine unauffällige, aber echte Verhaltensänderung gewesen, die
+niemand explizit angefordert hat — genau die Art Detail, die man beim Migrieren leicht übersieht
+und die dann als "das ist doch jetzt anders?"-Überraschung auffällt.
+
+**Technisch, warum es überhaupt so einfach 1:1 ging:** `useHashRoute()`s `readCurrentView()`-
+Hilfsfunktion ist bewusst als direkte Portierung von `handleHashChange()`s Fallback-Zeile
+geschrieben (siehe F1-Tabelle) — dieselbe Bedingung, nur als Ausdruck statt als Zuweisung. Ein
+"echter" Router (React Router, spätere Übungen) hätte dafür ein eingebautes, generischeres
+"nicht gefunden"-Konzept (eine dedizierte Route/Komponente) — das hier bewusst noch **nicht**
+gebaut wurde, weil Demo 9 selbst nur ein "auch ohne volle Router-Bibliothek" (siehe
+Aufgabenstellung) verlangt, kein vollwertiges Routing-System.

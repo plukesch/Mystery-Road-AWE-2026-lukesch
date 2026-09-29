@@ -843,10 +843,12 @@ a:focus-visible {
   }
 }
 
-/* ue3 demo 6: react-einstiegspunkt (react.html), noch platzhalter */
-.react-placeholder {
+/* ue3 demo 9: platzhalter-seiten in der react-shell (evidence/people/timeline/
+   workspace - migration erst ue4/ue5). loest .react-placeholder aus demo 6 ab,
+   das war nur fuer den noch-shell-losen App-platzhalter gedacht. */
+.stub-page {
   max-width: 700px;
-  margin: 48px auto;
+  margin: 24px auto;
   padding: 24px;
   background: var(--color-panel);
   border: 1px solid var(--color-border);

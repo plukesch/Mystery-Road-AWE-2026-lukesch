@@ -1,21 +1,31 @@
 // ---------------------------------------------------------------------
-// ROOT-KOMPONENTE (ue3 demo 6)
-// noch kein shell/routing (demo 9), noch kein dashboard (demo 10) -
-// nur der minimale beweis, dass react+ts+vite hier zusammenspielen.
+// APP-SHELL (ue3 demo 9)
+// ersetzt den demo-6-platzhalter. spiegelbild von js/main.ts + js/navigation.ts,
+// aber react-idiomatisch: EIN useHashRoute()-aufruf statt state.currentPage +
+// manuell aufgerufener render-funktionen. header-inner-verschachtelung
+// (header > header-inner > brand + nav) 1:1 aus index.html uebernommen,
+// damit dasselbe css unveraendert weiter passt.
 // ---------------------------------------------------------------------
+import { Header } from "./components/Header";
+import { NavBar } from "./components/NavBar";
+import { PageRouter } from "./PageRouter";
+import { useHashRoute } from "./hooks/useHashRoute";
+
 export function App() {
+  const currentView = useHashRoute();
+
   return (
-    <div className="react-placeholder">
-      <h1>Project ReMotion &mdash; React-Shell (WIP)</h1>
-      <p>
-        Dies ist der React-Einstiegspunkt aus UE3 Demo 6. Die echte App-Shell (Header, Navigation,
-        Routing) kommt in Demo 9, das Dashboard in Demo 10 &mdash; bis dahin beweist diese Seite
-        nur, dass React, TypeScript und Vite hier korrekt zusammenspielen.
-      </p>
-      <p>
-        Die bestehende, voll funktionsfähige vanilla-App bleibt unverändert unter{" "}
-        <a href="/">der Startseite</a> erreichbar.
-      </p>
-    </div>
+    <>
+      <header className="app-header">
+        <div className="header-inner">
+          <Header />
+          <NavBar currentView={currentView} />
+        </div>
+      </header>
+
+      <main className="app-main">
+        <PageRouter view={currentView} />
+      </main>
+    </>
   );
 }

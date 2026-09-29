@@ -555,3 +555,56 @@ so in der `npm run build`-Ausgabe von Demo 6."
 **3. Eine der verworfenen Alternativen laut vorlesen**
 Z. B. "leichteres Framework wie Preact" — sag: "technisch durchaus plausibel, aber von der Übung
 selbst vorgegeben, dass es React sein soll — auch das gehört ehrlich in eine ADR."
+
+---
+
+## Demo 9 — Die App-Shell migrieren
+
+### 🔰 Einfach erklärt — worum geht's hier überhaupt?
+
+Ab hier wird die React-Seite (`react.html`, Demo 6) zur **echten** Shell: Header, Navigation und
+ein Routing-Grundgerüst, das zwischen fünf (noch größtenteils leeren) Seiten wechselt — genau wie
+die vanilla App es schon kann, nur jetzt mit React gebaut. Das Dashboard bekommt seinen echten
+Inhalt erst in Demo 10, die anderen vier Seiten erst in UE4/UE5.
+
+### Task 1+2 — Shell gebaut, Routing verdrahtet, live geprüft
+
+Neue Dateien:
+
+| Datei | Rolle |
+|---|---|
+| `src/hooks/useHashRoute.ts` (neu) | eigener React-**Hook** — liest `window.location.hash`, hört auf native `hashchange`-Events, gibt die aktuelle View als React-State zurück. Unbekannter/leerer Hash → Fallback `"dashboard"` (siehe Task 2/F2) |
+| `src/components/Header.tsx` (neu) | reines Branding (Logo, Titel, Untertitel) — keine Props, kein State |
+| `src/components/NavBar.tsx` + `NavButton.tsx` (neu) | die 5 Navigations-Buttons, `isActive` als Prop statt manuell verwalteter CSS-Klasse |
+| `src/PageRouter.tsx` (neu) | entscheidet anhand der aktuellen View, welche Seiten-Komponente gerendert wird |
+| `src/pages/DashboardPage.tsx`, `EvidencePage.tsx`, `PeoplePage.tsx`, `TimelinePage.tsx`, `WorkspacePage.tsx` (neu) | fünf Platzhalter-Seiten — nur Dashboard bekommt in Demo 10 echten Inhalt |
+| `src/App.tsx` (ersetzt den Demo-6-Platzhalter) | setzt Header + NavBar + PageRouter zur eigentlichen Shell zusammen |
+
+Live im Browser geprüft (`npm run dev`, `/react.html`):
+- Klick auf jeden der 5 Nav-Buttons wechselt die sichtbare Seite korrekt.
+- Der aktive Button bekommt korrekt die `active`-Klasse (per JS im DevTools-Konsolenobjekt
+  bestätigt: `"Evidence -> nav-btn active"`, alle anderen nur `"nav-btn"`).
+- `#nonsense` (ungültiger Hash) fällt korrekt auf Dashboard zurück — identisch zum
+  vanilla-Verhalten.
+- `npm run typecheck` → 0 Fehler. Konsole in allen Fällen leer, keine Fehler.
+- Die bestehende vanilla-App (`/`) bleibt währenddessen komplett unangetastet funktionsfähig.
+
+### Verifikation
+Alle oben genannten Punkte real im laufenden Dev-Server geprüft (nicht nur angenommen) — inkl.
+Fallback-Test mit einem absichtlich ungültigen Hash und Prüfung der tatsächlichen CSS-Klassen per
+JavaScript-Konsole.
+
+### 🎤 Live-Demo — was du im Unterricht herzeigst
+
+**1. Alle 5 Views live durchklicken**
+`/react.html` öffnen, nacheinander alle Nav-Buttons klicken. Zeig: der Inhalt wechselt, der aktive
+Button ist optisch hervorgehoben.
+
+**2. Den Fallback live zeigen**
+In der Adressleiste manuell `#nonsense` anhängen, Enter drücken — landet auf Dashboard. Sag:
+"exakt dasselbe Verhalten wie die alte `handleHashChange()`-Funktion."
+
+**3. `src/hooks/useHashRoute.ts` neben `js/navigation.ts` zeigen**
+Sag den einen Satz: "gleiche Grundidee — Hash lesen, auf `hashchange` hören, unbekannte Werte
+abfangen — aber hier als React-Hook, der bei Änderung automatisch alles neu rendert, was ihn
+benutzt, statt dass ich von Hand `renderX()`-Aufrufe verteilen muss."

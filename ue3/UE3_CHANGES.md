@@ -510,3 +510,48 @@ aber es ist überall **dieselbe** Komponente, keine drei Kopien."
 Ein, zwei Zeilen aus der Props-Tabelle vorlesen, den einen Satz sagen: "jede Komponente bekommt
 genau die Daten, die sie braucht, als Props von oben — sie sucht sich nichts selbst global
 zusammen."
+
+---
+
+## Demo 8 — Architecture Decision Record: warum SPA/React
+
+### 🔰 Einfach erklärt — worum geht's hier überhaupt?
+
+Ein **ADR (Architecture Decision Record)** ist ein Standard-Dokumentformat aus der echten
+Software-Entwicklung: eine Architektur-Entscheidung wird **schriftlich begründet**, **inklusive
+der Nachteile** — nicht nur eine Liste von Vorteilen. Der Sinn: in einem Jahr soll jemand (auch
+man selbst) nachlesen können, *warum* damals so entschieden wurde, nicht nur *was* entschieden
+wurde.
+
+### Task 1+2 — Argumentation + ehrliche Nachteile
+
+Eigene Datei, im Standard-ADR-Format (Kontext → Entscheidung → Begründung → Nachteile →
+Konsequenz → betrachtete Alternativen):
+**[`UE3_DEMO8_ADR_SPA_REACT.md`](UE3_DEMO8_ADR_SPA_REACT.md)**
+
+Kurzüberblick über die Argumentation:
+
+| | Kernaussage |
+|---|---|
+| **Warum SPA für diese App** | die zentrale Interaktion (ständiges Kreuzverweisen zwischen Views) ist genau das, was SPA am besten kann; Daten sind klein/statisch, kein echter SEO-Bedarf |
+| **Warum React speziell** | beseitigt eine in DIESER Codebase real demonstrierte Fehlerklasse strukturell (DOM/Zustand-Sync, UE3 Demo 3); Kurskontext ehrlich mitbenannt |
+| **Ehrlichster Nachteil, mit Zahl** | `react-*.js` allein wiegt 219 KB — mehr als das **Zehnfache** der gesamten bisherigen vanilla-App (20 KB), real aus UE3 Demo 6 gemessen |
+| **Weitere Nachteile** | Reacts Kernstärke (komplexer, tief verschachtelter Zustand) ist bei 5 einfachen Views arguably unterfordert; CSR-Nachteile aus Demo 2 bleiben unverändert; echtes Migrations-/Regressions-Risiko |
+
+### Verifikation
+Kein Code geändert (Entscheidungs-Dokument). Die zitierte Bundle-Größe (219 KB vs. 20 KB) stammt
+aus dem echten, in UE3 Demo 6 real ausgeführten `npm run build` — keine Schätzung.
+
+### 🎤 Live-Demo — was du im Unterricht herzeigst
+
+**1. Die ADR-Datei zeigen, Struktur kurz erklären**
+"Kontext, Entscheidung, Begründung, dann explizit ein eigener Abschnitt nur für Nachteile — das
+ist der Teil, den die meisten Entscheidungen im echten Leben weglassen."
+
+**2. Den Bundle-Größen-Vergleich zeigen**
+Auf die Tabelle mit 219 KB vs. 20 KB zeigen. Sag: "das ist keine Behauptung, das steht wortwörtlich
+so in der `npm run build`-Ausgabe von Demo 6."
+
+**3. Eine der verworfenen Alternativen laut vorlesen**
+Z. B. "leichteres Framework wie Preact" — sag: "technisch durchaus plausibel, aber von der Übung
+selbst vorgegeben, dass es React sein soll — auch das gehört ehrlich in eine ADR."

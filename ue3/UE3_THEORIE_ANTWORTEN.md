@@ -702,3 +702,81 @@ Konkrete Gründe:
   die große Linie später als falsch herausstellt. Genau dieselbe Lektion wie bei den TypeScript-
   Domain-Typen in UE2 (Demo 6): einmal ehrlich über die volle Form nachdenken, **bevor** man
   anfängt, ist billiger als es Stück für Stück im Nachhinein zu korrigieren.
+
+---
+
+## Demo 8 — Architecture Decision Record: warum SPA/React
+
+Vollständige ADR im Standard-Format (Kontext, Entscheidung, Begründung, **ehrliche Nachteile**,
+Konsequenz, verworfene Alternativen) geschrieben:
+[`UE3_DEMO8_ADR_SPA_REACT.md`](UE3_DEMO8_ADR_SPA_REACT.md). Details, Bundle-Größen-Vergleich dort
+und in `UE3_CHANGES.md`.
+
+### F1: Was würdest du verlieren, wenn du diese App stattdessen als serverseitig gerendertes vanilla HTML/JS beibehalten würdest? Was würdest du verlieren, wenn du speziell React wählst statt eines *anderen* SPA-Ansatzes (z. B. vanilla JS mit Router, oder eine leichtere Bibliothek)?
+
+**Einfach gesagt:** zwei ganz unterschiedliche Fragen — die erste ist "SPA oder nicht", die zweite
+ist "React oder eine andere SPA-Lösung". Bei der ersten verliert man die Kern-Interaktion der App
+selbst. Bei der zweiten verliert man vor allem Bundle-Gewicht, gewinnt aber echte, in dieser
+Codebase demonstrierte Korrektheits-Vorteile.
+
+**Teil A — Verlust bei serverseitig gerendertem vanilla HTML/JS statt SPA:**
+- **Der zentrale Workflow der App würde spürbar langsamer.** Das ständige Kreuzverweisen zwischen
+  Beweisstück, Person, Ort, Timeline (der Hauptgrund, warum diese App überhaupt existiert) würde
+  bei **jedem** Sprung einen kompletten Server-Roundtrip + Seiten-Neuaufbau bedeuten — genau das,
+  was UE3 Demo 1/2 als den historischen Auslöser für SPA-Architekturen überhaupt identifiziert hat.
+- **Die Live-Suche/-Filter würde klobiger.** Aktuell filtert die Suche bei jedem Tastenanschlag
+  sofort im Speicher (18 Einträge, keine Latenz spürbar) — server-seitig bräuchte das entweder eine
+  Anfrage pro Tastenanschlag oder ein Formular-Submit-Modell, beides eine schlechtere UX für genau
+  dieselbe kleine Datenmenge.
+- **Der kostenlose, einfache Static-Host (GitHub Pages, UE2 Demo 9) wäre nicht mehr möglich** —
+  echtes serverseitiges Rendern braucht einen tatsächlich laufenden Server-Prozess (oder
+  zumindest Serverless-Functions), also echte, aktuell gar nicht vorhandene Infrastruktur.
+- **Zum Ausgleich (ehrlich):** man würde die CSR-Nachteile aus UE3 Demo 2 (F2) zurückgewinnen —
+  Inhalt sichtbar ohne JS, bessere Suchmaschinen-Indexierbarkeit. Für diese konkrete App (kein
+  öffentliches SEO-Bedürfnis, siehe ADR) wiegt das aber nicht genug, um den Verlust der
+  Kern-Interaktivität aufzuwiegen.
+
+**Teil B — Verlust bei React speziell, statt vanilla JS + Router oder einer leichteren Bibliothek:**
+- **Bundle-Gewicht.** Real gemessen (UE3 Demo 6): `react-*.js` allein 219 KB (gzip 69 KB) — mehr
+  als das Zehnfache der gesamten bisherigen vanilla-App. Ein hand-optimierter Router + sorgfältig
+  geschriebenes vanilla-Rendering, oder eine leichtere Bibliothek (Preact ist z. B. nur wenige KB
+  groß), könnte einen großen Teil desselben Nutzens für einen Bruchteil dieses Gewichts liefern.
+- **Zusätzliche Konzepte/Einstiegshürde** — JSX, Hooks, Reacts Render-Modell (UE3 Demo 5) sind
+  Lernaufwand, den plain DOM-Code nicht hat.
+- **Zum Ausgleich (der Grund, warum React trotzdem gewählt wurde):** React beseitigt **strukturell**
+  eine Fehlerklasse, die in dieser konkreten Codebase **real** mehrfach aufgetreten ist (UE1s
+  Aliasing-Bug, der eingefrorene Dashboard-Cache, das Bookmark-Vollneubau-Muster aus UE3 Demo 3) —
+  ein hand-optimierter vanilla-Router allein würde nur das Routing-Problem lösen (UE3 Demo 4), nicht
+  dieses DOM-Synchronisations-Problem. Dazu kommt der explizit pädagogische Kursgrund (siehe ADR).
+
+### F2: Wenn diese App zwingend Nutzer:innen auf sehr schwachen Geräten oder mit schlechter Verbindung unterstützen müsste — würdest du bei SPA bleiben oder die Architektur ändern? Warum (nicht)?
+
+**Einfach gesagt:** **Nein**, nicht bei der aktuellen, rein clientseitigen React-SPA bleiben — unter
+dieser Anforderung würde ich zu einer hybriden/SSR-Architektur wechseln (die laut Aufgabenstellung
+dieser Übung zwar aktuell explizit außerhalb des Scopes liegt, aber genau die richtige Antwort auf
+dieses hypothetische Szenario wäre).
+
+**Warum, konkret begründet:**
+- **Schwache Geräte:** das eigentliche Problem ist oft nicht nur der **Download**, sondern das
+  **Parsen und Ausführen** von JavaScript auf einer langsamen CPU. Reacts ~220 KB Bundle (**bevor**
+  überhaupt eigener App-Code dazukommt) muss komplett geparst und ausgeführt werden (inkl. Reacts
+  eigener Rendering-/Reconciliation-Maschinerie), **bevor** irgendetwas interaktiv ist — auf einem
+  schwachen Prozessor kann allein das mehrere Sekunden kosten, unabhängig von der
+  Netzwerkgeschwindigkeit. Genau die CSR-Kosten aus UE3 Demo 2 (F1/F2), hier nur deutlich verstärkt.
+- **Schlechte Verbindung:** die in UE3 Demo 2 (F1) nachgezeichnete Lade-Kette (HTML → JS-Bundle
+  laden → **danach erst** mehrere, teils **sequenzielle** JSON-Anfragen, siehe `data.ts`s
+  `await`-Kette: `case.json` → `people.json` → `locations.json` nacheinander, nicht parallel) wird
+  bei hoher Latenz unverhältnismäßig teuer — jeder zusätzliche Roundtrip multipliziert sich mit der
+  Latenz, statt sich zu addieren.
+- **Die richtige Antwort unter dieser harten Anforderung wäre eine hybride Architektur**
+  (Server-Side Rendering bzw. Pre-Rendering, wie in Kapitel 14 des Kurs-Skripts behandelt —
+  explizit außerhalb des Scopes dieser Übung, siehe Exercise-3-Einleitung): der **erste** sichtbare
+  Inhalt käme dann direkt im initialen HTML, unabhängig davon, ob/wie schnell JavaScript überhaupt
+  läuft — React selbst müsste dafür nicht zwingend aufgegeben werden (Frameworks wie Next.js
+  rendern React-Komponenten serverseitig vor und "hydrieren" sie danach clientseitig), aber die
+  **aktuelle, rein clientseitige** SPA-Architektur dieser App würde so nicht mehr ausreichen.
+
+**Fazit:** "SPA vs. nicht-SPA" und "React vs. kein React" sind zwei getrennte Achsen — unter dieser
+harten Anforderung würde primär die **Rendering-Strategie** wechseln (CSR → SSR/hybrid), nicht
+zwingend das Komponenten-Modell (React könnte bleiben, nur eben serverseitig vorgerendert statt
+rein clientseitig).

@@ -259,3 +259,117 @@ Konkrete Dinge, die trotz virtuellem DOM langsam machen können:
 **Fazit:** virtueller DOM nimmt einem eine spezifische, verbreitete Fehlerquelle ab (das
 Bookmark-Beispiel oben) — er ist aber kein Freifahrtschein, sich um Performance keine Gedanken mehr
 zu machen.
+
+---
+
+## Demo 4 — SPA vs. MPA: State & Routing
+
+Navigation-Ablauf als Mermaid-Diagramm dokumentiert, jedes Stück App-Zustand tabellarisch in
+"übersteht Reload" vs. "geht verloren" eingeteilt, Zurück-Button-Verhalten **live in der deployten
+App verifiziert** (nicht nur aus dem Code hergeleitet). Details in `UE3_CHANGES.md`.
+
+### F1: In einer klassischen Multi-Page-App — wo lebt "die Daten der aktuellen Seite" zwischen zwei Anfragen? Wo lebt das stattdessen in dieser SPA, und was sind die Konsequenzen dieses Unterschieds (im Guten wie im Schlechten)?
+
+**Einfach gesagt:** in einer klassischen MPA lebt "der aktuelle Zustand" praktisch **nirgends im
+Browser** — der Browser ist zwischen zwei Seiten quasi ein leeres Blatt, alles Wichtige liegt auf
+dem **Server**. In unserer SPA lebt der Zustand die ganze Zeit **im Arbeitsspeicher des Browsers
+selbst**, in einem einzigen langlebigen JavaScript-Objekt.
+
+**Klassische MPA:** zwischen zwei Anfragen "vergisst" der Browser buchstäblich alles — jede Anfrage
+ist für ihn ein komplett neuer, unabhängiger Vorgang (HTTP ist von Natur aus zustandslos). Damit
+trotzdem z. B. "eingeloggt bleiben" oder "Warenkorb-Inhalt merken" funktioniert, muss der Zustand
+**auf dem Server** gespeichert werden (typischerweise eine Server-seitige Session, identifiziert
+über eine Session-ID, die der Browser bei jeder Anfrage automatisch als Cookie mitschickt) — oder
+er wird explizit in jeder Antwort mitgeschickt (versteckte Formularfelder, Query-Parameter). Der
+Browser selbst ist dabei im Grunde ein "dummes Terminal": er zeigt an, was er bekommt, und wirft
+es beim nächsten Klick komplett weg.
+
+**Unsere SPA:** der komplette App-Zustand (`state.ts`s `state`-Objekt: geladene Daten, welches
+Beweisstück offen ist, welcher Tab aktiv ist, …) lebt als **ein einziges, langlebiges
+JavaScript-Objekt im Arbeitsspeicher des Browser-Tabs** — solange die Seite nicht neu geladen oder
+der Tab geschlossen wird, bleibt es exakt so bestehen, wie es zuletzt war. Es ist **kein einziger
+Server-Roundtrip** nötig, um sich zu "erinnern", welche View gerade sichtbar ist oder welche Filter
+gesetzt sind.
+
+**Konsequenzen, im Guten:**
+- Keine wiederholten Server-Anfragen nötig, nur um sich an etwas zu erinnern — sofortige,
+  latenzfreie View-Wechsel (Demo 1).
+- Kann reiche, komplexe JS-Objekte direkt im Speicher halten (z. B. das komplette
+  `Evidence`-Array mit allen Feldern), statt alles ständig durch URLs/Cookies/versteckte
+  Formularfelder zu quetschen, die nur einfache Textwerte transportieren können.
+
+**Konsequenzen, im Schlechten:**
+- **Fragil.** Ein einziger voller Reload (oder ein Tab-Absturz) löscht diesen kompletten Zustand
+  sofort und vollständig — außer den bewusst nach `localStorage` geschriebenen Teilen (Bookmarks,
+  Notizen, gespeicherte Hypothese, siehe Task 2 oben). Eine Server-Session in einer MPA übersteht
+  dagegen einen Browser-Reload meist problemlos, weil sie gar nicht im Browser liegt.
+- **Nicht geräteübergreifend.** Der Zustand lebt nur in genau diesem einen Browser-Tab — anders als
+  eine Server-Session, die (bei entsprechendem Login-System) auf einem anderen Gerät mit demselben
+  Account sichtbar sein könnte.
+- **Nicht automatisch teilbar/verlinkbar.** Weil fast der gesamte Zustand nur im Speicher lebt und
+  nicht in der URL codiert ist, kann man z. B. **kein** Link auf "genau dieses geöffnete
+  Beweisstück-Detail mit diesen Filtereinstellungen" verschicken — der Hash trägt bei uns nur den
+  View-Namen (`#evidence`), nicht mehr.
+
+### F2: Diese App implementiert Routing aktuell von Hand (`handleHashChange()`, eine `if`-Ketten-Verzweigung, manuelles CSS-Klassen-Umschalten). Wofür ist eine Router-Bibliothek eigentlich zuständig, was diese handgestrickte Version *nicht* abdeckt?
+
+**Einfach gesagt:** unsere `if`-Kette kann genau eine Sache: zwischen 5 fest bekannten,
+**parameterlosen** Ansichtsnamen wechseln. Eine echte Router-Bibliothek kann erheblich mehr — vor
+allem Dinge, die genau dann wichtig werden, wenn man **auf ein bestimmtes Detail** verlinken/
+zurückkehren will, nicht nur auf eine von fünf groben Ansichten.
+
+Konkret, was fehlt:
+- **URL-Parameter/Deep-Linking.** Ein echter Router könnte eine Route wie `/evidence/:id` haben —
+  die ID würde automatisch aus der URL geparst. Bei uns ist das **nicht möglich**: ein bestimmtes
+  Beweisstück-Detail lässt sich **nicht direkt verlinken oder mit `F5` neu laden** — es ist nur
+  über "erst zur Evidence-Liste navigieren, dann eine Karte anklicken" erreichbar
+  (`openEvidenceDetail()` ändert den Hash überhaupt nicht, siehe Task 2/Theorie-F3).
+- **Echte History-API-Integration statt Hash-Krücke.** Ein Router kann kontrolliert entscheiden,
+  wann ein neuer History-Eintrag angelegt wird (`push`) und wann ein bestehender nur ersetzt wird
+  (`replace`) — bei uns entscheidet das implizit der Browser selbst, je nachdem, ob sich
+  `location.hash` überhaupt ändert (siehe genau das beobachtete Zurück-Button-Problem, Theorie-F3).
+- **Zentrales "nicht gefunden"-Handling.** Unser Fallback ("unbekannter Hash → immer stillschweigend
+  Dashboard") ist ein Sonderfall, den `handleHashChange()` selbst von Hand prüfen muss
+  (`validViews.indexOf(hash) === -1`). Ein Router hat dafür ein eingebautes, generisches Konzept
+  (eine dedizierte "not found"-Route), statt dass jede App das neu erfindet.
+- **Aktiver-Link-Status als automatischer Nebeneffekt statt eigene Schleife.** Bei uns läuft eine
+  eigene, separate Schleife über alle `.nav-btn`-Elemente, um manuell `.active` zu setzen/entfernen
+  (`js/navigation.ts`) — ein Router-Ökosystem (z. B. React Router) bietet dafür meist eingebaute
+  Hilfsmittel, die den aktiven Zustand automatisch aus dem aktuellen Pfad ableiten, ohne eine
+  separate, von Hand synchron zu haltende Schleife.
+- **Navigations-Absicherung (Race Conditions).** Unser `loadAllData()` hat **keinerlei**
+  Abbruch-Logik — navigiert man während eines laufenden `fetch()` schnell weg und wieder zurück,
+  könnte theoretisch eine ältere Antwort eine neuere überschreiben. Ausgereifte Router-Lösungen
+  bieten dafür oft eingebaute Mechanismen (Anfragen bei Navigation automatisch abbrechen).
+
+### F3: Wenn eine Nutzer:in jetzt den Browser-Zurück-Button drückt — was passiert in dieser App, und warum?
+
+**Einfach gesagt:** **kommt drauf an, was gerade offen ist** — reiner View-Wechsel (z. B. Dashboard
+→ Evidence) funktioniert mit Zurück tatsächlich korrekt, weil er echte Browser-History-Einträge
+erzeugt. Ein geöffnetes Beweisstück-Detail dagegen **nicht** — dort tut Zurück etwas Unerwartetes.
+Beides live in der deployten App geprüft, nicht nur vermutet.
+
+**Fall 1 — reiner View-Wechsel (live verifiziert):** Dashboard → Klick auf "Evidence" (`location.hash
+= "evidence"`, Browser legt dabei **automatisch** einen neuen History-Eintrag an, weil sich der
+Hash-Wert tatsächlich geändert hat) → Zurück-Button gedrückt → Ergebnis: korrekt zurück auf
+Dashboard. Funktioniert, **weil** jede Hash-Änderung nativ (ganz ohne App-Code) einen echten
+Browser-History-Eintrag erzeugt — der native `hashchange`-Mechanismus, auf den `handleHashChange()`
+lauscht, ist tatsächlich mit der Browser-History verbunden.
+
+**Fall 2 — Beweisstück-Detail geöffnet (live verifiziert, überraschendes Ergebnis):** Dashboard →
+Evidence (`#evidence`, neuer History-Eintrag) → ein Beweisstück angeklickt (`openEvidenceDetail()`
+läuft, öffnet die Detail-Ansicht) → Zurück-Button gedrückt → **tatsächliches Ergebnis: Sprung
+direkt zurück zum Dashboard** (URL wird wieder leer) — **nicht** zurück zur Evidence-Liste mit
+geschlossenem Detail, wie man es intuitiv erwarten würde.
+
+**Warum das so passiert:** `openEvidenceDetail()` (`js/views/evidence.ts`) ändert
+`window.location.hash` **überhaupt nicht** — es zeigt die Detail-Section einfach direkt per
+`classList.remove("hidden")` innerhalb derselben `#evidence`-Ansicht. Weil sich der Hash beim
+Öffnen des Details nie geändert hat, hat der Browser dafür **keinen eigenen History-Eintrag**
+angelegt. Aus Sicht der Browser-History gibt es also nur zwei Einträge (leerer Hash, dann
+`#evidence`) — das Öffnen des Details ist in der History **unsichtbar**. Der Zurück-Button "springt"
+deshalb über den erwarteten Zwischenschritt ("Detail zu, Liste offen") direkt zum tatsächlich
+vorigen History-Eintrag (Dashboard). Genau das ist ein konkretes, live beobachtbares Beispiel für
+die in F2 beschriebene Lücke: ein echter Router hätte fürs Öffnen eines Details typischerweise
+einen eigenen History-Eintrag (z. B. `/evidence/E14`) angelegt — unsere handgestrickte Lösung tut
+das nur für die fünf groben Views, nicht für Zustände innerhalb einer View.

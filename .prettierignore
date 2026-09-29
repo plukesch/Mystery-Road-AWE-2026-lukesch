@@ -7,6 +7,7 @@ package-lock.json
 # eingefrorene ue1-vor-refactor-datei, nie mehr angefasst
 app.js
 
-# hand-formatierte doku (tabellen, emoji-ueberschriften) - prettier wuerde das zerreissen
-ue1/
-ue2/
+# hand-formatierte doku (tabellen, emoji-ueberschriften, mermaid) - prettier wuerde das
+# zerreissen. ue*/ statt einzeln ue1/ ue2/ ue3/... damit jede kuenftige uebung automatisch
+# mit abgedeckt ist, ohne diese datei jedes mal von neuem anpassen zu muessen.
+ue*/

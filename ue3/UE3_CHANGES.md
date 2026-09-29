@@ -218,3 +218,89 @@ Deployte App öffnen (oder `npm run dev`), Evidence-View, DevTools → Elements-
 Karten-Element im DOM-Baum aufklappen/markieren. Auf den Bookmark-Stern klicken. Zeig: im
 Elements-Tab **blinkt kurz die komplette Liste** (Chrome hebt neu eingefügte DOM-Knoten farblich
 hervor) — nicht nur die eine Karte.
+
+---
+
+## Demo 4 — SPA vs. MPA: State & Routing
+
+### 🔰 Einfach erklärt — worum geht's hier überhaupt?
+
+Bei einer klassischen Multi-Page-App (MPA) ist **jede Seite ein eigener, kompletter Neustart** —
+der Browser weiß zwischen zwei Seiten praktisch nichts mehr von sich selbst. Bei einer SPA wie
+unserer App gibt es dagegen **eine einzige, durchgehend laufende** JavaScript-Umgebung, die sich
+alles selbst merkt — bis sie durch einen echten Reload beendet wird. Demo 4 zeigt genau, **wie**
+das bei uns technisch funktioniert und was das für Konsequenzen hat.
+
+### Task 1 — wie Navigation aktuell funktioniert (Diagramm)
+
+```mermaid
+flowchart TD
+    A["Klick auf Nav-Button<br/>onclick=navigateTo('evidence')"] --> B["navigateTo(viewName)<br/>js/navigation.ts"]
+    B --> C["window.location.hash = viewName<br/>(Browser legt automatisch einen<br/>neuen History-Eintrag an)"]
+    C --> D["Browser feuert natives<br/>'hashchange'-Event"]
+    D --> E["handleHashChange()"]
+    E --> F{"Hash in validViews?"}
+    F -->|nein| G["Fallback: hash = 'dashboard'"]
+    F -->|ja| H["state.currentPage = hash"]
+    G --> H
+    H --> I["alle .view-Sections:<br/>.active entfernen"]
+    I --> J["#view-&lt;hash&gt;:<br/>.active hinzufuegen"]
+    J --> K["Nav-Buttons:<br/>.active manuell umsetzen"]
+    K --> L{"welche View?"}
+    L -->|dashboard| M["renderDashboard()"]
+    L -->|evidence, 1. Besuch| N["renderEvidenceList()"]
+    L -->|... weitere Views| O["..."]
+```
+
+**Was dabei NICHT passiert** (im Unterschied zu einer klassischen Mehrseiten-Site):
+
+| Passiert NICHT | Würde bei einer klassischen MPA passieren |
+|---|---|
+| Keine neue HTTP-Anfrage für ein neues Dokument | Browser fordert eine komplett neue HTML-Seite vom Server an |
+| Kein voller Seiten-Reload (kein weißes Aufblitzen) | Seite wird komplett verworfen und neu aufgebaut |
+| DOM außerhalb der getauschten Section bleibt unangetastet (Header, Nav bleiben exakt dieselben Elemente) | der komplette DOM wird neu erzeugt, jedes Element ist danach ein neues Objekt |
+| Der JS-Ausführungskontext (`state`-Objekt im Speicher) läuft einfach weiter | jeglicher JS-Zustand ist weg, jedes `<script>` startet komplett neu |
+
+### Task 2 — jedes Stück Zustand: übersteht einen vollen Reload oder nicht?
+
+| Zustand | Wo gespeichert | Übersteht `F5` (vollen Reload)? |
+|---|---|---|
+| `bookmarks` (welche Beweisstücke markiert sind) | `localStorage` (`remotion_bookmarks`) | ✅ ja |
+| `notesStore` (private Notizen pro Beweisstück) | `localStorage` (`remotion_notes`) | ✅ ja |
+| Hypothesen-Entwurf (Workspace-Formular) | `localStorage` (`remotion_hypothesis`) — aber **nur**, wenn "Save hypothesis draft" geklickt wurde | ✅ ja, aber nur der zuletzt **gespeicherte** Stand |
+| `allEvidence`/`allPeople`/`allLocations`/`allTimeline`/`caseData` | nur im Speicher (`state.ts`) | ⚠️ technisch weg, wird aber beim Neustart aus denselben JSON-Dateien **neu geladen** — für die Nutzer:in nicht sichtbar unterschiedlich |
+| `selectedEvidence` (welches Beweisstück-Detail gerade offen ist) | nur im Speicher | ❌ nein — Detail-Ansicht ist nach Reload zu |
+| `currentPeopleTab` (People- vs. Locations-Tab) | nur im Speicher | ❌ nein — springt zurück auf "People" |
+| `viewRendered`-Flags (Erstbesuch-Render-Cache) | nur im Speicher | ❌ nein, aber irrelevant — sind nach Neustart ohnehin wieder alle `false` |
+| aktuelle Filter-/Such-Eingaben (Textfeld, Dropdowns) | nur im DOM (Formularwerte) | ❌ nein — alle Filter zurückgesetzt |
+| ungespeicherter Text in einem Notiz-/Hypothesen-Feld (getippt, aber "Save" nicht geklickt) | nur im DOM | ❌ nein — komplett weg |
+| `state.currentPage` (welche View gerade sichtbar ist) | **im URL-Hash** (`#evidence`) | ✅ ja — weil der Hash Teil der URL ist, nicht Teil des JS-Speichers |
+| Scroll-Position | Browser-Standardverhalten | ❌ nein (kein App-spezifisches Verhalten) |
+
+### Verifikation
+Zurück-Button-Verhalten (Grundlage für Theorie-F3) live in der deployten App geprüft: Dashboard →
+Evidence (`#evidence`, neuer History-Eintrag) → Beweisstück-Detail geöffnet (Hash bleibt
+unverändert auf `#evidence`, **kein** neuer History-Eintrag) → Zurück-Button gedrückt → Ergebnis:
+Sprung direkt zurück auf die Wurzel-URL (Dashboard), **nicht** zurück zur Evidence-Liste mit
+geschlossenem Detail. Zusätzlich separat geprüft: reines View-zu-View-Wechseln (Dashboard →
+Evidence → Zurück) funktioniert korrekt und landet wieder auf Dashboard.
+
+### 🎤 Live-Demo — was du im Unterricht herzeigst
+
+**1. Das Diagramm zeigen**, einmal laut durchgehen, den Kontrast-Satz sagen: "keine einzige neue
+Seiten-Anfrage in der ganzen Kette."
+
+**2. Live: DevTools-Network-Tab, ein paar Views durchklicken**
+Zeig: **keine** neuen Dokument-Requests in der Liste, nur die URL in der Adresszeile ändert sich.
+
+**3. Live: den Zurück-Button-Bug vorführen**
+Dashboard → Evidence klicken → ein Beweisstück öffnen (Detail-Ansicht) → Browser-Zurück-Button
+drücken. Zeig: man landet **nicht** auf der Evidence-Liste mit geschlossenem Detail, sondern
+direkt zurück auf dem Dashboard — "ein Klick zurück hat zwei Schritte übersprungen." Erklär kurz:
+"weil das Öffnen des Details nie die URL geändert hat, gab's dafür nie einen eigenen
+History-Eintrag."
+
+**4. Live: `localStorage` vs. Reload zeigen**
+Ein Beweisstück bookmarken, DevTools → Application → Local Storage zeigen (`remotion_bookmarks`
+enthält die ID). Seite mit `F5` neu laden — Bookmark ist noch da. Dann eine Notiz in ein Textfeld
+tippen, **ohne** zu speichern, `F5` drücken — Text ist weg.

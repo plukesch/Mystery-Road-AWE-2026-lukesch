@@ -13,8 +13,9 @@ export default [
     // app.js: eingefrorene vor-refactor-datei aus ue1, nur zum diffen behalten,
     // wird nie mehr angefasst -> soll auch nicht gelintet werden.
     // dist/, public/, node_modules/: generierte bzw. daten-/bild-dateien, kein
-    // code von uns. ue1/, ue2/: markdown-doku, kein js.
-    ignores: ["dist/**", "public/**", "node_modules/**", "app.js", "ue1/**", "ue2/**"],
+    // code von uns. ue*/: markdown-doku (ue1, ue2, ue3, ...), kein js - ein
+    // glob statt einzelner ue1/**, ue2/** deckt jede kuenftige uebung automatisch mit ab.
+    ignores: ["dist/**", "public/**", "node_modules/**", "app.js", "ue*/**"],
   },
   js.configs.recommended,
   {

@@ -173,3 +173,89 @@ und einfache Crawler leer ausgehen lässt. Bei einer echten, öffentlich zu find
 Gegensatz zu diesem Kursprojekt) wäre das ein ernstzunehmender Nachteil für Suchmaschinen-Sichtbarkeit
 (SEO) — ein Crawler ohne vollständige JS-Ausführung würde im HTML praktisch nur die Wörter "How to
 use this portal" finden, nicht die eigentlichen Fallakten-Inhalte, die die Seite ja ausmachen.
+
+---
+
+## Demo 3 — Der virtuelle DOM
+
+Virtueller DOM in eigenen Worten erklärt (leichtgewichtige JS-Kopie + Diffing statt direkter
+DOM-Manipulation), konkretes Beispiel im **originalen** `app.js` gefunden: ein Bookmark-Klick
+(`handleBookmarkClick`, Zeile 434) löst `renderEvidenceList()` aus, das **alle** gefilterten
+Beweisstück-Karten komplett neu baut und per `innerHTML` ersetzt — obwohl sich nur ein
+Stern-Symbol in einer einzigen Karte wirklich ändert. Details, Code-Zitat in `UE3_CHANGES.md`.
+
+### F1: Anhand des gefundenen Beispiels — wie würde ein virtueller-DOM-Ansatz (konzeptionell, nicht zwingend React-spezifisch) vermeiden, die unveränderten Teile neu zu erzeugen?
+
+**Einfach gesagt:** statt "beim Bookmark-Klick die GANZE Liste neu zusammenbauen" schreibt man nur
+"so soll EINE Karte aussehen, abhängig von ihren Daten" — und lässt die Bibliothek selbst
+herausfinden, welche der (bis zu 18) Karten sich wirklich geändert haben.
+
+**Konkret auf unser Beispiel übertragen:** man würde eine Komponentenfunktion schreiben, die **eine
+einzelne** Evidence-Karte beschreibt, abhängig von ihren Daten inklusive `isBookmarked`. Ändert
+sich der Bookmark-Zustand (das `bookmarks`-Array), läuft diese Beschreibungsfunktion zwar
+gedanklich für **alle** aktuell sichtbaren Karten erneut — aber das Ergebnis ist zunächst nur eine
+**neue virtuelle Baum-Struktur**, keine echten DOM-Operationen. Der Diffing-Schritt vergleicht
+diese neue virtuelle Struktur dann Knoten für Knoten mit der vorigen: bei den **17 unveränderten**
+Karten stellt er fest "gleicher Tag, gleiche Attribute, gleiche Kinder" → **nichts** wird am echten
+DOM angefasst. Bei der **einen** betroffenen Karte stellt er fest "dieses `class`-Attribut hat sich
+geändert, dieser Text-Inhalt hat sich geändert" → genau **zwei** kleine, chirurgische
+DOM-Operationen werden ausgeführt (Klasse setzen, Text ändern) — die anderen 17 Karten, ihre
+Event-Listener, ihr Fokus-/Scroll-Zustand bleiben komplett unangetastet, im Gegensatz zu unserem
+`innerHTML = html`, das alle 18 Karten gleichermaßen zerstört und neu erzeugt.
+
+### F2: Ist der virtuelle DOM eine "schnellere" Art, den echten DOM zu aktualisieren, als direkt `innerHTML` aufzurufen? Erkläre genau, was hier tatsächlich gegeneinander abgewogen wird (denk an die Diffing-Arbeit selbst).
+
+**Einfach gesagt:** nicht bedingungslos "schneller" — ein **anderer Tausch**. `innerHTML` ist
+selbst extrem einfach und der Browser-HTML-Parser gut optimiert, macht aber **immer maximale**
+DOM-Arbeit (alles zerstören, alles neu bauen). Virtueller DOM vermeidet diese Verschwendung, aber
+das **Vergleichen selbst kostet auch Zeit** — man tauscht "garantiert alles neu bauen" gegen
+"zuerst günstig vergleichen, dann nur das Nötige bauen".
+
+**Genauer:** `container.innerHTML = html` ist zwar in **einer** Zeile geschrieben, lässt den
+Browser aber **bedingungslos** Folgendes tun, egal wie viel sich wirklich geändert hat: alle
+bisherigen Kind-Elemente zerstören (inkl. Verlust von z. B. Fokus, Scroll-Position innerhalb dieser
+Kinder, angehängten Event-Listenern), den neuen HTML-String parsen, komplett neue Elemente
+erzeugen, und für den **gesamten** betroffenen Bereich Layout und Paint neu berechnen — unabhängig
+davon, ob sich am Ende 1 % oder 100 % sichtbar geändert hat. Der virtuelle DOM **vermeidet** diese
+unnötige, teure echte-DOM-/Browser-Arbeit — aber der Diffing-Schritt selbst ist **nicht gratis**:
+zwei komplette Baum-Strukturen (alte und neue virtuelle Kopie) müssen Knoten für Knoten verglichen
+werden, das kostet CPU-Zeit, **auch dann**, wenn am Ende "nichts geändert" herauskommt.
+
+**Der eigentliche Tausch:** billige, reine In-Memory-JavaScript-Rechenarbeit (Bäume aus einfachen
+Objekten bauen und vergleichen) gegen teure, echte Browser-Arbeit (Layout, Reflow, Paint,
+Zustandsverlust in zerstörten Elementen) sparen. Das lohnt sich, wenn ein großer Teil des Baums
+typischerweise **gleich** bleibt und der betroffene DOM-Ausschnitt nicht winzig ist (genau unser
+Bookmark-Beispiel: 17 von 18 Karten bleiben gleich). Es lohnt sich **nicht automatisch**, wenn sich
+ohnehin fast der komplette sichtbare Baum ändert (dann zahlt man Diffing-Kosten **zusätzlich** zu
+den DOM-Kosten, die man sowieso gehabt hätte) oder wenn der Baum von vornherein winzig ist (bei 5
+Elementen ist der Unterschied zwischen beiden Ansätzen ohnehin vernachlässigbar).
+
+### F3: Macht die Verwendung einer virtuellen-DOM-Bibliothek deine App automatisch schnell? Was könnte eine React-App trotzdem langsam machen?
+
+**Einfach gesagt:** Nein. Der virtuelle DOM behebt genau **eine** Art von Ineffizienz (unnötiges,
+naives Neubauen ganzer DOM-Abschnitte) — er ist keine allgemeine Performance-Garantie. Man kann
+mit React auf ganz andere Arten trotzdem eine langsame App bauen.
+
+Konkrete Dinge, die trotz virtuellem DOM langsam machen können:
+- **Unnötig viele Re-Renders.** Ist eine App-Struktur/Komponenten-Aufteilung ungünstig (kein
+  `memo`, zu große, undifferenzierte Komponenten), lässt React bei jeder Zustandsänderung viel
+  **mehr** Komponentenfunktionen erneut laufen als nötig — selbst wenn jeder einzelne Diff billig
+  ist, summiert sich das bei tausenden Knoten pro Tastenanschlag.
+- **Teure Arbeit INNERHALB einer Render-Funktion.** Eine aufwendige Berechnung, das Sortieren
+  eines riesigen Arrays, Datums-Formatierung für tausende Einträge — der virtuelle DOM optimiert
+  nur den **DOM-Schreib**-Schritt am Ende, nicht die eigene JS-Logik, die vorher läuft.
+- **Große Listen ohne (oder mit instabilen) `key`-Props.** Reacts Diffing-Algorithmus verlässt sich
+  für Listen auf eine stabile Identität pro Element (`key`). Fehlt die oder ist sie instabil (z. B.
+  der Array-Index bei einer sich neu sortierenden Liste), reißt React unnötig viele Listen-Einträge
+  ab und baut sie neu — genau das Problem, das der virtuelle DOM eigentlich vermeiden sollte.
+- **Netzwerk-/Datenladezeiten.** Keine Rendering-Strategie der Welt beschleunigt eine langsame
+  API-Antwort oder einen langsamen Server — das ist eine komplett andere Achse (siehe Demo 2,
+  SSR/CSR-Kompromisse).
+- **Teure CSS-/Layout-Muster**, die unabhängig vom Rendering-Ansatz Browser-Neuberechnungen
+  erzwingen (z. B. bestimmte Layout-Eigenschaften, die bei jeder kleinen Änderung große Bereiche
+  neu berechnen lassen) — der virtuelle DOM minimiert nur, **wie viele** DOM-Schreibvorgänge
+  nötig sind, nicht, wie teuer jeder einzelne im schlimmsten Fall sein kann.
+
+**Fazit:** virtueller DOM nimmt einem eine spezifische, verbreitete Fehlerquelle ab (das
+Bookmark-Beispiel oben) — er ist aber kein Freifahrtschein, sich um Performance keine Gedanken mehr
+zu machen.

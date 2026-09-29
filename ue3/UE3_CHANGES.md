@@ -128,3 +128,93 @@ Dokument-Antwort (`index.html`) ist **winzig** im Vergleich — öffne sie im Re
 dass z. B. `<div id="evidenceList" class="evidence-grid"></div>` **leer** ist. Zeig danach die
 JS-Datei (`assets/index-*.js`) und die nachfolgenden `data/*.json`-Requests — "der Inhalt kommt
 hier komplett separat, nach dem HTML, über JavaScript."
+
+---
+
+## Demo 3 — Der virtuelle DOM
+
+### 🔰 Einfach erklärt — worum geht's hier überhaupt?
+
+**Was ist der virtuelle DOM, in eigenen Worten?** Eine **leichtgewichtige, rein in JavaScript
+gehaltene Kopie** dessen, wie der echte DOM aussehen soll — ein Baum aus einfachen
+JavaScript-Objekten, kein einziges echtes Browser-Element dabei. Ändert sich etwas, baut die
+Bibliothek (z. B. React) eine **neue** solche Kopie, **vergleicht** sie mit der **vorigen** Kopie
+("diffing") und findet dabei genau heraus, was sich wirklich unterscheidet. Erst **dann** werden
+am echten DOM nur genau die Stellen angefasst, die sich tatsächlich geändert haben.
+
+*Analogie:* Stell dir einen 50-seitigen gedruckten Bericht vor, bei dem sich auf **einer** Seite
+ein Tippfehler geändert hat. Unser aktueller Ansatz (`innerHTML = ...`) ist: den **kompletten**
+Bericht neu drucken und komplett austauschen — auch wenn 49 von 50 Seiten identisch geblieben
+sind. Der virtuelle-DOM-Ansatz ist: zuerst eine **billige Wegwerf-Kopie** (auf Schmierpapier, nicht
+gedruckt) von "wie soll der Bericht jetzt aussehen" anfertigen, Seite für Seite mit der alten
+Wegwerf-Kopie vergleichen, feststellen "nur Seite 47 unterscheidet sich" — und **nur diese eine
+Seite** im echten, gedruckten Bericht austauschen.
+
+**Welches Problem löst das?** Direkte DOM-Manipulation hat vorher zwei unschöne Optionen gehabt:
+entweder **von Hand ganz genau** aufschreiben, welches einzelne Element sich wie ändern soll
+(präzise, aber mühsam, fehleranfällig, wird bei komplexer UI schnell unübersichtlich), oder **den
+einfachen Weg** gehen und einfach den ganzen betroffenen Bereich neu zusammenbauen
+(`innerHTML = ganzerNeuerString` — simpel zu schreiben, aber verschwenderisch: zerstört und baut
+weit mehr DOM neu, als nötig wäre). Der virtuelle DOM gibt beides zugleich: man schreibt einfachen,
+deklarativen Code ("so soll die Komponente aussehen, als würde sie immer von Null gezeichnet"),
+bekommt aber effiziente, chirurgisch genaue Updates am echten DOM automatisch — weil der
+Diffing-Schritt selbst herausfindet, was minimal geändert werden muss.
+
+### Task — konkretes Beispiel im ORIGINALEN `app.js` (vor UE1)
+
+**Gefunden in `app.js`, Zeilen 434–449 (`handleBookmarkClick`) + 369–394 (`renderEvidenceList`):**
+
+```js
+function handleBookmarkClick(evidenceId) {
+  var ev = findEvidenceById(evidenceId);
+  if (!ev) return;
+  if (bookmarks.indexOf(evidenceId) === -1) {
+    bookmarks.push(evidenceId);
+    ev.bookmarked = true;
+  } else {
+    bookmarks = bookmarks.filter(function (id) { return id !== evidenceId; });
+    ev.bookmarked = false;
+  }
+  saveBookmarksToStorage();
+  if (currentPage === "evidence") renderEvidenceList();   // <- das komplette Grid!
+}
+
+function renderEvidenceList() {
+  // ...
+  var results = getFilteredEvidence();
+  var html = "";
+  for (var i = 0; i < results.length; i++) {
+    html += renderEvidenceCardHTML(results[i]);   // <- ALLE Karten neu gebaut
+  }
+  container.innerHTML = html;   // <- kompletter Grid-Inhalt ersetzt
+}
+```
+
+**Was hier passiert, wenn man EIN Lesezeichen anklickt:** `bookmarks`-Array ändert sich um genau
+**einen** Eintrag. Aber `handleBookmarkClick` ruft danach `renderEvidenceList()` auf — und die
+baut **alle** gefilterten Beweisstücke (bis zu 18 Karten) komplett neu als HTML-String zusammen
+(`renderEvidenceCardHTML()` für **jede einzelne** Karte, nicht nur die betroffene) und ersetzt mit
+`container.innerHTML = html` den **kompletten** Inhalt des Grids auf einmal. Tatsächlich geändert
+hätte sich nur: ein Stern-Symbol (★ statt ☆) und eine CSS-Klasse (`active`) an **einem einzigen**
+Button in **einer einzigen** Karte.
+
+*(Derselbe Musterfehler steckt übrigens bis heute auch in der aktuellen TypeScript-Version —
+`views/evidence.ts`s `handleBookmarkClick` ruft ebenfalls die volle `renderEvidenceList()` auf. Der
+UE1-Refaktor hat nur Dateien aufgeteilt, nicht die Render-Strategie geändert — genau das ist der
+Teil, den React/der virtuelle DOM jetzt lösen soll.)*
+
+### Verifikation
+Kein Code geändert (Konzept-Demo). Beispiel direkt im Original-Quelltext (`app.js`) verifiziert,
+Zeilennummern oben zitiert.
+
+### 🎤 Live-Demo — was du im Unterricht herzeigst
+
+**1. `app.js` aufmachen, Zeile 448 zeigen**
+`if (currentPage === "evidence") renderEvidenceList();` — sag: "ein Klick auf EINEN Stern ruft das
+auf, was die KOMPLETTE Liste neu baut."
+
+**2. Live im Browser beweisen**
+Deployte App öffnen (oder `npm run dev`), Evidence-View, DevTools → Elements-Tab, ein Beweisstück-
+Karten-Element im DOM-Baum aufklappen/markieren. Auf den Bookmark-Stern klicken. Zeig: im
+Elements-Tab **blinkt kurz die komplette Liste** (Chrome hebt neu eingefügte DOM-Knoten farblich
+hervor) — nicht nur die eine Karte.

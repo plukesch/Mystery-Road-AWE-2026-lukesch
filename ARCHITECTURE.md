@@ -8,7 +8,7 @@ src/
   main.tsx                    Einstiegspunkt (mountet <App />)
   app/                        die Shell: App, PageRouter, Header, NavBar, NavButton, useHashRoute
   features/
-    dashboard/                DashboardPage, DashboardView, IntroCard, StatCard, ... , bookmarks.ts
+    dashboard/                DashboardPage, DashboardView, IntroCard, StatCard, StatusBadge, ... , bookmarks.ts
     people-locations/         PeoplePage, PersonCard, LocationCard, Card, BulletList, countEvidence.ts
     timeline/                 TimelinePage, TimelineEventItem, CertaintyBadge, timelineHelpers.ts
     evidence/                 Platzhalter (Migration in UE5)
@@ -16,6 +16,7 @@ src/
   shared/                     nur, was von mehreren Stellen benutzt wird
     useCaseData.ts            Daten-Hook (Dashboard, People, Timeline)
     navigation.ts             VIEWS, ViewName, navigateTo (Shell + Dashboard)
+    Badge.tsx                 wiederverwendbarer Badge (Timeline + Dashboard, 3 Stellen)
   sandbox/                    Wegwerf-Beispiele (key-demo.html), nicht Teil der App
 ```
 
@@ -32,7 +33,10 @@ Beispiele aus dieser Struktur:
 - `shared/navigation.ts` wird von der Shell (NavBar, NavButton) und vom Dashboard (IntroCard) benutzt: shared.
 - `people-locations/Card.tsx` und `BulletList.tsx` werden nur innerhalb von People & Locations benutzt: lokal,
   obwohl sie generisch wirken.
-- `timeline/CertaintyBadge.tsx` hat heute genau einen Nutzer: lokal.
+- `shared/Badge.tsx` wird in zwei Features an drei Stellen benutzt (`CertaintyBadge`, `StatusBadge`,
+  `CaseSummaryCard`): shared. Es kam erst nach `shared/`, als der zweite Nutzer wirklich existierte.
+- `timeline/CertaintyBadge.tsx` und `dashboard/StatusBadge.tsx` sind dünne Fach-Wrapper um `Badge` (sie
+  übersetzen "Certainty" bzw. "Status" in eine Variante) und haben je genau einen Nutzer: lokal.
 
 ## Abhängigkeitsrichtung
 

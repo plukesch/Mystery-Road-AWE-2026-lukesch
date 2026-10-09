@@ -471,3 +471,90 @@ nichts aus `features` oder `app` kennen, und Features kennen sich nicht unterein
 `shared` nicht mehr "unten", und man könnte ein Feature nicht mehr entfernen, ohne ein anderes zu
 beschädigen. Das habe ich nicht nur behauptet, sondern mit einer Textsuche über alle `import`-Zeilen geprüft
 (keine Verstöße; einzige `app → features`-Imports: die fünf Zeilen in `PageRouter.tsx`).
+
+---
+
+## Demo 7 — Wiederverwendbare UI-Bausteine
+
+`Badge` (`src/shared/Badge.tsx`) als wiederverwendbare Komponente extrahiert, benutzt an drei Stellen in zwei
+Features (Timeline: Certainty; Dashboard: Review-Status und Case-Status), dazu zwei dünne Fach-Wrapper
+(`CertaintyBadge`, `StatusBadge`). Verhalten per DOM-Vergleich live bestätigt, Typschutz mit einem echten
+Compiler-Fehler belegt. Details in `UE4_CHANGES.md`.
+
+### F1: Zeig die zwei (oder mehr) Stellen, an denen deine wiederverwendbare Komponente benutzt wird. Was variiert zwischen ihnen über Props, und was bleibt fest in der Komponente? Wie hast du entschieden, wo diese Grenze verläuft?
+
+**Einfach gesagt:** `Badge` kennt genau **zwei Einstellungen**: wie er aussieht (`variant`) und was drinsteht
+(`children`). Alles andere ist fest. Was ein Badge **bedeutet**, weiß er nicht — das wissen die Features.
+
+**Die Stellen:**
+
+| Stelle | Feature | Aufruf | `variant` kommt von |
+|---|---|---|---|
+| Certainty eines Events | Timeline | `<Badge variant={variant}>{certainty}</Badge>` (in `CertaintyBadge`) | Lookup-Tabelle `confirmed → reviewed`, `reported → flagged`, `contradictory → critical` |
+| Review-Status in "Recent evidence" | Dashboard | `<Badge variant={statusVariant(status)}>{status}</Badge>` (in `StatusBadge`) | Funktion `reviewed/flagged/sonst unreviewed` |
+| Case-Status ("OPEN") | Dashboard | `<Badge variant="flagged">{…toUpperCase()}</Badge>` | **fest** `"flagged"` (wie in vanilla — der Case-Status färbt sich nicht nach seinem Wert) |
+
+**Was variiert (Props):** nur `variant` und `children`.
+
+| Prop | Warum einstellbar |
+|---|---|
+| `variant: BadgeVariant` | die **eine** Dimension, in der sich die drei Stellen wirklich unterscheiden. Ein geschlossener Union aus genau den 5 Klassen, die `styles.css` kennt — ein Tippfehler ist ein Compiler-Fehler (`Did you mean '"flagged"'?`), kein stiller Fehlschlag |
+| `children: ReactNode` | der Inhalt ist an jeder Stelle anderer Text ("confirmed", "unreviewed", "OPEN") |
+
+**Was fest ist:** das `<span>`, die Basis-Klasse `badge`, das Namensschema `badge-<variante>`. Alle drei
+Stellen brauchen das **identisch** — es gibt nichts, wozu man es einstellen müsste.
+
+**Wo die Grenze verläuft — und was ich bewusst NICHT als Prop angeboten habe:**
+
+| Möglicher Prop | Warum nicht |
+|---|---|
+| `uppercase` / `capitalize` | nur **eine** Stelle braucht Großbuchstaben (`CaseSummaryCard`). Der Aufrufer macht `.toUpperCase()` selbst — eine Zeile, die die Komponente nicht kennen muss |
+| `status`, `certainty` | Fach-Begriffe. Hätte `Badge` ein `status`-Prop, müsste er wissen, was "reviewed" **bedeutet**, und bei jedem neuen Fachbegriff (`relevance`, …) wachsen. Das mappen die **Wrapper** in den Features |
+| `className` zum Durchreichen | damit könnte jede Stelle das Varianten-Vokabular umgehen (`className="badge-lila"`). Dann gäbe es genau wieder die Streuung, die der Baustein beenden soll |
+| `onClick`, `icon`, `size` | wird heute von **keiner** der drei Stellen gebraucht. Was niemand braucht, kommt nicht hinein |
+
+**Die Regel dahinter:** *`Badge` weiß, wie ein Badge **aussieht**; er darf nicht wissen, was ein Badge in
+irgendeinem Feature **bedeutet**.* Deshalb gibt es die dünnen Wrapper (`CertaintyBadge`, `StatusBadge`): sie
+übersetzen einen Fachbegriff in eine Variante. Ein neues Feature braucht dann **nur** einen neuen
+Wrapper, `Badge` bleibt unberührt.
+
+**Wie ich es gemerkt habe, wenn die Grenze falsch gewesen wäre:** ein Prop, der nur für **eine** Stelle
+existiert (`uppercase`) oder der Fachwissen enthält (`status`), ist das Warnsignal für einen
+"Sonderfall-Haufen". Hätte ich ihn aufgenommen, bekäme jede Stelle künftig Props, die sie nicht
+braucht.
+
+### F2: Die originale vanilla-App hatte doppelten HTML-Template-Code (dasselbe Karten-Markup zweimal, leicht unterschiedlich, in zwei Funktionen). Vergleiche das direkt mit dem, was du gerade gebaut hast. Was bietet eine wiederverwendbare Komponente, was kopierte Template-Strings nicht boten?
+
+**Einfach gesagt:** in der vanilla-App war nur die **Entscheidung** ("welche Farbe?") geteilt, das **Aussehen** wurde
+jedes Mal neu von Hand hingeschrieben. Eine Komponente teilt beides, und der Compiler prüft die
+Benutzung.
+
+**Der Befund in der vanilla-App** (Suche in `js/`):
+
+| Was | Anzahl |
+|---|---|
+| handgeschriebene `<span class="badge …">`-String-Stellen | **6**, in 3 Dateien (`evidence.ts` ×3, `dashboard.ts` ×2, `timeline.ts` ×1) |
+| Klassennamen-Helfer in `utils.ts` | 2 (`getStatusBadgeClass`, `getRelevanceBadgeClass`) |
+| zusätzliche, **eigene** Mapping-Funktion nur für Timeline | 1 (`certaintyBadgeClass`) mit eigenem Fallback |
+
+Die vanilla-App hat die **Entscheidung** also schon halb geteilt (zwei Helfer in `utils.ts`), aber das
+**Markup** nirgends: jede der 6 Stellen setzt `'<span class="badge ' + … + '">' … '</span>'` selbst
+zusammen, und für Certainty gibt es einen dritten, separaten Helfer.
+
+**Was die Komponente zusätzlich bietet:**
+
+| | Kopierte Template-Strings (vanilla) | Komponente (jetzt) |
+|---|---|---|
+| **Wo steht das Aussehen?** | an 6 Stellen | an **einer** (`Badge.tsx:26`, per Textsuche belegt) |
+| **Aussehen ändern** (z. B. ein Icon) | 6 Stellen finden und anpassen | 1 Edit, wirkt sofort auf alle Verwendungen in beiden Features |
+| **Tippfehler in der Variante** | `'badge badge-' + "flaged"` → stiller, ungestylter Badge, niemand merkt es | Compiler-Fehler mit Korrekturvorschlag (`Did you mean '"flagged"'?`) — echt ausgelöst |
+| **Eingabe-Absicherung** | `ev.status` wird **roh** in den HTML-String gesetzt (`innerHTML`) — enthielte der Wert `<` oder `&`, würde er als HTML interpretiert | `{children}` wird von React als **Text** gesetzt und automatisch maskiert |
+| **Schnittstelle** | keine: eine Funktion `(status) => "badge-…"`, deren Rückgabewert man nur als String weiterverwendet | typisierte Props (`variant`, `children`), der Editor zeigt die erlaubten Werte |
+| **Einbetten** | nur per String-Verkettung | als Element in beliebigem JSX (`<strong>…</strong> <StatusBadge … />`) |
+
+**Eine ehrliche Einschränkung:** die Duplizierung des Markups hätte man in der vanilla-App **auch ohne React**
+beheben können, mit einer Hilfsfunktion `badgeHTML(variant, text)`. Das Problem war also nicht "Strings statt
+Komponenten", sondern dass **niemand diese Funktion geschrieben hat**. Was eine React-Komponente über eine
+solche Funktion hinaus liefert, sind die Zeilen aus der Tabelle: **geprüfte Props** (der Variant-Typ), das
+**automatische Maskieren** von Inhalten und das **Einbetten** ohne String-Bau. Das ist ein reeller, aber
+kein magischer Vorteil.

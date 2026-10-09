@@ -1,8 +1,5 @@
 import type { Evidence } from "../../../js/types";
-// pure, seiteneffektfreie helfer-funktion aus der vanilla-app wiederverwendet
-// (nicht dupliziert) - anders als bei js/state.ts (siehe ./bookmarks.ts)
-// haengt hier kein mutable modul-singleton dran, nur eine reine funktion.
-import { getStatusBadgeClass } from "../../../js/utils";
+import { StatusBadge } from "./StatusBadge";
 
 interface RecentEvidenceListProps {
   items: Evidence[];
@@ -17,8 +14,7 @@ export function RecentEvidenceList({ items }: RecentEvidenceListProps) {
       ) : (
         items.map((ev) => (
           <div className="mini-list-item" key={ev.id}>
-            <strong>{ev.id}</strong> &mdash; {ev.title}{" "}
-            <span className={"badge " + getStatusBadgeClass(ev.status)}>{ev.status}</span>
+            <strong>{ev.id}</strong> &mdash; {ev.title} <StatusBadge status={ev.status} />
           </div>
         ))
       )}

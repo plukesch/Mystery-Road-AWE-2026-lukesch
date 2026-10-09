@@ -551,3 +551,113 @@ aufklappen: Seite, Event-Karte, Badge, Helfer, alles da.
 **4. Die Abhängigkeitsrichtung zeigen (optional, live):** in `shared/navigation.ts` testweise
 `import { App } from "../app/App";` einfügen — man sieht sofort, dass `shared` nach oben greift, was die
 Regel verbietet (ein Zyklus `shared → app → … → shared`). Wieder entfernen.
+
+---
+
+## Demo 7 — Wiederverwendbare UI-Bausteine
+
+### 🔰 Einfach erklärt — worum geht's hier überhaupt?
+
+Wenn derselbe kleine Baustein an mehreren Stellen vorkommt, schreibt man ihn **einmal** und benutzt ihn
+überall — wie einen Lego-Stein. Die eigentliche Kunst ist nicht das Schreiben, sondern die Frage:
+**was darf der Stein selbst festlegen, und was darf der Benutzer einstellen?**
+
+*Analogie:* ein Lego-Stein hat feste Noppen und eine feste Form (das ist **fix**). Man darf nur seine Farbe
+wählen (das ist **einstellbar**). Ein Stein, der zusätzlich "Größe", "Noppenzahl", "Material" und
+"Sonderfunktion" einstellbar hätte, wäre kein Stein mehr, sondern ein Werkzeugkasten.
+
+### Task — der Baustein: `Badge`
+
+**Wo er herkommt:** in der App gab es drei Stellen, die ein kleines farbiges Etikett (Badge) bauten. Alle
+drei haben dasselbe `<span class="badge badge-…">` von Hand zusammengesetzt:
+
+| Stelle | Feature | Vorher (jeweils eigener Code) |
+|---|---|---|
+| Certainty eines Timeline-Events | Timeline | `<span className={`badge badge-${variant}`}>` in `CertaintyBadge` |
+| Review-Status in "Recent evidence" | Dashboard | `<span className={"badge " + getStatusBadgeClass(ev.status)}>` in `RecentEvidenceList` |
+| Case-Status ("OPEN") | Dashboard | `<span className="badge badge-flagged">` in `CaseSummaryCard` |
+
+**Nachher: `src/shared/Badge.tsx`** (neu, in `shared/` — zwei Features nutzen ihn, siehe Demo 6):
+
+```tsx
+export type BadgeVariant = "reviewed" | "flagged" | "unreviewed" | "critical" | "relevant";
+
+interface BadgeProps {
+  variant: BadgeVariant;
+  children: ReactNode;
+}
+
+export function Badge({ variant, children }: BadgeProps) {
+  return <span className={`badge badge-${variant}`}>{children}</span>;
+}
+```
+
+**Die drei Verwendungen:**
+
+| Wo | Aufruf |
+|---|---|
+| `features/timeline/CertaintyBadge.tsx` | `<Badge variant={variant}>{certainty}</Badge>` |
+| `features/dashboard/StatusBadge.tsx` *(neu)* | `<Badge variant={statusVariant(status)}>{status}</Badge>` |
+| `features/dashboard/CaseSummaryCard.tsx` | `<Badge variant="flagged">{… .toUpperCase()}</Badge>` |
+
+**Die Schichtung — der wichtigste Entwurfs-Gedanke:**
+
+| Schicht | Datei | Weiß, was ein Badge **aussieht** | Weiß, was ein Badge **bedeutet** |
+|---|---|---|---|
+| Baustein (shared) | `Badge` | ja (5 Varianten) | **nein** |
+| Fach-Wrapper (je Feature) | `CertaintyBadge`, `StatusBadge` | nein | ja ("confirmed → grün, contradictory → rot") |
+
+`CertaintyBadge` und `StatusBadge` sind dünne Übersetzer: sie wandeln einen **Fachbegriff** in eine
+**Variante** um und reichen sie an `Badge` weiter. Das Aussehen steckt nur in `Badge`, die Bedeutung nur
+im jeweiligen Feature.
+
+**Die API-Entscheidung — was `Badge` festlegt und was nicht:**
+
+| Fest in `Badge` | Einstellbar per Prop | Bewusst KEIN Prop |
+|---|---|---|
+| das `<span>`, die Basis-Klasse `badge`, das Namensschema `badge-<variante>` | `variant` (geschlossener Union aus den 5 CSS-Klassen), `children` (der Inhalt) | Großschreibung, Fach-Props (`status`, `certainty`), `className` zum Durchreichen, Klick-Verhalten |
+
+### Verifikation
+
+- **Eine einzige Stelle baut das Badge-`<span>`:** Textsuche in `src/` → nur `shared/Badge.tsx`. Die drei
+  Verwendungen rufen `Badge` auf (direkt oder über einen Wrapper).
+- **Verhalten unverändert, live im Browser** (DOM-Vergleich nach dem Umbau):
+  - Dashboard: `badge badge-flagged | OPEN` und 5× `badge badge-unreviewed | unreviewed` — wie vorher.
+  - Timeline: 15 Badges, davon 12× `badge-reviewed`, 2× `badge-flagged`, 1× `badge-critical` an Position 7.
+    Identisch zu Demo 2.
+- **Echter Typfehler als Beleg** (`variant="flaged"` mit Tippfehler eingebaut, danach zurückgesetzt):
+  ```
+  src/features/dashboard/CaseSummaryCard.tsx:16:16 - error TS2820: Type '"flaged"' is not assignable to
+  type 'BadgeVariant'. Did you mean '"flagged"'?
+  ```
+  TypeScript schlägt die richtige Schreibweise sogar selbst vor. In der vanilla-Version wäre
+  `'badge badge-' + "flaged"` ein stiller, ungestylter Badge gewesen.
+- **Dev-Server-Beobachtung:** nach dem Umbau zeigte der Browser kurz `getStatusBadgeClass is not defined`.
+  Ursache war kein Codefehler: ich hatte zwei Änderungen an derselben Datei sehr schnell hintereinander
+  gemacht, und Vite hatte den Zwischenzustand (Import schon entfernt, Aufruf noch da) gecacht. Die Datei auf
+  der Platte war korrekt; nach erneutem Speichern lieferte der Server die richtige Version aus.
+- **Nach dem Umbau ausgeführt:** `npm run typecheck` → 0 Fehler, `npm run format:check` → sauber,
+  `npm run build` → grün (61 Module). Das React-Bundle blieb praktisch gleich groß (230,18 KB gegenüber
+  229,98 KB in Demo 6): ein gemeinsamer Baustein spart hier kein Gewicht, der Gewinn liegt bei Wartbarkeit
+  und Typschutz, nicht bei der Größe.
+
+### 🎤 Live-Demo — was du im Unterricht herzeigst
+
+**1. Die drei Stellen zeigen:** `CertaintyBadge.tsx`, `StatusBadge.tsx` und `CaseSummaryCard.tsx` nebeneinander —
+alle drei enden in `<Badge variant=…>`.
+
+**2. Den Baustein zeigen:** `shared/Badge.tsx` (5 Zeilen Logik). Sag: "das ist die **einzige** Stelle, die
+weiß, wie ein Badge aussieht."
+
+**3. Die Wirkung zeigen:** in `Badge.tsx` kurz `{children}` durch `★ {children}` ersetzen → im Browser
+haben **alle** Badges auf Dashboard **und** Timeline einen Stern. Sag: "ein Edit, drei Stellen in zwei
+Features." Wieder entfernen.
+
+**4. Den Typschutz zeigen:** in `CaseSummaryCard.tsx` `variant="flagged"` zu `variant="flaged"` ändern,
+```bash
+npm run typecheck
+```
+→ `Did you mean '"flagged"'?`. Wieder zurückändern.
+
+**5. Die Schichtung erklären:** "`Badge` weiß, wie es aussieht. `CertaintyBadge` und `StatusBadge` wissen,
+was es bedeutet."

@@ -260,3 +260,80 @@ dass ihm das Namensschild fehlt — sichtbar kaputt ist aber noch nichts."
 "Der `key` ist nicht für uns und nicht im HTML sichtbar — er ist für React: so erkennt es beim
 nächsten Rendern, welcher Eintrag derselbe geblieben ist." (Theorie-F1; Demo 4 zeigt, was passiert,
 wenn dieser Schlüssel falsch gewählt ist.)
+
+---
+
+## Demo 4 — Stabile Keys und Listen-Identität
+
+### 🔰 Einfach erklärt — worum geht's hier überhaupt?
+
+In Demo 3 haben wir gesehen: **ohne** `key` sieht die Seite normal aus, React warnt nur. Heißt das,
+Keys sind egal? **Nein.** Das Problem tritt erst auf, wenn sich eine Liste **verändert** (umsortiert,
+gefiltert) **und** die Zeilen etwas "mit sich herumtragen" — zum Beispiel getippten Text.
+
+*Analogie:* ein Klassenzimmer mit Sitzplätzen, auf jedem Platz liegt ein Notizzettel des Schülers.
+- **`key={index}`** = React merkt sich nur die **Platznummer**. Tauschen zwei Schüler die Plätze,
+  denkt React: "Platz 1 ist Platz 1" — die Zettel bleiben liegen, nur die **Namen** am Platz ändern
+  sich. Der Zettel von Anna liegt jetzt bei Ben.
+- **`key={person.id}`** = React merkt sich den **Namen**. Wechselt Anna den Platz, geht ihr Zettel mit.
+
+### Task — Wegwerf-Beispiel mit `key={index}`, sichtbar falsch, dann ersetzt
+
+Eine **Sandbox**, bewusst getrennt von der echten App:
+
+| Datei | Rolle |
+|---|---|
+| `key-demo.html` (Root) | eigene Seite, im Dev-Server unter `/key-demo.html` erreichbar |
+| `src/sandbox/main.tsx` | Mount-Code |
+| `src/sandbox/KeyDemo.tsx` | die Demo selbst |
+
+**Aufbau:** dieselbe Personenliste **zweimal nebeneinander** — links `key={index}` (falsch), rechts
+`key={person.id}` (richtig). Jede Zeile hat ein Textfeld (eigener Komponenten-State, `PersonRow`).
+Drei Knöpfe verändern die Liste: **Reihenfolge umdrehen**, **Erste Person entfernen**,
+**Zurücksetzen**.
+
+**Warum hier State erlaubt ist:** UE4 verbietet State in den **echten** Komponenten. Die Sandbox ist
+ein Wegwerf-Beispiel, das nicht Teil der App ist (`vite.config.js` kennt sie nicht → sie wird nie
+gebaut oder deployt). Ohne State könnte sich die Liste gar nicht ändern.
+
+**Ergebnis, live gemessen** (Notiz `NOTIZ-A` in die **erste** Zeile, "Signal Scholar", getippt):
+
+| Aktion | `key={index}` (links) | `key={person.id}` (rechts) |
+|---|---|---|
+| **Reihenfolge umdrehen** | `Patch Vector [NOTIZ-A]` ← **falsch**, die Notiz klebt am Platz | `Signal Scholar [NOTIZ-A]` (jetzt als letzte Zeile) ← richtig |
+| **Erste Person entfernen** | `Kernel Colt [NOTIZ-A]` ← **falsch**, Kernel Colt erbt die Notiz einer anderen Person | `Kernel Colt []` ← richtig, die Notiz verschwindet mit Signal Scholar |
+
+**Das Beängstigende daran:** auf der `key={index}`-Seite gab es **keine einzige Konsolenmeldung**.
+Der Index ist ein gültiger, eindeutiger `key` — React hat nichts zu bemängeln. Der Fehler zeigt sich
+nur dem Menschen, der tippt (Theorie-F2).
+
+**Ersetzt durch stabile ID:** die rechte Spalte **ist** die Korrektur (`key={person.id}`). Die
+echten Komponenten der App benutzen schon durchgehend IDs als Keys (Demo 3).
+
+### Verifikation
+
+- Beide Szenarien live im Browser durchgespielt (Skript mit echten `input`-Events, damit Reacts
+  `onChange` wie beim Tippen feuert); Konsole blieb leer.
+- Sandbox ist **nicht** in `rollupOptions.input` → taucht in `dist/` nicht auf. `tsc` prüft sie
+  trotzdem mit (`src/**/*.tsx`), Prettier ebenfalls.
+
+### 🎤 Live-Demo — was du im Unterricht herzeigst
+
+**1. Sandbox öffnen:** `npm run dev`, dann `/key-demo.html`. Zwei Spalten erklären: links falsch,
+rechts richtig.
+
+**2. Den Fehler selbst auslösen**
+- In **beide** ersten Zeilen ("Signal Scholar") etwas tippen, z. B. `Notiz A`.
+- Auf **"Reihenfolge umdrehen"** klicken.
+- Zeigen: links steht die Notiz jetzt bei **Patch Vector**, rechts bei **Signal Scholar**.
+- Sag: "links hat React die Zeile **am Platz** wiedererkannt, nicht an der Person — der State klebt
+  an der Position."
+
+**3. Zweites Szenario:** "Zurücksetzen", Notiz in die erste Zeile, **"Erste Person entfernen"**.
+Links erbt Kernel Colt die Notiz einer entfernten Person.
+
+**4. Konsole zeigen (`F12`):** leer. Sag: "kein Fehler, keine Warnung — genau deshalb ist dieser
+Bug so tückisch."
+
+**5. Code zeigen:** in `KeyDemo.tsx` die zwei `.map()`-Aufrufe — der einzige Unterschied ist
+`key={index}` vs. `key={person.id}`.

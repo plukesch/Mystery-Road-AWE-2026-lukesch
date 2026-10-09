@@ -235,3 +235,102 @@ UE3 Demo 3 sorgt genau das dafür, dass nur **eine** Karte angefasst wird, nicht
 **Nebenbefund:** ändert man den `key` eines Elements, behandelt React es als **ein anderes Element**
 — altes wird entfernt, neues frisch gebaut. Das nutzt man gelegentlich absichtlich, um den
 State einer Komponente zurückzusetzen.
+
+---
+
+## Demo 4 — Stabile Keys und Listen-Identität
+
+Wegwerf-Sandbox (`key-demo.html`, `src/sandbox/KeyDemo.tsx`) mit derselben Liste zweimal: links
+`key={index}`, rechts `key={person.id}`. Live gemessen: Notiz klebt bei Umsortieren/Entfernen an der
+**Position** statt an der Person — ohne jede Konsolenmeldung. Details, Messtabelle in
+`UE4_CHANGES.md`.
+
+### F1: Was geht konkret schief, wenn Keys fehlen, doppelt sind oder auf dem Array-Index basieren — bei einer Liste, die sich umsortieren oder filtern kann?
+
+**Einfach gesagt:** React ordnet alte und neue Einträge über den `key` zu. Stimmt diese Zuordnung
+nicht, bekommt ein Eintrag den **Zustand eines anderen** — und React merkt es nicht, weil für React
+alles "in Ordnung" aussieht.
+
+| Fall | Was React tut | Konkrete Folge |
+|---|---|---|
+| **Key fehlt** | warnt in der Konsole (`Each child in a list should have a unique "key" prop`) und **fällt auf den Index zurück** | dasselbe wie unten — nur zusätzlich mit Warnung |
+| **Key = Array-Index** | ordnet nach **Position** zu: "Platz 1 bleibt Platz 1" | State, Fokus, getippter Text hängen an der **Position**, nicht am Inhalt. Live gemessen: nach "Reihenfolge umdrehen" steht die Notiz von Signal Scholar bei Patch Vector; nach "Erste Person entfernen" erbt Kernel Colt die Notiz der entfernten Person |
+| **Key doppelt** | React warnt; die Zuordnung ist nicht mehr eindeutig | laut React-Doku können Kinder **doppelt oder gar nicht** erscheinen — was bei einem Update passiert, ist nicht vorhersagbar |
+| **Key zufällig** (`Math.random()`) | jeder Render erzeugt neue Keys → alles wirkt "neu" | alle Zeilen werden bei jedem Render **zerstört und neu gebaut**: State, Fokus, Scroll weg, Eingaben verlieren den Cursor |
+
+**Was konkret verloren/vertauscht werden kann**, wenn die Zuordnung falsch ist:
+- **State** der Komponente (`useState`) — wie die Notiz im Experiment,
+- **DOM-Zustand** (Text in unkontrollierten Eingabefeldern, Checkbox-Haken, Fokus, Auswahl),
+- **Animationen/Übergänge** (laufen am falschen Element oder starten neu),
+- **Effekte** (`useEffect` läuft für die "falsche" Identität weiter).
+
+**Und Leistung:** fügt man bei Index-Keys vorne ein Element ein, verschiebt sich **jeder** Index —
+React aktualisiert alle Zeilen statt nur eine neue einzufügen.
+
+**Wann Index-Keys harmlos sind** — Antwort auf F3. Das Experiment zeigt nur, dass sie gefährlich
+werden, wenn **beides** zutrifft: die Liste ändert sich **und** die Zeilen tragen etwas mit sich.
+
+### F2: Die *originale* vanilla-Version hatte einen echten Bug, bei dem ein Feature einen Array-Index als Kennung statt einer stabilen ID benutzte. Hätte derselbe Fehler, direkt als `key={index}` nach React portiert, ein Symptom verursacht, das ein:e Nutzer:in bemerkt, oder nur eine Konsolenwarnung? Erkläre, warum.
+
+**Einfach gesagt:** **weder noch.** Es gäbe **keine** Konsolenwarnung (Index-Keys sind gültig und eindeutig)
+**und** für diese konkrete Stelle auch **kein sichtbares Symptom** — weil die Zeilen dort keinen State
+tragen. Der Fehler wäre **latent**: er schlägt erst zu, wenn die Zeile später etwas "mit sich herumträgt".
+
+**Die echte Stelle** (`app.js`, Zeile 909; heute `js/views/workspace.ts`):
+```js
+noteEntries.push({ index: i, evidenceId: allEvidence[i].id, … });   // i = Position in allEvidence
+…
+html += '<div id="noteText-' + entry.index + '">' + entry.text + '</div>';
+```
+Die DOM-ID einer Notiz wird aus der **Array-Position** gebildet, nicht aus der Evidence-ID. Gäbe es
+ein `<NoteRow key={entry.index} … />`, wäre das die direkte Portierung.
+
+**Warum das (hier) kein sichtbares Symptom hätte:**
+1. **Die Zeilen sind zustandslos.** Eine Notiz-Zeile zeigt nur ID, Titel und Text — alles kommt
+   aus den Props. Wird eine Komponenten-Instanz an einer neuen Position **wiederverwendet**, bekommt
+   sie einfach die neuen Props und zeigt das Richtige. Es gibt nichts, was an der alten Position
+   "kleben" könnte. Im Experiment kam der Fehler erst durch das **Textfeld mit eigenem State**.
+2. **Der Index ist eine Position in der Master-Liste**, nicht in der angezeigten. Das macht ihn
+   praktisch stabil, solange `allEvidence` nicht umsortiert wird — jede Evidence behält ihre Nummer,
+   auch wenn Notizen hinzukommen oder wegfallen. Nur beim Umsortieren der Master-Liste (genau der
+   Aliasing-Bug aus UE1 Demo 2) würden sich die Keys verschieben — und selbst dann zeigen
+   zustandslose Zeilen nach dem Update dieselben Daten, nur mit unnötig viel Aufwand.
+3. **Keine Konsolenwarnung:** React meldet nur **fehlende oder doppelte** Keys. Jede Position kommt
+   nur einmal vor — Index-Keys sind eindeutig, also still.
+
+**Der Fehler wäre also nur eine "Zeitbombe":** sobald die Notiz-Zeile bearbeitbar wird (Textfeld,
+"aufgeklappt"-Zustand, Löschen-Bestätigung), tritt **genau das Verhalten aus dem Experiment** auf. Das
+macht diesen Bugtyp gefährlich: er besteht jeden Test, bis jemand ein harmloses Feature ergänzt.
+
+**Zur ID in der vanilla-App selbst:** `noteText-<index>` wird nirgends per `getElementById` gesucht
+(Suche im Code: nur die Erzeugung). Das Symptom wäre dort also ebenfalls nicht spürbar — es bleibt
+ein Fehler im Entwurf (Identität aus der Position), nicht im Verhalten.
+
+### F3: Alle echten Daten dieser App (Personen, Orte, Timeline-Events) haben bereits stabile IDs. Gibt es trotzdem je einen legitimen Grund, `key={index}` zu benutzen? Wann?
+
+**Einfach gesagt:** **ja, aber nur, wenn die Liste "tot" ist:** sie ändert sich nie in der Reihenfolge,
+nichts wird in der Mitte eingefügt oder entfernt, und die Zeilen tragen keinen eigenen Zustand.
+
+Der Index ist dann kein Fehler, sondern die **ehrlichste** Identität, die es gibt. Die Bedingungen
+müssen **alle** erfüllt sein:
+
+| Bedingung | Warum nötig |
+|---|---|
+| Die Liste wird **nie umsortiert, gefiltert oder in der Mitte verändert** | sonst verschiebt sich die Zuordnung (Experiment) |
+| Die Zeilen sind **zustandslos** (kein `useState`, keine Eingaben, kein Fokus) | sonst klebt der State an der Position |
+| Es gibt **keine stabile ID** (oder sie wäre nicht eindeutig) | sonst nimmt man die ID |
+
+**Typische legitime Fälle:**
+- **Platzhalter beim Laden** (Skeletons): `Array.from({ length: 3 }, (_, i) => <Skeleton key={i} />)` —
+  drei gleiche graue Balken, jeder ohne Identität.
+- **Feste Text-Zeilen/Aufzählungen**, die aus dem Code oder einer unveränderlichen Quelle kommen.
+- **Wirklich doppelte Werte:** zwei identische Strings in einer Liste dürfen nicht beide
+  derselbe `key` sein — der Index ist hier der sichere Ausweg.
+
+**Beispiel aus unserem Code:** `BulletList` (Verantwortlichkeiten / "Contains") benutzt
+`key={item}` (den Text). Das ist ok, **weil** ich geprüft habe, dass kein Text in einer Liste doppelt
+vorkommt (Demo 3). Kämen jemals zwei gleiche Aufzählungspunkte vor, wäre `key={index}` dort die
+**richtige** Wahl — die Liste ist statisch und zustandslos, beide Bedingungen von oben erfüllt.
+
+**Nie legitim:** `key={Math.random()}` — er ist nicht stabil und zerstört bei jedem Render alle
+Zeilen (siehe F1).

@@ -558,3 +558,85 @@ Komponenten", sondern dass **niemand diese Funktion geschrieben hat**. Was eine 
 solche Funktion hinaus liefert, sind die Zeilen aus der Tabelle: **geprüfte Props** (der Variant-Typ), das
 **automatische Maskieren** von Inhalten und das **Einbetten** ohne String-Bau. Das ist ein reeller, aber
 kein magischer Vorteil.
+
+---
+
+## Demo 8 — Routing: People & Locations als echte Routen
+
+React Router 8.4.0 mit `HashRouter` eingebaut, den handgebauten `useHashRoute`/`NavButton` ersetzt, den
+People/Locations-Tab von lokalem Zustand in zwei echte Routen (`/team/people`, `/team/locations`) mit
+gemeinsamem Layout verwandelt. Live gegen die vanilla-App verglichen. Details in `UE4_CHANGES.md`.
+
+### F1: Warum ist es für die Nutzer:in wichtig, den People/Locations-Tab zu einer echten Route zu machen, statt ihn als internen Komponenten-Zustand zu lassen? Nenne eine konkrete Fähigkeit, die sie gewinnt.
+
+**Einfach gesagt:** was in der **Adresse** steht, kann man **speichern, verschicken und mit "Zurück" erreichen**.
+Was nur im **Zustand** steckt, kann man nichts davon — nach einem Reload ist es zurückgesetzt.
+
+**Die konkreten Fähigkeiten**, jede live in beiden Versionen verglichen:
+
+| Fähigkeit | Tab als Zustand (vanilla) | Tab als Route (React) |
+|---|---|---|
+| **Lesezeichen / Link verschicken** | die Adresse bleibt `#people` — ein Link kann nur "People", nie "Locations" | `react.html#/team/locations` direkt aufgerufen → Locations-Tab aktiv, 6 Orte (getestet) |
+| **"Zurück" / "Vorwärts"** | der Tab-Wechsel ist **nicht** in der Browser-Historie. Getestet: Tab auf Locations, "Zurück" → **verlässt die ganze People-View** (landet auf `#dashboard`) | jeder Tab ist ein History-Eintrag. Getestet: Locations → "Zurück" → People → "Vorwärts" → Locations |
+| **Reload** | ist der Tab nur Zustand, fällt er nach `F5` auf den Standard ("People") zurück | die Adresse bleibt, der Tab bleibt |
+| **"In neuem Tab öffnen"** | ein `<button>` hat keine Adresse | die Tab-Leiste besteht aus echten Links (`<a href="#/team/locations">`) |
+
+**Die wichtigste Fähigkeit davon: ein Lesezeichen/Link, der auf genau diesen Tab zeigt.** Wer einer Kollegin
+"schau dir die Orte an" schicken will, schickt eine Adresse — nicht "geh auf People und klick dann den
+zweiten Tab".
+
+**Das ist dasselbe Muster wie UE3 Demo 4 F3** — dort fiel uns auf, dass ein geöffnetes Beweisstück-Detail
+"unsichtbar" für die History war. Der Tab war die gleiche Lücke in kleinerer Form; jetzt ist sie
+geschlossen. (Das Beweisstück-Detail bleibt es bis zur Migration der Evidence-Seite in UE5.)
+
+**Der Preis (ehrlich):** mehr Struktur für etwas, das vorher eine Variable war — Layout-Route, `Outlet`,
+Context, zwei Dateien mehr. Und `HashRouter`-URLs sind weniger hübsch als echte Pfade (siehe Wahl in
+`UE4_CHANGES.md`). Der Gewinn lohnt sich genau dann, wenn eine Ansicht **für sich adressierbar** sein soll —
+bei einer Ansicht, die nie jemand verlinken oder per "Zurück" erreichen will, wäre ein lokaler Zustand
+gerechtfertigt.
+
+### F2: Was macht dein Router, wenn die URL zu keiner definierten Route passt? Vergleiche das damit, wie `handleHashChange()` der vanilla-App auf das Dashboard zurückfiel.
+
+**Einfach gesagt:** in beiden Fällen sieht die Nutzer:in am Ende das **Dashboard**. Der Unterschied: React
+Router **korrigiert zusätzlich die Adresszeile** und kennt die Möglichkeit, stattdessen eine
+"Seite nicht gefunden" zu zeigen.
+
+**Was mein Router tut:** am Ende der Routen-Tabelle steht ein Catch-all-Eintrag:
+
+```tsx
+<Route path="*" element={<Navigate to={ROUTES.dashboard} replace />} />
+```
+
+`*` passt auf jede Adresse, die vorher nichts getroffen hat. `<Navigate replace>` leitet auf `/` um und
+**ersetzt** dabei den ungültigen Eintrag in der Historie.
+
+**Live getestet:**
+
+| Eingabe | Ergebnis |
+|---|---|
+| `#/nonsense` | Adresse wird zu `#/`, Dashboard sichtbar |
+| `#/team/foo` (unbekanntes Kind einer bekannten Route) | Adresse wird zu `#/`, Dashboard sichtbar |
+| `#/team` (bekannte Route ohne eigenen Inhalt) | wird zu `#/team/people` (eigener Index-Redirect) |
+
+**Der Vergleich mit `handleHashChange()` (vanilla):**
+
+| | vanilla `handleHashChange()` | React Router (`*`-Route) |
+|---|---|---|
+| Was die Nutzer:in sieht | Dashboard | Dashboard |
+| Wie es entschieden wird | `if (validViews.indexOf(hash) === -1) hash = "dashboard"` — **von Hand**, gegen eine selbst gepflegte Liste | der Router sucht den **besten Treffer** in der Routen-Tabelle; `*` ist der letzte Auffangeintrag |
+| **Adresszeile danach** | bleibt **ungültig** (`#nonsense` steht weiter oben) | wird **korrigiert** (`#/`) |
+| Verschachtelte/Parameter-URLs | nicht vorgesehen (nur 5 feste Wörter) | `/team/foo` wird als "unbekannt" erkannt, `/team/people` als gültig |
+
+**Warum ich den Fallback aufs Dashboard beibehalten habe** (statt einer "404-Seite"): wie in UE3 Demo 9 ist das
+Ziel der Migration **Verhaltens-Parität**. Ein Router ermöglicht aber beides, und die Wahl ist bewusst:
+
+| Option | Verhalten | Wann sinnvoll |
+|---|---|---|
+| **Kein** Catch-all | der Router rendert **nichts**: live getestet (Catch-all testweise entfernt) hat `<main>` **0 Kinder**, die Adresse bleibt `#/nonsense`, und die Konsole warnt (zweimal wegen StrictMode) `No routes matched location "/nonsense"` | nie — man sieht einen leeren Bildschirm |
+| `*` → `<Navigate replace>` aufs Dashboard *(gewählt)* | Dashboard, korrigierte Adresse | wenn kein Fehler gemeldet werden soll — wie vanilla |
+| `*` → eigene `NotFoundPage` | "Diese Seite gibt es nicht" mit Link zurück | wenn Nutzer:innen wissen sollen, dass die Adresse falsch war (z. B. bei verschickten Links) |
+
+**Ein ehrlicher Nachteil der gewählten Variante:** wer sich im Link vertippt, merkt es nicht — er landet
+kommentarlos auf dem Dashboard. Für eine Fallakte mit fünf Ansichten ist das vertretbar; bei vielen
+verschickten Detail-Links (Demo 9: `/team/people/:personId`) wäre eine eigene "nicht gefunden"-Meldung
+besser — und Demo 9 braucht sie ohnehin für ungültige IDs.

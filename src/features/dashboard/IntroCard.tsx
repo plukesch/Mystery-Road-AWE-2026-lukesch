@@ -1,7 +1,8 @@
-import { navigateTo, type ViewName } from "../../shared/navigation";
+import { Link } from "react-router";
+import { ROUTES } from "../../shared/routes";
 
 interface HowToItemData {
-  viewName: ViewName;
+  to: string;
   heading: string;
   description: string;
   buttonLabel: string;
@@ -14,28 +15,28 @@ interface HowToItemData {
 // kriterium fuer eigene komponenten).
 const HOWTO_ITEMS: HowToItemData[] = [
   {
-    viewName: "evidence",
+    to: ROUTES.evidence,
     heading: "1. Evidence Catalogue",
     description:
       "Search, filter, and sort every evidence item. Open one for full details, related people and locations, and to add a private note.",
     buttonLabel: "Go to Evidence",
   },
   {
-    viewName: "people",
+    to: ROUTES.team,
     heading: "2. People & Locations",
     description:
       "Read profiles and statements from the six team members involved, and look up the six key locations in the investigation.",
     buttonLabel: "Go to People & Locations",
   },
   {
-    viewName: "timeline",
+    to: ROUTES.timeline,
     heading: "3. Timeline",
     description:
       "Walk through events in chronological order, filter by person, location, or type, and jump straight to the evidence behind any event.",
     buttonLabel: "Go to Timeline",
   },
   {
-    viewName: "workspace",
+    to: ROUTES.workspace,
     heading: "4. Investigator Workspace",
     description:
       "Your bookmarked evidence and notes collect here. Draft a hypothesis — who you suspect, why, and how confident you are — it's saved automatically in your browser.",
@@ -53,16 +54,14 @@ export function IntroCard() {
       </p>
       <div className="howto-grid">
         {HOWTO_ITEMS.map((item) => (
-          <div className="howto-item" key={item.viewName}>
+          <div className="howto-item" key={item.to}>
             <h4>{item.heading}</h4>
             <p>{item.description}</p>
-            <button
-              type="button"
-              className="btn btn-secondary btn-small"
-              onClick={() => navigateTo(item.viewName)}
-            >
+            {/* Link statt <button onClick>: ein echter link (rechtsklick "in neuem
+                tab oeffnen", als lesezeichen speicherbar) - siehe demo 8 F1. */}
+            <Link to={item.to} className="btn btn-secondary btn-small">
               {item.buttonLabel}
-            </button>
+            </Link>
           </div>
         ))}
       </div>

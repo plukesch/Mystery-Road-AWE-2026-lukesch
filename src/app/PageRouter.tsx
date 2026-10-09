@@ -1,30 +1,37 @@
-import type { ViewName } from "../shared/navigation";
+import { Navigate, Route, Routes } from "react-router";
+import { ROUTES } from "../shared/routes";
 import { DashboardPage } from "../features/dashboard/DashboardPage";
 import { EvidencePage } from "../features/evidence/EvidencePage";
-import { PeoplePage } from "../features/people-locations/PeoplePage";
+import { TeamLayout } from "../features/people-locations/TeamLayout";
+import { PeopleTab } from "../features/people-locations/PeopleTab";
+import { LocationsTab } from "../features/people-locations/LocationsTab";
 import { TimelinePage } from "../features/timeline/TimelinePage";
 import { WorkspacePage } from "../features/workspace/WorkspacePage";
 
-interface PageRouterProps {
-  view: ViewName;
-}
-
-// spiegelbild der if/else-if-kette am ende von handleHashChange() (js/navigation.ts),
-// die dort entscheidet, welche renderX()-funktion laeuft. hier: welche seiten-
-// komponente gerendert wird. ViewName ist ein literal-union (5 feste strings) -
-// tsc meldet einen fehler, falls dieser switch je einen fall vergisst
-// ("exhaustiveness checking", siehe UE3_THEORIE_ANTWORTEN demo 9 F1).
-export function PageRouter({ view }: PageRouterProps) {
-  switch (view) {
-    case "dashboard":
-      return <DashboardPage />;
-    case "evidence":
-      return <EvidencePage />;
-    case "people":
-      return <PeoplePage />;
-    case "timeline":
-      return <TimelinePage />;
-    case "workspace":
-      return <WorkspacePage />;
-  }
+// die route-tabelle: URL -> komponente. ersetzt den switch aus demo 9
+// (der ueber ein handgebautes "ViewName" lief) - jetzt sagt der router selbst,
+// welcher eintrag zur url passt. People & Locations ist eine VERSCHACHTELTE
+// route: /team ist das gemeinsame layout (ueberschrift + tab-leiste), die
+// kinder /team/people und /team/locations fuellen dessen <Outlet />.
+export function PageRouter() {
+  return (
+    <Routes>
+      <Route path={ROUTES.dashboard} element={<DashboardPage />} />
+      <Route path={ROUTES.evidence} element={<EvidencePage />} />
+      <Route path={ROUTES.team} element={<TeamLayout />}>
+        {/* /team allein hat keinen eigenen inhalt -> weiter auf /team/people.
+            "replace": der zwischenschritt /team landet nicht in der browser-
+            historie, "zurueck" springt also nicht in eine leere zwischenseite. */}
+        <Route index element={<Navigate to={ROUTES.people} replace />} />
+        <Route path={ROUTES.people} element={<PeopleTab />} />
+        <Route path={ROUTES.locations} element={<LocationsTab />} />
+      </Route>
+      <Route path={ROUTES.timeline} element={<TimelinePage />} />
+      <Route path={ROUTES.workspace} element={<WorkspacePage />} />
+      {/* unbekannte url -> zurueck aufs dashboard, wie handleHashChange() in
+          vanilla. zusaetzlich korrigiert "replace" die adressleiste (in vanilla
+          blieb der ungueltige hash stehen). siehe THEORIE_ANTWORTEN demo 8 F2. */}
+      <Route path="*" element={<Navigate to={ROUTES.dashboard} replace />} />
+    </Routes>
+  );
 }

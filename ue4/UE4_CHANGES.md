@@ -661,3 +661,171 @@ npm run typecheck
 
 **5. Die Schichtung erklären:** "`Badge` weiß, wie es aussieht. `CertaintyBadge` und `StatusBadge` wissen,
 was es bedeutet."
+
+---
+
+## Demo 8 — Routing: People & Locations als echte Routen
+
+### 🔰 Einfach erklärt — worum geht's hier überhaupt?
+
+Eine **Route** ordnet einer **Adresse** (URL) einen **Bildschirm** zu. Bisher hatte die App zwei Arten,
+etwas anzuzeigen:
+
+- **per Adresse** (die fünf großen Views, über den Hash) und
+- **per verstecktem Zustand** (der People/Locations-Tab: ein Klick ändert intern eine Variable, die
+  Adresse bleibt gleich).
+
+Der zweite Weg hat einen Haken: **was nicht in der Adresse steht, kann man weder speichern noch
+verschicken, noch mit "Zurück" erreichen.**
+
+*Analogie:* ein Hotel. Bei "per Adresse" hat jedes Zimmer eine **Zimmernummer**: man kann sie jemandem
+schicken ("Zimmer 214"), und der Concierge (Router) weiß sofort, wohin. Beim "versteckten Zustand" steht der
+Gast nur irgendwo im Gang; wer hinterher fragt, wo er ist, bekommt keine Antwort.
+
+### Task 1 — Router installiert, Platzhalter-Navigation durch echte Routen ersetzt
+
+**Bibliothek: React Router 8.4.0** (`npm install react-router`; drei neue Pakete: `react-router`,
+`@remix-run/route-pattern`, `cookie-es`). **Begründung:** der Quasi-Standard für React (große Doku und
+Community), typisiert, und er deckt genau das ab, was die UE3-Lücken (Demo 4 F2) offen ließen:
+Parameter, verschachtelte Routen, `Navigate`, aktive Links. Als Alternative käme z. B. TanStack Router in
+Frage — er ist stärker typisiert, aber für diese App schwerer als nötig.
+
+**Die Entscheidung `HashRouter` statt `BrowserRouter`** (die wichtigste in dieser Demo):
+
+| | `BrowserRouter` | `HashRouter` (gewählt) |
+|---|---|---|
+| URL-Beispiel | `…/team/people` | `…/react.html#/team/people` |
+| Reload auf einer tiefen URL | der **Server** bekommt `/team/people` — auf GitHub Pages gibt es dort keine Datei → **404** | der Server sieht nur `react.html`, der Rest steht hinter dem `#` → funktioniert |
+| Braucht der Host Rewrite-Regeln? | ja ("alles auf `index.html` umleiten") — GitHub Pages hat sie nicht | nein |
+| Relative Asset-Pfade (`assets/…`, `data/…`) | brechen, sobald die URL tiefer wird | bleiben gültig |
+| Passt zum Rest der App? | nein | ja — die App benutzt seit UE3 Hash-Routing |
+| Nachteil | — | URLs sind weniger "schön", nicht SEO-geeignet (hier irrelevant, vgl. ADR UE3 Demo 8) |
+
+**Die URL-Landkarte** (alles hinter dem `#`):
+
+| URL | Seite |
+|---|---|
+| `/` | Dashboard |
+| `/team` | leitet auf `/team/people` um |
+| `/team/people` | People & Locations, Tab "People" |
+| `/team/locations` | People & Locations, Tab "Locations" |
+| `/timeline` | Timeline |
+| `/evidence`, `/workspace` | Platzhalter (UE5) |
+| alles andere | leitet auf `/` (Dashboard) um |
+
+**Was sich im Code geändert hat:**
+
+| Vorher (UE3) | Jetzt |
+|---|---|
+| `useHashRoute()`: eigener Hook, liest `location.hash`, hört auf `hashchange` | **gelöscht** — der Router macht das |
+| `PageRouter`: ein `switch` über ein selbstgebautes `ViewName` | `PageRouter`: eine **Routen-Tabelle** (`<Routes>`/`<Route>`) |
+| `NavButton`: `<button>` + `isActive`-Prop + `navigateTo()` | **gelöscht** — `NavBar` benutzt `<NavLink>`, der die Klasse `active` selbst setzt |
+| `shared/navigation.ts`: `VIEWS`, `ViewName`, `navigateTo` | `shared/routes.ts`: **`ROUTES`** (alle Pfade an einer Stelle) |
+| "Go to …" im Dashboard: `<button onClick={navigateTo}>` | `<Link to=…>` (ein echter Link) |
+| `main.tsx`: `<App />` | `<HashRouter><App /></HashRouter>` |
+
+### Task 2 — der People/Locations-Tab ist jetzt eine echte Route
+
+**Vorher (vanilla):** `switchPeopleTab('locations')` setzte `state.currentPeopleTab`, schaltete von Hand
+`.hidden` auf zwei Panels und die Klasse `active` auf zwei Buttons um — die **Adresse blieb `#people`**.
+
+**Jetzt (React):** zwei Routen mit gemeinsamem Layout.
+
+| Datei | Rolle |
+|---|---|
+| `TeamLayout.tsx` (`/team`) | **Layout**: Überschrift, Tab-Leiste, lädt die Daten **einmal**, `<Outlet />` für den Inhalt. (Aus der alten `PeoplePage` entstanden) |
+| `PeopleTab.tsx` (`/team/people`) | zeigt die Personen-Karten |
+| `LocationsTab.tsx` (`/team/locations`) | zeigt die Orts-Karten |
+
+Die Tab-Leiste sind zwei `<NavLink>`s — ein Link mit Adresse, kein `<button onClick>`. Die Daten gibt das
+Layout über den **Outlet-Context** an die Kinder weiter (`<Outlet context={data} />` und `useOutletContext`),
+damit ein Tab-Wechsel **nicht erneut lädt**.
+
+**Eine echte Verhaltens-Änderung, bewusst und dokumentiert:** die UE3-Adressen wie `react.html#people` gibt
+es nicht mehr — sie landen wie jede unbekannte Adresse auf dem Dashboard.
+
+### CSS-Angleichung — Links statt Buttons
+
+`<NavLink>` und `<Link>` erzeugen `<a>`-Elemente, die vorhandenen Klassen (`.nav-btn`, `.tab-btn`, `.btn`)
+sind aber für `<button>` geschrieben. Live gemessen **vor** der Angleichung: Nav-Buttons 37 px statt 34 px
+hoch, Tabs 35 px statt 33 px, inaktive Tabs dunkelgrau statt schwarz. Ursache: `<button>` benutzt
+standardmäßig Arial und die Systemfarbe `ButtonText`, Links erben die Seitenschrift. Fix: ein kleiner
+Block in `styles.css` (`a.nav-btn`, `a.tab-btn`, `a.btn`).
+
+| Element | vanilla | React vorher | React nachher |
+|---|---|---|---|
+| Nav-Button (Höhe / Breiten) | 34 px / 99, 88, 151 | 37 px / 98, 85, 150 | **34 px / 99, 88, 151** |
+| Tab (Höhe / Breiten / Farbe) | 33 px / 76, 91 / schwarz | 35 px / 74, 90 / dunkelgrau | **33 px / 76, 91 / schwarz** |
+| "Go to …"-Buttons | 24 px / 105, 162, 100, 116 | — | **24 px / 105, 162, 100, 116** |
+
+### Verifikation
+
+**Live im Browser (alles hinter dem `#`):**
+
+| Test | Ergebnis |
+|---|---|
+| Start ohne `#` | Dashboard, nur "Dashboard" aktiv |
+| Klick "People & Locations" | `#/team/people`, 6 Personen, Tab "People" aktiv |
+| **Zurück** danach | landet auf dem Dashboard — **nicht** in einem leeren `/team`-Zwischenschritt (`replace` wirkt) |
+| Tab "Locations" | `#/team/locations`, 6 Orte, 0 Personen; "People & Locations" in der Nav bleibt aktiv |
+| **Daten-Fetches beim Tab-Wechsel** | **0 neue** (Layout lädt einmal) |
+| **Direktaufruf** `react.html#/team/locations` (wie ein Lesezeichen) | Locations-Tab aktiv, 6 Orte |
+| Zurück / Vorwärts zwischen Tabs | People ↔ Locations (jeder Tab ist ein History-Eintrag) |
+| `#/team` | wird zu `#/team/people` |
+| `#/nonsense`, `#/team/foo` | werden zu `#/` korrigiert, Dashboard sichtbar |
+| `#/timeline` | 15 Events; `#/evidence`, `#/workspace` zeigen die Platzhalter |
+| Dashboard-Links | echte `<a href="#/…">`; Klick auf "Go to People & Locations" → `#/team/people` |
+| **Konsole** | zwischen zwei Markern (frisch laden + alle Routen + ungültige URLs durchklicken): **keine** Meldung, auch keine Router-Warnung |
+
+**Direkt gegen vanilla verglichen** (derselbe Versuch in beiden Apps): in vanilla bleibt der Hash beim
+Tab-Wechsel bei `#people`, **"Zurück" verlässt die ganze People-View** (landet auf `#dashboard`). In React
+geht "Zurück" von Locations zurück zu People.
+
+**Abhängigkeitsregel (Demo 6) erneut geprüft:** `shared/` importiert nichts aus `features/`/`app/`, kein
+Feature importiert aus `app/` oder aus einem anderen Feature; `app/` kennt Features nur in `PageRouter.tsx`
+(jetzt 7 Zeilen). Die alten Namen (`useHashRoute`, `NavButton`, `ViewName`, `navigateTo`) kommen nur noch in
+Kommentaren vor.
+
+**Sicherheits-Hinweis nach `npm install`:** npm meldete `1 high severity vulnerability`. Ich habe nachgesehen:
+es ist **`source-map-js`** (Lücke: Event-Loop-DoS über präparierte Source-Maps) — **nicht** eines der drei neuen
+Pakete, sondern ein schon vorhandenes, transitives Paket aus dem Build-Werkzeug (Vite/PostCSS). Es läuft nur
+beim Entwickeln/Bauen, nie im Browser der Besucher:innen. `react-router` hat damit nichts zu tun. Behoben
+ist es mit `npm audit fix` — das ändert aber `package-lock.json` und gehört deshalb in einen **eigenen**
+Commit, nicht in diese Demo (siehe unten).
+
+- **Nach dem Umbau ausgeführt:** `npm run typecheck` → 0 Fehler, `npm run format:check` → sauber,
+  `npm run build` → grün (137 Module), `dist/react.html` und `dist/index.html` werden weiter beide gebaut.
+
+**Der Preis des Routers — Bundle-Größe** (aus dem echten Build):
+
+| Stand | `react-*.js` | gzip |
+|---|---|---|
+| Demo 7 (React + `Badge`) | 230,18 KB | 71,50 KB |
+| **Demo 8 (+ `react-router`)** | **268,77 KB** | **84,84 KB** |
+| Unterschied | **+38,6 KB** | **+13,3 KB** |
+
+Die vanilla-App (`main-*.js`) bleibt bei 20,11 KB. Das ist genau der Kostenpunkt, den die ADR (UE3 Demo 8)
+als "React bringt Grundgewicht mit" benannt hat — nur kommt jetzt der **Router** obendrauf. Dafür ersetzt er
+zwei selbstgeschriebene Dateien (`useHashRoute`, `NavButton`) und liefert Parameter, verschachtelte Routen und
+Umleitungen, die wir sonst von Hand hätten nachbauen müssen.
+
+### 🎤 Live-Demo — was du im Unterricht herzeigst
+
+**1. Die Adressen zeigen:** `npm run dev`, `/react.html`. Nacheinander klicken: Dashboard → "People &
+Locations" → Tab "Locations". Auf die **Adressleiste** zeigen: `#/team/people` → `#/team/locations`. Sag:
+"jeder Tab hat jetzt eine eigene Adresse."
+
+**2. Das Lesezeichen beweisen:** die Adresse `…/react.html#/team/locations` kopieren, in einem **neuen Tab**
+einfügen → landet direkt auf Locations. Sag: "in der alten Version wäre das immer 'People' gewesen."
+
+**3. Zurück-Button:** auf Locations → "Zurück" → People, "Vorwärts" → Locations. Dann im Vergleich die
+vanilla-App (`/#people`, Tab wechseln, Zurück): verlässt die ganze View.
+
+**4. Unbekannte Adresse:** in der Adressleiste `#/irgendwas` eintippen → springt auf `#/` und zeigt das
+Dashboard. Sag: "dasselbe Verhalten wie vorher, aber die Adresse wird sogar korrigiert."
+
+**5. `PageRouter.tsx` zeigen:** die Routen-Tabelle — "das ist der ganze Router: eine Liste URL → Seite, und
+`/team` hat zwei Kinder."
+
+**6. Den Link-Charakter zeigen:** Rechtsklick auf "Go to Timeline" → "In neuem Tab öffnen" geht (bei einem
+`<button>` ginge es nicht).

@@ -855,3 +855,28 @@ a:focus-visible {
   border-radius: var(--radius);
   box-shadow: var(--shadow);
 }
+
+/* ue4 demo 8: nav-buttons, tabs und "Go to ..."-buttons sind jetzt router-LINKS
+   (<a>) statt <button>. die bestehenden klassen (.nav-btn, .tab-btn, .btn) sind
+   fuer buttons geschrieben - diese regeln gleichen die link-eigenheiten an
+   (unterstreichung, inline-darstellung, schrift, zeilenhoehe). <button> benutzt
+   standardmaessig Arial und die systemfarbe ButtonText statt der seitenschrift -
+   ohne diese angleichung waeren die links 3px hoeher als die vanilla-buttons
+   (live gemessen: nav 37px statt 34px). */
+a.nav-btn,
+a.tab-btn,
+a.btn {
+  display: inline-block;
+  text-decoration: none;
+  line-height: normal;
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+a.tab-btn {
+  color: ButtonText;
+  font-size: 13.3333px;
+}
+
+a.tab-btn.active {
+  color: #fff;
+}

@@ -5,17 +5,17 @@ Die React-Seite (`react.html`, ab UE3) ist nach **Features** gegliedert, nicht n
 
 ```
 src/
-  main.tsx                    Einstiegspunkt (mountet <App />)
-  app/                        die Shell: App, PageRouter, Header, NavBar, NavButton, useHashRoute
+  main.tsx                    Einstiegspunkt (mountet <App /> in einem HashRouter)
+  app/                        die Shell: App, PageRouter (Routen-Tabelle), Header, NavBar
   features/
     dashboard/                DashboardPage, DashboardView, IntroCard, StatCard, StatusBadge, ... , bookmarks.ts
-    people-locations/         PeoplePage, PersonCard, LocationCard, Card, BulletList, countEvidence.ts
+    people-locations/         TeamLayout, PeopleTab, LocationsTab, PersonCard, LocationCard, Card, BulletList, countEvidence.ts
     timeline/                 TimelinePage, TimelineEventItem, CertaintyBadge, timelineHelpers.ts
     evidence/                 Platzhalter (Migration in UE5)
     workspace/                Platzhalter (Migration in UE5)
   shared/                     nur, was von mehreren Stellen benutzt wird
     useCaseData.ts            Daten-Hook (Dashboard, People, Timeline)
-    navigation.ts             VIEWS, ViewName, navigateTo (Shell + Dashboard)
+    routes.ts                 ROUTES: alle URL-Pfade an einer Stelle (Shell + Dashboard + People)
     Badge.tsx                 wiederverwendbarer Badge (Timeline + Dashboard, 3 Stellen)
   sandbox/                    Wegwerf-Beispiele (key-demo.html), nicht Teil der App
 ```
@@ -30,7 +30,8 @@ dieses Features, auch wenn sie "allgemein aussehen könnte". Taucht später ein 
 Beispiele aus dieser Struktur:
 
 - `shared/useCaseData.ts` wird von Dashboard, People und Timeline benutzt: shared.
-- `shared/navigation.ts` wird von der Shell (NavBar, NavButton) und vom Dashboard (IntroCard) benutzt: shared.
+- `shared/routes.ts` (die URL-Pfade) wird von der Shell (NavBar, PageRouter) und von Features (IntroCard,
+  TeamLayout) benutzt: shared.
 - `people-locations/Card.tsx` und `BulletList.tsx` werden nur innerhalb von People & Locations benutzt: lokal,
   obwohl sie generisch wirken.
 - `shared/Badge.tsx` wird in zwei Features an drei Stellen benutzt (`CertaintyBadge`, `StatusBadge`,
@@ -50,10 +51,21 @@ app  -->  features  -->  shared
 
 Mechanisch prüfbar mit einer Textsuche über die `import`-Zeilen (siehe `ue4/UE4_CHANGES.md`, Demo 6).
 
+## Routing
+
+- Bibliothek: React Router, `HashRouter` (URLs wie `react.html#/team/people`). Grund: GitHub Pages ist ein
+  statischer Host ohne Rewrite-Regeln, und die Assets laden relativ zu `react.html`.
+- Die Routen-Tabelle steht in `app/PageRouter.tsx`, die Pfade selbst in `shared/routes.ts`.
+- Verschachtelte Route: `/team` ist das Layout (`TeamLayout`: Überschrift, Tab-Leiste, lädt die Daten
+  einmal), `/team/people` und `/team/locations` füllen dessen `<Outlet />` und lesen die Daten über den
+  Outlet-Context.
+- Unbekannte URLs leiten per `<Navigate replace>` auf das Dashboard um.
+
 ## Innerhalb eines Features
 
-- Die `*Page.tsx` ist die **Feature-Komponente**: holt Daten, behandelt Lade-/Fehlerzustand.
-- Die übrigen Komponenten sind **presentational**: Props rein, Markup raus.
+- Die `*Page.tsx` bzw. `*Layout.tsx` ist die **Feature-Komponente**: holt Daten, behandelt Lade-/Fehlerzustand.
+- Die übrigen Komponenten sind **presentational**: Props rein, Markup raus. Ausnahme: die Tab-Inhalte
+  (`PeopleTab`, `LocationsTab`) lesen vom Router (`useOutletContext`) und zählen deshalb zur Feature-Seite.
 - Feature-lokale Helfer (reine Funktionen) liegen daneben, z. B. `timelineHelpers.ts`.
 
 ## Grenze zum Vanilla-Code (`js/`)
@@ -64,5 +76,8 @@ Die React-Seite importiert aus `js/` nur `import type` (Typen) und **reine** Fun
 ## Bekannte Schwächen
 
 - Relative Pfade wie `../../../js/types` werden tief. Ein Pfad-Alias (`@js/…`) wäre eine spätere Verbesserung.
-- Die Doku zu UE3 und UE4 Demo 1 bis 5 nennt noch die alten Pfade (`src/components/…`, `src/pages/…`). Sie
-  beschreibt den damaligen Stand und wurde nicht nachträglich geändert.
+- Die Doku zu UE3 und UE4 Demo 1 bis 5 nennt noch die alten Pfade (`src/components/…`, `src/pages/…`) und das
+  frühere handgebaute Hash-Routing (`useHashRoute`). Sie beschreibt den damaligen Stand und wurde nicht
+  nachträglich geändert.
+- Der Lade-/Fehler-Block (`useCaseData` + zwei frühe Returns) steckt noch in drei Feature-Komponenten
+  (`DashboardPage`, `TeamLayout`, `TimelinePage`).

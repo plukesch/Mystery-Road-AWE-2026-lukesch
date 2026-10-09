@@ -1,4 +1,4 @@
-import type { Location, TimelineEvent } from "../../js/types";
+import type { Location, TimelineEvent } from "../../../js/types";
 
 // orts-ids eines events in anzeigenamen aufloesen. unbekannte id -> die id
 // selbst anzeigen (wie in vanilla: "evtLoc ? evtLoc.name : locationId").

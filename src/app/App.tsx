@@ -6,10 +6,10 @@
 // (header > header-inner > brand + nav) 1:1 aus index.html uebernommen,
 // damit dasselbe css unveraendert weiter passt.
 // ---------------------------------------------------------------------
-import { Header } from "./components/Header";
-import { NavBar } from "./components/NavBar";
+import { Header } from "./Header";
+import { NavBar } from "./NavBar";
 import { PageRouter } from "./PageRouter";
-import { useHashRoute } from "./hooks/useHashRoute";
+import { useHashRoute } from "./useHashRoute";
 
 export function App() {
   const currentView = useHashRoute();

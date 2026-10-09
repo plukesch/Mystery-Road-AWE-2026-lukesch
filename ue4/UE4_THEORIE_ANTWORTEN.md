@@ -398,3 +398,76 @@ passiert und die **Ausgabe** nur von Props abhängt. Wenn man es strenger will, 
 `onSelect`-Prop übergeben, und der Aufrufer entscheidet, was beim Klick passiert — dann wäre die
 Darstellung vollständig rein. Das ist eine Abwägung zwischen Strenge und Aufwand, bei dieser Größe
 reicht die lockere Variante.
+
+---
+
+## Demo 6 — Feature-orientierte Ordnerstruktur
+
+Alle React-Dateien von "nach Art" (`components/`, `hooks/`, `lib/`, `pages/`) auf "nach Feature"
+(`app/`, `features/<name>/`, `shared/`) umgebaut, per `git mv`. Struktur und Regel stehen in
+`ARCHITECTURE.md` (Projekt-Root). Verhalten live gegengeprüft, Abhängigkeitsrichtung mechanisch geprüft.
+Details in `UE4_CHANGES.md`.
+
+### F1: Was ist der Unterschied, Dateien "nach Typ" zu ordnen (alle Komponenten in einen Ordner, alle Hooks in einen anderen) oder "nach Feature"? Warum hast du für diese App die gewählte Struktur gewählt?
+
+**Einfach gesagt:** nach **Typ** sortiert man nach "was für eine Datei ist das?", nach **Feature** nach "wozu
+gehört sie?". Dateien, die man **gemeinsam ändert**, sollten nahe beieinander liegen — und das sind
+fast immer Dateien desselben Features, nicht desselben Typs.
+
+| | Nach Typ | Nach Feature |
+|---|---|---|
+| Ordner heißen | `components/`, `hooks/`, `pages/`, `lib/` | `timeline/`, `dashboard/`, `people-locations/` |
+| "Ich ändere die Timeline" | Dateien in **vier** Ordnern suchen | **ein** Ordner |
+| Ordnergröße | wächst mit der App (bei uns schon 16 Dateien in `components/`) | wächst nur, wenn **das Feature** wächst |
+| Ein Feature löschen/verschieben | über viele Ordner verstreut | ein Ordner |
+| Gut, wenn | die App klein ist, es kaum Zusammengehöriges gibt | die App aus klar getrennten Bereichen besteht |
+| Risiko | nach einiger Zeit ein "Müllordner" (`components/`) | Duplikate, wenn zwei Features dasselbe brauchen — dafür gibt es `shared/` |
+
+**Warum Feature-Struktur für diese App:** sie besteht aus **fünf klar getrennten Views**, und die
+Aufgabenstellung migriert sie **View für View** (UE3 Dashboard, UE4 People + Timeline, UE5 Evidence +
+Workspace). Genau das ist die Einheit, in der ich arbeite und committe. Konkret hat die Struktur schon
+vorher einen Vorteil gezeigt: `components/` enthielt eine Mischung aus Shell (`Header`), Dashboard
+(`StatCard`), People (`PersonCard`) und Timeline (`CertaintyBadge`) — ohne dass man dem Ordnernamen ansah,
+was wozu gehört. Dazu passt: **jedes Feature hat eine `*Page.tsx` (Feature-Komponente) und seine
+Darstellungs-Komponenten** (Demo 5) — beides liegt jetzt am selben Ort.
+
+**Ehrlich dazu:** nach Typ zu ordnen ist nicht "falsch". Bei 4 oder 5 Dateien ist es sogar bequemer. Die
+Feature-Struktur lohnt sich ab dem Punkt, an dem man beim Ändern **mehrere Ordner gleichzeitig offen haben
+muss** — der war bei uns erreicht.
+
+### F2: Wo hast du die Grenze zwischen einer Komponente gezogen, die in einem Feature-Ordner lebt, und einer, die in einen shared/common-Ordner gehört? Gib je ein echtes Beispiel aus deiner Struktur.
+
+**Einfach gesagt:** *"Wird die Datei heute von mindestens zwei verschiedenen Stellen benutzt?"* Wenn ja:
+`shared/`. Wenn nein: bleibt sie im Feature, auch wenn sie allgemein **aussieht**.
+
+**Die Regel:** eine Datei liegt in `shared/` nur, wenn sie **heute** von **zwei verschiedenen Stellen**
+benutzt wird — zwei Features, oder die Shell und ein Feature. Ein Nutzer → lokal. Kommt später ein zweiter
+Nutzer, zieht sie um. (Man baut nicht auf Vorrat "für später mal".)
+
+| Beispiel | Wo | Warum |
+|---|---|---|
+| `useCaseData.ts` | **`shared/`** | wird von **drei** Features benutzt (Dashboard, People, Timeline) |
+| `navigation.ts` (`VIEWS`, `ViewName`, `navigateTo`) | **`shared/`** | wird von der **Shell** (`NavBar`, `NavButton`, `PageRouter`) **und** vom **Dashboard** (`IntroCard`) benutzt |
+| `Card.tsx`, `BulletList.tsx` | **`features/people-locations/`** | klingen generisch, haben aber **nur Nutzer in diesem einen Feature** (`PersonCard`, `LocationCard`) |
+| `CertaintyBadge.tsx` | **`features/timeline/`** | heute genau ein Nutzer |
+
+**Der lehrreichste Fall war `navigation`:** `VIEWS`/`ViewName` standen vorher in `useHashRoute.ts`, also in
+der **Shell**. Das Dashboard (`IntroCard`) brauchte sie aber auch. Hätte ich sie dort gelassen, hätte ein
+Feature von der Shell abgehangen — während die Shell (`PageRouter`) die Features importiert. Das wäre ein
+**Zyklus auf Ordner-Ebene** gewesen (`app → features → app`; kein Datei-Zyklus, aber genau die Art
+Verflechtung, bei der man keinen der beiden Ordner mehr für sich ändern oder entfernen kann). Die Regel
+"Features hängen nie von `app/` ab" hat den Fehler sichtbar gemacht, **bevor** er einer wurde. Lösung: das
+Gemeinsame in `shared/` ziehen.
+
+**Warum die Regel "heute zwei Nutzer" und nicht "könnte generisch sein":** zu früh nach `shared/`
+zu schieben hat einen versteckten Preis. Eine `shared/`-Komponente muss für **alle** Nutzer passen — ihre
+Props werden mit der Zeit zu einem Sammelbecken aus Sonderfällen (`variant`, `showIcon`, `compact`, …).
+Wartet man auf den **echten** zweiten Nutzer, kennt man dessen Anforderungen und kann die Schnittstelle
+danach formen. Das passiert in Demo 7: dort kommt `Badge` nach `shared/`, weil es dann wirklich an mehreren
+Stellen in verschiedenen Features gebraucht wird (Dashboard-Status, Timeline-Certainty).
+
+**Die Richtung der Abhängigkeiten gehört zur selben Regel:** `app → features → shared`. `shared` darf
+nichts aus `features` oder `app` kennen, und Features kennen sich nicht untereinander — sonst wäre
+`shared` nicht mehr "unten", und man könnte ein Feature nicht mehr entfernen, ohne ein anderes zu
+beschädigen. Das habe ich nicht nur behauptet, sondern mit einer Textsuche über alle `import`-Zeilen geprüft
+(keine Verstöße; einzige `app → features`-Imports: die fünf Zeilen in `PageRouter.tsx`).

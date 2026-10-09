@@ -1,4 +1,4 @@
-import type { Person } from "../../js/types";
+import type { Person } from "../../../js/types";
 import { Card } from "./Card";
 import { BulletList } from "./BulletList";
 

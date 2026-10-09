@@ -10,9 +10,7 @@
 // vergleich beider ansaetze.
 // ---------------------------------------------------------------------
 import { useEffect, useState } from "react";
-
-export const VIEWS = ["dashboard", "evidence", "people", "timeline", "workspace"] as const;
-export type ViewName = (typeof VIEWS)[number];
+import { VIEWS, type ViewName } from "../shared/navigation";
 
 // unbekannter/leerer hash -> fallback "dashboard". exakt dasselbe verhalten
 // wie handleHashChange()s "if (validViews.indexOf(hash) === -1) hash = 'dashboard'" -

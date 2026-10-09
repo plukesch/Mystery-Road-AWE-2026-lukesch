@@ -1,5 +1,5 @@
 import { NavButton } from "./NavButton";
-import type { ViewName } from "../hooks/useHashRoute";
+import type { ViewName } from "../shared/navigation";
 
 interface NavBarProps {
   currentView: ViewName;

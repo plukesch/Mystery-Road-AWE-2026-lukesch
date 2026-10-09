@@ -6,9 +6,9 @@
 // DashboardView weiter, die nur noch darstellt. frueher stand beides in
 // dieser einen datei (siehe UE4_CHANGES demo 5).
 // ---------------------------------------------------------------------
-import { useCaseData } from "../hooks/useCaseData";
-import { getBookmarkCount } from "../lib/bookmarks";
-import { DashboardView } from "../components/DashboardView";
+import { useCaseData } from "../../shared/useCaseData";
+import { getBookmarkCount } from "./bookmarks";
+import { DashboardView } from "./DashboardView";
 
 export function DashboardPage() {
   const caseDataState = useCaseData();

@@ -1,8 +1,8 @@
-import type { Evidence } from "../../js/types";
+import type { Evidence } from "../../../js/types";
 // pure, seiteneffektfreie helfer-funktion aus der vanilla-app wiederverwendet
-// (nicht dupliziert) - anders als bei js/state.ts (siehe src/lib/bookmarks.ts)
+// (nicht dupliziert) - anders als bei js/state.ts (siehe ./bookmarks.ts)
 // haengt hier kein mutable modul-singleton dran, nur eine reine funktion.
-import { getStatusBadgeClass } from "../../js/utils";
+import { getStatusBadgeClass } from "../../../js/utils";
 
 interface RecentEvidenceListProps {
   items: Evidence[];

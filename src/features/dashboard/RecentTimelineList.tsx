@@ -1,5 +1,5 @@
-import type { TimelineEvent } from "../../js/types";
-import { formatDate } from "../../js/utils";
+import type { TimelineEvent } from "../../../js/types";
+import { formatDate } from "../../../js/utils";
 
 interface RecentTimelineListProps {
   items: TimelineEvent[];

@@ -7,7 +7,7 @@
 // die gegenstelle (laden, lade-/fehlerzustand, bookmark-zaehler lesen) ist
 // DashboardPage - siehe UE4_THEORIE_ANTWORTEN demo 5 F1.
 // ---------------------------------------------------------------------
-import type { CaseData } from "../hooks/useCaseData";
+import type { CaseData } from "../../shared/useCaseData";
 import { IntroCard } from "./IntroCard";
 import { CaseSummaryCard } from "./CaseSummaryCard";
 import { StatCard } from "./StatCard";

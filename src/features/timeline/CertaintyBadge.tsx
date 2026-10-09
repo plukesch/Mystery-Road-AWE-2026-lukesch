@@ -1,4 +1,4 @@
-import type { Certainty } from "../../js/types";
+import type { Certainty } from "../../../js/types";
 
 // ue4 demo 2 - technik "lookup/mapping": welche badge-variante gehoert zu
 // welcher certainty? in der vanilla-app war das eine if-kette

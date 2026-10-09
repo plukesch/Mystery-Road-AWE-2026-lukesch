@@ -1,4 +1,4 @@
-import type { CaseFile } from "../../js/types";
+import type { CaseFile } from "../../../js/types";
 
 interface CaseSummaryCardProps {
   caseData: CaseFile;

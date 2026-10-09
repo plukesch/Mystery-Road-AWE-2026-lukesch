@@ -5,10 +5,10 @@
 // beide listen stehen deshalb vorerst untereinander. der tab kommt in
 // demo 8 als echte route zurueck (/team/people, /team/locations).
 // ---------------------------------------------------------------------
-import { useCaseData } from "../hooks/useCaseData";
-import { countEvidenceForPerson } from "../lib/evidence";
-import { PersonCard } from "../components/PersonCard";
-import { LocationCard } from "../components/LocationCard";
+import { useCaseData } from "../../shared/useCaseData";
+import { countEvidenceForPerson } from "./countEvidence";
+import { PersonCard } from "./PersonCard";
+import { LocationCard } from "./LocationCard";
 
 export function PeoplePage() {
   const caseDataState = useCaseData();

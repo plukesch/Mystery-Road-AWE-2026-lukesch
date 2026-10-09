@@ -1,4 +1,4 @@
-import type { Evidence, Person } from "../../js/types";
+import type { Evidence, Person } from "../../../js/types";
 
 // reine variante von countEvidenceForPerson()/evidenceMentionsPerson() aus
 // js/lookup.ts - die vanilla-version liest ihre daten aus dem globalen

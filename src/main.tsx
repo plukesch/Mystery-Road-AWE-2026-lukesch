@@ -6,7 +6,7 @@
 // ---------------------------------------------------------------------
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { App } from "./App";
+import { App } from "./app/App";
 
 // StrictMode: ruft App() in der entwicklung absichtlich zweimal auf -
 // deckt genau die seiteneffekt-im-render-koerper-probleme auf, die in

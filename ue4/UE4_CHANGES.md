@@ -437,3 +437,117 @@ Berührungspunkt der beiden."
 **4. Den Nutzen zeigen (Theorie-F1):** in `DashboardPage.tsx` kurz `bookmarkCount={getBookmarkCount()}`
 durch `bookmarkCount={99}` ersetzen → im Browser steht "99 Bookmarked", **ohne** dass
 `DashboardView` angefasst wurde. Wieder zurücksetzen.
+
+---
+
+## Demo 6 — Feature-orientierte Ordnerstruktur
+
+### 🔰 Einfach erklärt — worum geht's hier überhaupt?
+
+Bisher lagen die Dateien **nach Art** sortiert: alle Komponenten in einem Ordner, alle Hooks in einem
+anderen, alle Seiten in einem dritten. Das wirkt aufgeräumt, hat aber einen Haken: **will man
+etwas an der Timeline ändern, muss man in vier Ordnern suchen.**
+
+*Analogie:* eine Küche, in der alle Löffel in einer Schublade, alle Teller in einem Schrank und alle
+Töpfe im Keller liegen (**nach Art**). Oder eine Küche mit einer Backstation, einer Kochstation und einer
+Salatstation, an denen jeweils alles liegt, was man dort braucht (**nach Feature**). Für "ich backe jetzt"
+reicht die eine Station.
+
+### Task 1 — React-Quellcode nach Features umgebaut
+
+**Vorher** (nach Art):
+
+```
+src/
+  App.tsx  PageRouter.tsx  main.tsx
+  components/   16 Dateien durcheinander (Header, PersonCard, StatCard, CertaintyBadge, ...)
+  hooks/        useCaseData, useHashRoute
+  lib/          bookmarks, evidence, navigation, timeline
+  pages/        5 Seiten
+```
+
+**Nachher** (nach Feature):
+
+```
+src/
+  main.tsx
+  app/                      App, PageRouter, Header, NavBar, NavButton, useHashRoute
+  features/
+    dashboard/              DashboardPage, DashboardView, IntroCard, CaseSummaryCard, StatCard,
+                            ReviewProgressBar, RecentEvidenceList, RecentTimelineList, bookmarks.ts
+    people-locations/       PeoplePage, PersonCard, LocationCard, Card, BulletList, countEvidence.ts
+    timeline/               TimelinePage, TimelineEventItem, CertaintyBadge, timelineHelpers.ts
+    evidence/               EvidencePage (Platzhalter, UE5)
+    workspace/              WorkspacePage (Platzhalter, UE5)
+  shared/                   useCaseData.ts, navigation.ts
+  sandbox/                  unverändert
+```
+
+Die vier alten Ordner (`components/`, `hooks/`, `lib/`, `pages/`) gibt es nicht mehr. **Alle** Dateien
+wurden mit `git mv` verschoben, die Datei-Historie bleibt also erhalten. Ein Feature-Ordner enthält pro
+Feature sowohl die Seite (Feature-Komponente) als auch ihre Darstellungs-Komponenten und Helfer — alles aus
+Demo 5, aber jetzt räumlich zusammen.
+
+**Eine echte Entscheidung unterwegs: `VIEWS`/`ViewName` und `navigateTo`.** Diese standen in
+`useHashRoute.ts` (Shell) bzw. `lib/navigation.ts`. `IntroCard` (Dashboard) braucht beides, und `NavBar`/
+`NavButton` (Shell) auch. Hätte ich sie in `app/` gelassen, hätte das Dashboard-Feature **von der Shell
+abgehangen** — die falsche Richtung. Ergebnis: beides zog nach `shared/navigation.ts`, `useHashRoute.ts`
+importiert sie jetzt von dort.
+
+### Task 2 — Struktur und Regel dokumentiert
+
+Neue Datei im Projekt-Root: **[`ARCHITECTURE.md`](../ARCHITECTURE.md)**. Sie enthält den Ordnerbaum, die
+Regel für "shared vs. feature-lokal", die Abhängigkeitsrichtung und die Grenze zum Vanilla-Code. Die
+Kurzfassung:
+
+| Regel | Inhalt |
+|---|---|
+| **shared oder lokal?** | In `shared/` liegt eine Datei nur, wenn sie **heute** von mindestens **zwei verschiedenen Stellen** benutzt wird (zwei Features, oder Shell + Feature). Ein Nutzer → bleibt im Feature. Kommt ein zweiter dazu → zieht um |
+| **Abhängigkeitsrichtung** | `app → features → shared`. `shared` importiert nie aus `features`/`app`; Features importieren nie voneinander und nie aus `app` |
+| **Grenze zu `js/`** | nur `import type` und reine Funktionen, nie `js/state.ts` (wie schon in UE3) |
+
+### Verifikation
+
+- **Alte Pfade:** Textsuche nach Imports auf `hooks/`, `lib/`, `pages/`, `components/` → keine Treffer.
+- **Abhängigkeitsrichtung mechanisch geprüft** (Textsuche über alle `import`-Zeilen):
+
+  | Prüfung | Ergebnis |
+  |---|---|
+  | `shared/` importiert aus `features/` oder `app/` | keine Treffer |
+  | ein Feature importiert aus `app/` | keine Treffer |
+  | ein Feature importiert ein anderes Feature | keine Treffer |
+  | `app/` importiert aus `features/` | nur `PageRouter.tsx` (5 Zeilen, die Seiten-Verdrahtung) |
+
+- **Verhalten unverändert, live im Browser** (nach dem Umbau, frisch geladen):
+  Dashboard 18 / 6 / 6 / 0 / 1 und 6 %; People 6 Personen + 6 Orte, Zähler 3 / 4 / 5 / 4 / 4 / 5; Timeline
+  15 Events, 15 Badges, 1 kritisches; Evidence/Workspace-Platzhalter erreichbar; ungültiger Hash →
+  Dashboard; aktiver Nav-Button korrekt.
+- **Konsole:** zwischen "frisch laden" und "alle fünf Views durchklicken" **keine** Fehler. Die roten
+  Meldungen, die davor im Konsolen-Puffer standen, stammen aus dem Umbau selbst: Vite versuchte währenddessen,
+  die gerade verschobenen Dateien live nachzuladen (404/500 auf den alten Pfaden). Nach dem Neuladen sind sie
+  weg.
+- **Nach dem Umbau ausgeführt:** `npm run typecheck` → 0 Fehler. `npm run format:check` → sauber (inklusive
+  der neuen `ARCHITECTURE.md`). `npm run build` → grün, 59 Module, erzeugt `dist/index.html` **und**
+  `dist/react.html` (React-Bundle 230 KB, gzip 71 KB). `key-demo.html` taucht in `dist/` **nicht** auf —
+  die Sandbox wird, wie gewollt, nie ausgeliefert.
+
+**Bekannte Nebenwirkung:** die relativen Pfade zu `js/` werden tiefer (`../../../js/types`). Ein Pfad-Alias
+wäre die saubere Lösung, ist aber eine eigene Konfigurations-Änderung (`tsconfig` + `vite.config.js`) und
+nicht Teil dieser Demo. Die Doku zu UE3 und Demo 1 bis 5 nennt weiterhin die alten Pfade — sie beschreibt
+den damaligen Stand.
+
+### 🎤 Live-Demo — was du im Unterricht herzeigst
+
+**1. Vorher/Nachher als Baum zeigen:** `ARCHITECTURE.md` öffnen oder den Ordnerbaum im Editor aufklappen.
+Sag: "früher vier Ordner nach Art, jetzt ein Ordner pro View."
+
+**2. Den Nutzen zeigen:** "Ich will etwas an der Timeline ändern" → **ein** Ordner `features/timeline/`
+aufklappen: Seite, Event-Karte, Badge, Helfer, alles da.
+
+**3. Die Regel erklären:** `shared/` aufklappen (2 Dateien) und fragen: "warum nur diese zwei?" →
+`useCaseData` hat 3 Nutzer, `navigation` hat Shell + Dashboard. Dann `people-locations/Card.tsx` zeigen:
+"sieht generisch aus, hat aber nur einen Nutzer — bleibt lokal."
+
+**4. Die Abhängigkeitsrichtung zeigen (optional, live):** in `shared/navigation.ts` testweise
+`import { App } from "../app/App";` einfügen — man sieht sofort, dass `shared` nach oben greift, was die
+Regel verbietet (ein Zyklus `shared → app → … → shared`). Wieder entfernen.

@@ -1,9 +1,9 @@
-import type { ViewName } from "./hooks/useHashRoute";
-import { DashboardPage } from "./pages/DashboardPage";
-import { EvidencePage } from "./pages/EvidencePage";
-import { PeoplePage } from "./pages/PeoplePage";
-import { TimelinePage } from "./pages/TimelinePage";
-import { WorkspacePage } from "./pages/WorkspacePage";
+import type { ViewName } from "../shared/navigation";
+import { DashboardPage } from "../features/dashboard/DashboardPage";
+import { EvidencePage } from "../features/evidence/EvidencePage";
+import { PeoplePage } from "../features/people-locations/PeoplePage";
+import { TimelinePage } from "../features/timeline/TimelinePage";
+import { WorkspacePage } from "../features/workspace/WorkspacePage";
 
 interface PageRouterProps {
   view: ViewName;

@@ -1,5 +1,4 @@
-import { navigateTo } from "../lib/navigation";
-import type { ViewName } from "../hooks/useHashRoute";
+import { navigateTo, type ViewName } from "../../shared/navigation";
 
 interface HowToItemData {
   viewName: ViewName;

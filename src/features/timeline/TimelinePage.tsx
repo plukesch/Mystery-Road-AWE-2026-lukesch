@@ -2,9 +2,9 @@
 // TIMELINE (ue4 demo 2) - ersetzt den ue3-platzhalter.
 // noch ohne filter-leiste (kommt in demo 10) und ohne modal (ue5).
 // ---------------------------------------------------------------------
-import { useCaseData } from "../hooks/useCaseData";
-import { resolveLocationNames, sortByTimeAscending } from "../lib/timeline";
-import { TimelineEventItem } from "../components/TimelineEventItem";
+import { useCaseData } from "../../shared/useCaseData";
+import { resolveLocationNames, sortByTimeAscending } from "./timelineHelpers";
+import { TimelineEventItem } from "./TimelineEventItem";
 
 export function TimelinePage() {
   const caseDataState = useCaseData();

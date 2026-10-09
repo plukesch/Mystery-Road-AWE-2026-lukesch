@@ -337,3 +337,103 @@ Bug so tückisch."
 
 **5. Code zeigen:** in `KeyDemo.tsx` die zwei `.map()`-Aufrufe — der einzige Unterschied ist
 `key={index}` vs. `key={person.id}`.
+
+---
+
+## Demo 5 — Presentational vs. Feature-Komponenten, Komponentengrenzen
+
+### 🔰 Einfach erklärt — worum geht's hier überhaupt?
+
+Nicht jede Komponente hat dieselbe Art von Aufgabe. Man kann sie grob in zwei Sorten teilen:
+
+- **Presentational ("Schaufenster"):** bekommt Daten **hereingereicht** und zeigt sie an. Es weiß
+  nicht, woher die Daten kommen.
+- **Feature / Container ("Lager"):** **besorgt** die Daten (Netzwerk, Speicher, URL) und kümmert sich
+  um Zustände wie "lädt noch" oder "Fehler" — und reicht dann alles an ein Schaufenster weiter.
+
+*Analogie:* ein Restaurant. Der **Koch** (Feature) besorgt Zutaten und kümmert sich um die Küche.
+Der **Kellner/die Speisekarte** (Presentational) präsentiert, was fertig ist. Wenn der Lieferant
+wechselt, muss die Speisekarte nicht neu gedruckt werden.
+
+### Task 1 — jede bisherige Komponente einordnen
+
+**Feature / Container** (greifen auf die "Außenwelt" zu: Netzwerk, `localStorage`, URL):
+
+| Komponente | Warum |
+|---|---|
+| `App` | ruft `useHashRoute()` auf → liest den URL-Hash und hält die aktuelle View |
+| `DashboardPage` | `useCaseData()` (Netzwerk), `getBookmarkCount()` (`localStorage`), Lade-/Fehlerzustand |
+| `PeoplePage` | `useCaseData()`, Lade-/Fehlerzustand, berechnet pro Person den Beweisstück-Zähler |
+| `TimelinePage` | `useCaseData()`, Lade-/Fehlerzustand, sortiert Events, löst Ortsnamen auf |
+
+**Presentational** (reine Funktion ihrer Props: gleiche Props → gleiche Ausgabe):
+
+| Komponente | Anmerkung |
+|---|---|
+| `DashboardView` *(neu, siehe Task 2)* | zeigt ein Dashboard für fertige Daten |
+| `Header`, `NavBar`, `Card`, `BulletList`, `StatCard`, `CaseSummaryCard`, `ReviewProgressBar`, `RecentEvidenceList`, `RecentTimelineList`, `PersonCard`, `LocationCard`, `CertaintyBadge`, `TimelineEventItem` | nur Props → Markup |
+| `NavButton`, `IntroCard` | **Grenzfälle:** rein darstellend, lösen aber **beim Klick** `navigateTo()` aus (schreibt den URL-Hash). Das passiert nur im Event-Handler, nicht beim Rendern — die Ausgabe hängt nicht davon ab |
+| `PageRouter` | reine Funktion von `view` (welche Seite?), liest selbst nichts |
+| `EvidencePage`, `WorkspacePage` | Platzhalter ohne Daten |
+
+*(Keine Komponenten, aber zur Einordnung: die Hooks `useCaseData` und `useHashRoute` sind die Stellen,
+wo die Außenwelt in React hineinkommt — sie werden nur von Feature-Komponenten aufgerufen.)*
+
+**Objektiv geprüft:** eine Suche über `src/` zeigt, dass `useCaseData()`, `useHashRoute()`,
+`getBookmarkCount()`, `useState`/`useEffect` und `fetch()` **ausschließlich** in `App`, den drei
+Seiten und den beiden Hooks vorkommen — in **keiner** der reinen Darstellungs-Komponenten. Einzige
+Ausnahmen sind die zwei Klick-Handler (`NavButton`, `IntroCard`).
+
+### Task 2 — eine Komponente aufgeteilt: `DashboardPage` → `DashboardPage` + `DashboardView`
+
+**Was `DashboardPage` vorher gleichzeitig tat — drei Aufgaben:**
+
+| # | Aufgabe | Art |
+|---|---|---|
+| 1 | Daten laden, Lade-/Fehlerzustand behandeln (`useCaseData`) | Außenwelt |
+| 2 | `localStorage` lesen (Bookmark-Zähler) **mitten im Rendern** | Außenwelt |
+| 3 | Statistiken ableiten (`reviewedCount`, `progressPct`) **und** das Layout aus 7 Unterkomponenten zusammensetzen | Darstellung |
+
+**Nachher — zwei Komponenten mit einer klaren Grenze:**
+
+| Komponente | Datei | Einzige Verantwortung | Props |
+|---|---|---|---|
+| `DashboardPage` (Feature) | `src/pages/DashboardPage.tsx` | "Woher kommen die Daten, sind sie schon da?" — lädt, behandelt Lade/Fehler, liest `localStorage` | keine |
+| `DashboardView` (Presentational) | `src/components/DashboardView.tsx` | "Wie sieht ein Dashboard für diese Daten aus?" — leitet Statistiken ab, setzt das Layout zusammen | `data: CaseData`, `bookmarkCount: number` |
+
+**Die Grenze ist das Props-Interface `DashboardViewProps`.** Alles Unreine (Netzwerk,
+`localStorage`) liegt jetzt auf der einen Seite, alles Reine auf der anderen. Ein Nebeneffekt, der
+aus der UE3-Lehre folgt (Render-Funktionen sollen rein sein): `DashboardView` liest nichts mehr
+aus der Außenwelt, `localStorage` wird in `DashboardPage` **einmal** gelesen und als fertige Zahl
+übergeben.
+
+**Was NICHT aufgeteilt wurde (ehrlich):** `PeoplePage` und `TimelinePage` haben denselben
+Geruch in kleinerer Form (Laden + Ableiten + Layout in einer Datei) und den **identischen
+Lade-/Fehler-Block** wie das Dashboard (dreimal kopiert). Das Dashboard war der klarste Fall (7
+Unterkomponenten, 5 abgeleitete Werte, `localStorage`) — die anderen beiden bleiben vorerst, die
+Doppelung ist ein Kandidat für Demo 10 (Theorie-F3).
+
+### Verifikation
+
+- `npm run typecheck` → 0 Fehler, `npm run format:check` → sauber (beide nach dem Umbau ausgeführt).
+- **Verhalten unverändert** (live): Dashboard zeigt exakt wie vor dem Umbau 18 / 6 / 6 / 0 / 1,
+  6 % Fortschritt, 5 + 5 "Recent"-Einträge, 4 Einstiegs-Karten, Konsole leer.
+- **Der neue Datenweg funktioniert:** `localStorage`-Key `remotion_bookmarks` testweise auf zwei
+  Einträge gesetzt → das Dashboard zeigt "2 Bookmarked" (Container liest, View zeigt nur an). Danach
+  den ursprünglichen Zustand wiederhergestellt.
+
+### 🎤 Live-Demo — was du im Unterricht herzeigst
+
+**1. Die Tabelle zeigen:** "Feature = besorgt Daten, Presentational = zeigt sie an."
+
+**2. Vorher/Nachher an `DashboardPage`**
+`git diff` bzw. beide Dateien öffnen: `DashboardPage.tsx` ist jetzt ~20 Zeilen (nur Laden +
+Zustände), `DashboardView.tsx` enthält die ganze Darstellung. Sag: "vorher war beides in einer
+Datei, jetzt hat jede Datei **eine** Frage."
+
+**3. Die Grenze zeigen:** `DashboardViewProps` (`data`, `bookmarkCount`) — "das ist der einzige
+Berührungspunkt der beiden."
+
+**4. Den Nutzen zeigen (Theorie-F1):** in `DashboardPage.tsx` kurz `bookmarkCount={getBookmarkCount()}`
+durch `bookmarkCount={99}` ersetzen → im Browser steht "99 Bookmarked", **ohne** dass
+`DashboardView` angefasst wurde. Wieder zurücksetzen.

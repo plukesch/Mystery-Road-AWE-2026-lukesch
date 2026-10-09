@@ -334,3 +334,67 @@ vorkommt (Demo 3). Kämen jemals zwei gleiche Aufzählungspunkte vor, wäre `key
 
 **Nie legitim:** `key={Math.random()}` — er ist nicht stabil und zerstört bei jedem Render alle
 Zeilen (siehe F1).
+
+---
+
+## Demo 5 — Presentational vs. Feature-Komponenten, Komponentengrenzen
+
+Alle Komponenten als Feature/Container oder Presentational eingeordnet (Tabelle in
+`UE4_CHANGES.md`), `DashboardPage` in `DashboardPage` (Feature) + `DashboardView` (Presentational)
+aufgeteilt. Verhalten live gegengeprüft (unverändert). Details dort.
+
+### F1: Für die aufgeteilte Komponente: was war die einzige Verantwortung jeder Hälfte? Würde eine Änderung an einem Implementierungsdetail der einen Hälfte die andere betreffen? Warum (nicht)?
+
+**Einfach gesagt:** `DashboardPage` kümmert sich nur ums **Besorgen** der Daten, `DashboardView` nur ums
+**Anzeigen**. Wechselt man eine Hälfte aus, merkt die andere nichts davon — solange der
+"Übergabe-Zettel" (die Props) gleich bleibt.
+
+| Hälfte | Einzige Verantwortung |
+|---|---|
+| `DashboardPage` (Feature) | "Woher kommen die Daten, und sind sie schon da?" — Daten laden, Lade-/Fehlerzustand, `localStorage` lesen |
+| `DashboardView` (Presentational) | "Wie sieht ein Dashboard für diese Daten aus?" — Statistiken ableiten, Layout zusammensetzen |
+
+**Wirkt sich eine Änderung auf die andere Hälfte aus?** **Nein** — solange der Vertrag
+(`DashboardViewProps`: `data: CaseData`, `bookmarkCount: number`) derselbe bleibt:
+
+| Änderung | Betrifft | Betrifft **nicht** |
+|---|---|---|
+| Daten kommen künftig aus einem Context, einer Bibliothek oder einer anderen API statt aus `useCaseData()` | nur `DashboardPage` (sie muss am Ende weiter `CaseData` liefern) | `DashboardView` — sie weiß gar nicht, dass es je `fetch` gab |
+| Bookmarks kommen aus React-State statt `localStorage` (UE5) | nur `DashboardPage` (eine Zeile) | `DashboardView` bekommt weiterhin einfach eine Zahl |
+| Layout ändert sich (Karten umsortiert, neues Panel) | nur `DashboardView` | `DashboardPage` — sie reicht dieselben Daten durch |
+| Der **Vertrag** ändert sich (z. B. `bookmarkCount` wird zu `bookmarks: string[]`) | **beide** — aber TypeScript meldet beide Stellen als Fehler, es bleibt nichts unbemerkt | — |
+
+**Warum die Trennung so wirkt:** die Grenze verläuft entlang der Frage "greift der Code auf die
+Außenwelt zu?". Alles, was sich ändern kann, weil sich **die Welt** ändert (Datenquelle, Speicherort),
+steckt auf einer Seite; alles, was sich ändert, weil sich **das Design** ändert, auf der anderen.
+Dazu kommt: `DashboardView` ist eine **reine Funktion** ihrer Props und lässt sich mit handgebauten
+Daten rendern — ohne Server, ohne `localStorage` (testbar, in einer Sandbox ausprobierbar).
+
+**Ehrliche Einschränkung:** die Hälften sind nicht völlig unabhängig, sondern über den Vertrag
+verbunden. Eine Aufteilung entfernt keine Abhängigkeit, sie macht sie **explizit und klein** (zwei
+Props statt "alles hängt an allem").
+
+### F2: Nenne eine konkrete Regel, mit der du entschieden hast: "das gehört in eine Presentational-Komponente" oder "das gehört in eine Feature-Komponente".
+
+**Einfach gesagt:** *"Greift der Code auf die Außenwelt zu — Netzwerk, Speicher, URL — oder macht er
+nur aus Props Markup?"* Außenwelt → Feature. Nur Props → Presentational.
+
+**Die Regel als Test:** *Könnte ich diese Komponente auf einer leeren Testseite mit handgebauten
+Props anzeigen — ohne Netzwerk, ohne `localStorage`, ohne URL?*
+
+| Antwort | Einordnung | Beispiel |
+|---|---|---|
+| **Ja** — braucht nur Props | Presentational | `PersonCard` (bekommt `person` + `evidenceCount`), `DashboardView` |
+| **Nein** — muss etwas von draußen holen oder lesen | Feature | `DashboardPage` (`fetch`, `localStorage`), `App` (liest den URL-Hash) |
+
+**Wie die Regel im Code sichtbar ist:** die Außenwelt kommt in React **über Hooks und Seiteneffekte**
+herein (`useState`/`useEffect`, `fetch`, `localStorage`, `window.location`). Faustregel daraus: **taucht
+einer dieser Zugriffe in einer Komponente auf, ist sie eine Feature-Komponente.** Bei uns kommt das
+ausschließlich in `App`, den drei Seiten und den Hooks vor.
+
+**Grenzfälle, und wie ich sie entscheide:** `NavButton` und `IntroCard` schreiben beim **Klick** den
+URL-Hash (`navigateTo`). Ich ordne sie als Presentational ein, weil der Zugriff nur im Event-Handler
+passiert und die **Ausgabe** nur von Props abhängt. Wenn man es strenger will, kann man stattdessen einen
+`onSelect`-Prop übergeben, und der Aufrufer entscheidet, was beim Klick passiert — dann wäre die
+Darstellung vollständig rein. Das ist eine Abwägung zwischen Strenge und Aufwand, bei dieser Größe
+reicht die lockere Variante.

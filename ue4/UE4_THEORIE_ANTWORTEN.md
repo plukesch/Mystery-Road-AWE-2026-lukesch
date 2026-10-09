@@ -118,3 +118,74 @@ beim nächsten Update gegen einen DOM-Baum arbeiten würde, den es nicht mehr ke
 **Der erlaubte Ausweg:** wenn man wirklich imperativ ans DOM muss (z. B. ein Eingabefeld
 fokussieren), nutzt man dafür von React vorgesehene Wege (`ref`, `useEffect`) — und fasst nur
 Knoten an, die React **nicht** selbst neu rendert.
+
+---
+
+## Demo 2 — Bedingtes Rendern
+
+Timeline als Beispiel-View gebaut (`TimelinePage`, `TimelineEventItem`, `CertaintyBadge`) mit vier
+Techniken: early return, ternary, `&&`, Lookup-Tabelle. Zwei geforderte Fälle: Leer-Zustand +
+zustandsabhängiges Certainty-Badge. Live gegen die vanilla-Timeline verglichen (15 Events, gleiche
+Reihenfolge/Badges/Orte). Details, Technik-Tabelle in `UE4_CHANGES.md`.
+
+### F1: Zeig eine Stelle, an der du `bedingung && <Komponente />` statt eines Ternary benutzt hast. Was würde schiefgehen, wenn `bedingung` eine Zahl wie `0` statt eines Booleans wäre — und gilt dieses Risiko für deinen echten Code?
+
+**Einfach gesagt:** `&&` ist ein "entweder zeigen oder gar nichts". Fällt die linke Seite auf die Zahl
+`0`, zeigt React aber **nicht nichts**, sondern ein nacktes **"0"** auf dem Bildschirm.
+
+**Die Stelle** (`src/components/TimelineEventItem.tsx`):
+
+```tsx
+{locationNames.length > 0 && (
+  <p className="evidence-meta">Location: {locationNames.join(", ")}</p>
+)}
+```
+
+**Warum `&&` hier und kein Ternary:** es gibt nur **einen** Fall, der etwas anzeigt. Ein Ternary
+müsste für "keine Orte" einen Else-Zweig haben — und der wäre nur `null`
+(`cond ? <p>…</p> : null`). `&&` spart genau diesen leeren Zweig.
+
+**Was mit `0` schiefgeht — der Mechanismus:** JavaScripts `&&` gibt **den linken Wert zurück**, wenn
+dieser "falsy" ist, nicht automatisch `false`:
+
+| Ausdruck | Ergebnis | Was React zeigt |
+|---|---|---|
+| `false && <p/>` | `false` | **nichts** (React blendet `false`, `null`, `undefined` aus) |
+| `0 && <p/>` | `0` | die Zahl **`0`** — Zahlen sind gültige Kinder und werden als Text gerendert |
+| `"" && <p/>` | `""` | nichts (leerer String ist unsichtbar) |
+
+Hätte ich `locationNames.length && (…)` geschrieben, würde ein Event mit leerer Orts-Liste statt
+einer fehlenden Zeile eine **sichtbare "0"** zeigen.
+
+**Gilt das für meinen echten Code?** Mit den **heutigen Daten nicht sichtbar:** ich habe
+`timeline.json` geprüft, **kein** Event hat leere `locationIds`. Das Risiko ist aber **latent** —
+sobald jemand ein Event ohne Ort einträgt, würde die Variante ohne Vergleich plötzlich eine "0"
+zeigen. Deshalb steht dort ausdrücklich `> 0`: der Vergleich liefert immer einen **Boolean**
+(`true`/`false`), nie eine Zahl. Faustregel: links von `&&` immer etwas, das **garantiert ein Boolean**
+ist (`> 0`, `=== …`, `Boolean(x)`, `!!x`), nie eine nackte Zahl.
+
+### F2: Warum könnte es besser sein, `null` aus einer Komponente zurückzugeben, statt eines leeren `<div>`? Hast du eines von beiden benutzt, und warum?
+
+**Einfach gesagt:** `null` heißt "ich zeige **nichts**" — es entsteht **kein** Element im DOM. Ein
+leeres `<div>` ist dagegen ein echtes Element: unsichtbar, aber **vorhanden**.
+
+**Warum `null` oft besser ist:**
+- **Layout:** ein leeres `<div>` ist im DOM — CSS kann darauf wirken: Abstände (`margin`, `padding`,
+  `gap` in Flex/Grid) bleiben stehen und erzeugen eine sichtbare Lücke, obwohl "nichts" da ist.
+  In unserem Raster (`.people-grid`, `.locations-grid`) würde ein leeres Element sogar eine
+  **leere Zelle** belegen.
+- **CSS-Selektoren:** `:empty`, `:first-child`, `:last-child` verhalten sich anders, wenn ein
+  Platzhalter-Element dazwischen steckt.
+- **Sauberkeit/Barrierefreiheit:** unnötige Knoten im DOM, die Screenreader-Struktur und
+  DevTools-Baum verstopfen.
+
+**Wann ein leeres Element doch richtig ist:** wenn die Stelle im Layout **stabil** bleiben soll
+(z. B. ein reservierter Platz, damit nichts springt) oder wenn man später per `ref` ein Element
+braucht, das schon da sein muss.
+
+**Was ich benutzt habe:** **keinen** leeren `<div>` irgendwo. Das `&&`-Muster aus F1 liefert bei
+"keine Orte" den Wert `false`, und React rendert `false` als **nichts** — im DOM entsteht kein
+Element, das Ergebnis ist also dasselbe wie bei `null`. Ein ausdrückliches `return null` aus einer
+Komponente war in Demo 2 noch nicht nötig (jede bisherige Komponente zeigt immer etwas). Wo es
+auftaucht, wäre es die richtige Wahl — z. B. eine Komponente, die nur dann etwas zeigen soll, wenn
+ein Wert vorhanden ist — und nicht `<div></div>`.

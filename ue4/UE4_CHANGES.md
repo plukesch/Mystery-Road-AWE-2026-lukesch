@@ -100,3 +100,84 @@ fängt das, bevor die Seite je geladen wird." Zeile wieder auskommentieren.
 
 **4. Im Browser**
 `/react.html#people` — sechs Personen, sechs Orte, Zähler sichtbar.
+
+---
+
+## Demo 2 — Bedingtes Rendern
+
+### 🔰 Einfach erklärt — worum geht's hier überhaupt?
+
+Oft soll die Oberfläche **je nach Situation** anders aussehen: eine Liste ist leer → Hinweistext
+statt Liste; ein Event ist "widersprüchlich" → rotes Badge statt grünes. In React gibt es dafür
+kein eigenes Spezial-Feature — man benutzt normales JavaScript **innerhalb** von JSX. Es gibt nur
+mehrere Werkzeuge dafür, und jedes passt zu einer anderen Situation.
+
+*Analogie:* wie eine Verkehrsampel-Steuerung mit mehreren Mitteln: ein **Schranken**
+(`early return` — wenn gesperrt, kommt gar nichts weiter), eine **Weiche** (`ternary` — genau zwei
+Gleise), ein **Zusatzlicht** (`&&` — entweder an oder gar nicht da), eine **Tabelle** (`lookup` —
+nachschlagen, welche Farbe zu welchem Zustand gehört).
+
+### Task — die Timeline als Beispiel-View (ersetzt den UE3-Platzhalter)
+
+Neu gebaut: `TimelinePage`, `TimelineEventItem`, `CertaintyBadge`, dazu die reinen Helfer in
+`src/lib/timeline.ts` (`resolveLocationNames`, `sortByTimeAscending`). Die View zeigt alle 15
+Events, aufsteigend nach Zeit (wie der vanilla-Default), mit Ortsnamen und Certainty-Badge.
+
+**Vier verschiedene Techniken, jede dort, wo sie passt:**
+
+| Technik | Wo im Code | Fall | Warum diese und keine andere |
+|---|---|---|---|
+| **Early return** | `TimelinePage.tsx` (loading / error) | Seite ist noch nicht bereit | Zwei **Sonderfälle**, nach denen der Rest der Funktion gar nicht mehr gebraucht wird. Alles danach darf davon ausgehen, dass `data` da ist — ohne jedes Mal `data?.…` |
+| **Ternary** (`? :`) | `TimelinePage.tsx` (Leer-Zustand) | `events.length === 0` → Hinweistext, sonst die Liste | **Genau zwei** Fälle, **beide** liefern etwas Anzuzeigendes. Ein ternary ist ein `if/else`, das einen Wert ergibt |
+| **`&&`** | `TimelineEventItem.tsx` (Ortszeile) | Ortszeile nur zeigen, wenn es Orte gibt | Es gibt **nur einen** Fall (da / nicht da) — der Else-Zweig wäre `null`. `&&` spart das |
+| **Lookup / Mapping** | `CertaintyBadge.tsx` | `confirmed → reviewed`, `reported → flagged`, `contradictory → critical` | **Drei** Zustände → eine Tabelle ist lesbarer als eine verschachtelte Ternary-Kette. Mit `Record<Certainty, string>` erzwingt der Compiler zusätzlich, dass **kein** Fall vergessen wird |
+
+**Die zwei geforderten Fälle:**
+
+1. **Leer-Zustand:** `TimelinePage`: `events.length === 0 ? <p>No timeline events match…</p> : events.map(…)`.
+   Mit den heutigen Daten kommt er nie vor (immer 15 Events). Er wird in Demo 10 real, wenn ein
+   `?person=…`-Filter eine Person ohne Events auswählen kann.
+2. **Zustandsabhängiger Stil/Label:** das Certainty-Badge (`CertaintyBadge`) **und** die
+   CSS-Klasse `certainty-${event.certainty}` am Event selbst — `.certainty-contradictory` färbt den
+   Zeitstrahl-Punkt rot (`styles.css`).
+
+**Bewusst noch nicht verdrahtet:** die "View E04"-Buttons sind sichtbar, tun aber noch nichts —
+in vanilla öffnen sie ein Modal (braucht State, UE5). Das gleiche Prinzip wie bei den Filter-
+Dropdowns: "visuell komplett, funktional erst später".
+
+**Aliasing-Lehre aus UE1 angewendet:** `sortByTimeAscending` sortiert eine **Kopie**
+(`[...events].sort(…)`), nicht das Original-Array — ein In-Place-Sort wäre genau der UE1-Demo-2-Bug.
+
+### Verifikation
+
+- `npm run typecheck` → 0 Fehler, `npm run format:check` → sauber.
+- Live: `/react.html#timeline` zeigt 15 Events, Konsole leer.
+- **Direkt gegen vanilla verglichen** (`/#timeline`): gleiche 15 Titel in gleicher Reihenfolge,
+  identische Badge-Klassen (`badge-reviewed` ×12, `badge-flagged` ×2, `badge-critical` ×1), identische
+  Ortsnamen pro Event.
+- Das rote Event ist das einzige `contradictory` (Position 7, "The dashboard label defect is
+  observed") — nur dort bekommt der Zeitstrahl-Punkt die rote Variante.
+- Daten geprüft: **kein** Event hat leere `locationIds` (relevant für Theorie-F1: die `0`-Falle
+  würde mit den heutigen Daten nicht sichtbar, ist aber latent da).
+
+### 🎤 Live-Demo — was du im Unterricht herzeigst
+
+**1. Die vier Techniken an einem Bildschirm zeigen**
+`TimelinePage.tsx` und `TimelineEventItem.tsx` nebeneinander. Auf die vier Stellen zeigen
+(early return, ternary, `&&`, Lookup in `CertaintyBadge.tsx`) und je **einen Satz** sagen, warum
+genau diese Technik.
+
+**2. Das rote Event live zeigen**
+`/react.html#timeline` öffnen, zum 7. Event scrollen: rotes Badge "contradictory", roter Punkt am
+Zeitstrahl. "Alle anderen sind grün/gelb — das entscheidet die Tabelle in `CertaintyBadge`."
+
+**3. Den Compiler-Schutz der Tabelle zeigen**
+In `src/components/CertaintyBadge.tsx` eine Zeile aus `BADGE_VARIANT` löschen (z. B. `reported`),
+```bash
+npm run typecheck
+```
+→ Fehler: `Property 'reported' is missing in type …`. Sag: "wenn ein Zustand vergessen wird,
+merkt es der Compiler — bei einer if-Kette würde es nie auffallen." Zeile wieder einfügen.
+
+**4. Die `0`-Falle erklären** (Theorie-F1) — in `TimelineEventItem.tsx` auf
+`locationNames.length > 0 &&` zeigen und das `> 0` erklären.

@@ -829,3 +829,124 @@ Dashboard. Sag: "dasselbe Verhalten wie vorher, aber die Adresse wird sogar korr
 
 **6. Den Link-Charakter zeigen:** Rechtsklick auf "Go to Timeline" → "In neuem Tab öffnen" geht (bei einem
 `<button>` ginge es nicht).
+
+---
+
+## Demo 9 — Route-Parameter
+
+### 🔰 Einfach erklärt — worum geht's hier überhaupt?
+
+Bisher hatte jede Route eine **feste** Adresse (`/team/people`, `/timeline`). Aber wenn es sechs Personen
+gibt, will man nicht sechs Routen von Hand anlegen. Eine **Parameter-Route** hat in der Adresse einen
+**Platzhalter**: `/team/people/:personId`. Der Router passt jede Adresse mit einem beliebigen Wort an dieser
+Stelle darauf, und die Komponente bekommt das Wort zu lesen.
+
+*Analogie:* wie eine Briefkasten-Adresse "Hauptstraße **:Hausnummer**". Es ist nicht für jedes Haus eine
+eigene Straße, sondern **eine** Straße, in der die Hausnummer sagt, welches gemeint ist. Der Postbote
+(Router) liest die Nummer und bringt dich zum richtigen Haus — gibt es die Nummer nicht, merkt **er** das
+nicht, sondern erst, wer an der Tür nachsieht.
+
+Das ist der letzte Satz, der wichtig wird (Theorie-F1).
+
+### Task 1 — Route mit Parameter: `/team/people/:personId`
+
+**Die Seite dahinter:** eine neue **Detailseite pro Person** (`PersonDetail`). Sie zeigt dieselbe
+Personen-Karte wie die Liste und darunter die **zugehörigen Beweisstücke** (ID, Titel, Status-Badge).
+Das ersetzt den "view"-Button der vanilla-App, der damals die Evidence-Liste nach der Person filterte — den
+ich in Demo 1 weglassen musste, weil die Evidence-Seite noch nicht existiert.
+
+| Datei | Änderung |
+|---|---|
+| `src/shared/routes.ts` | neu: `ROUTES.personDetail` = `"/team/people/:personId"` (das **Muster**) und `personPath(id)` (baut daraus einen echten Link, kodiert die ID) |
+| `src/app/PageRouter.tsx` | neue Route `ROUTES.personDetail` als Kind von `/team` (Tab-Leiste und geladene Daten bleiben erhalten) |
+| `src/features/people-locations/PersonDetail.tsx` | **neu**: liest die ID mit `useParams()`, sucht die Person, zeigt Karte + Evidence-Liste, oder eine "nicht gefunden"-Meldung |
+| `…/personEvidence.ts` | (vorher `countEvidence.ts`) liefert jetzt die **Liste** der Beweisstücke statt nur der Anzahl; der Zähler auf der Karte ist `.length` derselben Liste |
+
+**Wie die Komponente den Parameter benutzt:**
+
+```tsx
+const { personId } = useParams();                       // string | undefined
+const person = people.find((p) => p.id === personId);   // undefined, wenn es die ID nicht gibt
+if (!person) { return <p>There is no person with the id “{personId}”.</p> … }
+```
+
+### Task 2 — Links auf die Parameter-Route (nicht von Hand tippen)
+
+| Stelle | Link |
+|---|---|
+| **"view" an jeder Personen-Karte** (`PersonCard`, Liste unter `/team/people`) | `<Link to={personPath(person.id)}>` → z. B. `#/team/people/nova-byte` |
+| "← Back to all people" auf der Detailseite (und in der Fehlermeldung) | zurück auf `/team/people` |
+
+`PersonCard` hat dafür **einen** neuen, optionalen Prop `detailTo`. Optional, weil dieselbe Karte **auch auf
+der Detailseite selbst** steht — ein Link "auf sich selbst" wäre sinnlos. Dort wird `detailTo` einfach nicht
+übergeben.
+
+### Eine weitere Anwendung der Demo-6-Regel: `StatusBadge` zieht um
+
+Die Detailseite zeigt den Status der Beweisstücke mit demselben `StatusBadge`, den das Dashboard schon hatte.
+Der lag in `features/dashboard/` — ein zweites Feature (`people-locations`) darf aber **nicht** aus einem
+anderen Feature importieren (Regel aus Demo 6). Der zweite Nutzer ist die Regel, nach `shared/` zu ziehen.
+Passiert (`git mv`). Die Abhängigkeitsrichtung wurde danach erneut mechanisch geprüft: keine Verstöße.
+
+### Verifikation
+
+**Live im Browser:**
+
+| Test | Ergebnis |
+|---|---|
+| Liste `/team/people` | 6 "view"-Links mit den richtigen Zielen (`#/team/people/signal-scholar` … `root-harbor`); Zähler unverändert 3 / 4 / 5 / 4 / 4 / 5 |
+| Klick "view" bei Nova Byte | `#/team/people/nova-byte`, **eine** Karte, "5 related evidence items", darunter **5** Beweisstücke: E04, E05, E06, E17, E18 |
+| Die Detail-Liste enthält **E04** | genau den Eintrag, in dem statt der ID der **Anzeigename** "Nova Byte" steht (UE2 Demo 6) — `personEvidence.ts` prüft beides |
+| Auf der Detailseite | **kein** "view"-Link (`detailTo` fehlt), Tab "People" und "People & Locations" in der Nav aktiv |
+| "Zurück" von der Detailseite | zurück in die Liste (6 Karten) |
+| **Unbekannte ID** `…/does-not-exist` | Meldung "There is no person with the id “does-not-exist”.", Link zurück; die Tab-Leiste bleibt sichtbar |
+| `…/Nova-Byte` (falsche Schreibweise) | ebenfalls "nicht gefunden" — der Vergleich ist exakt |
+| **Query-Variante** `…/team/people?person=nova-byte` | kein Fehler, aber **alle 6 Personen** — der Parameter wird gar nicht gelesen (Grundlage für Theorie-F2) |
+| ID mit HTML-Zeichen `…/%3Cb%3Ex%3C%2Fb%3E` | erscheint als **Text** `“<b>x</b>”`, es entsteht **0** `<b>`-Element |
+| Konsole | keine neuen Fehler |
+
+**Optik:** der "view"-Link (vorher ein `<button>`) ist jetzt ein `<a>`. Gemessen vor der Angleichung:
+18 px statt 15 px hoch, Seitenschrift statt Arial. Mit einer CSS-Regel (`a.evidence-count-link`) ist er jetzt
+**identisch zu vanilla** (27,5 × 15 px, Arial, unterstrichen, gleiche Farbe), und die Personen-Karte ist in
+beiden Apps **497 px** hoch.
+
+**Compiler-Beleg** (absichtlich `personId.length` ohne Prüfung geschrieben, danach zurückgesetzt):
+
+```
+src/features/people-locations/PersonDetail.tsx:19:18 - error TS18048: 'personId' is possibly 'undefined'.
+```
+
+**Ehrlich zu zwei Dingen, die ich bemerkt, aber nicht angefasst habe:**
+
+- Die Zeile "ID — Titel — Status-Badge" für ein Beweisstück steht jetzt an **zwei** Stellen (Dashboard
+  `RecentEvidenceList` und `PersonDetail`) fast identisch. Kandidat für Demo 10, Frage 3.
+- Der Lade-/Fehler-Block (`useCaseData` + zwei frühe Returns) steckt weiter dreimal in den Feature-Seiten.
+
+- **Nach dem Umbau ausgeführt:** `npm run typecheck` → 0 Fehler, `npm run format:check` → sauber,
+  `npm run build` → grün (138 Module). Bundle: `react-*.js` 269,88 KB (gzip 85,08 KB) gegenüber 268,77 KB
+  (gzip 84,84 KB) in Demo 8, also **+1,1 KB** für eine ganze neue Seite samt Route: der Preis liegt beim
+  Router (Demo 8), nicht bei weiteren Routen.
+
+### 🎤 Live-Demo — was du im Unterricht herzeigst
+
+**1. Die Liste mit den Links:** `/react.html#/team/people`. Mit der Maus über "view" fahren — unten im Browser
+erscheint die Adresse (`…#/team/people/nova-byte`). Sag: "jeder Link ist eine echte Adresse."
+
+**2. Die Detailseite:** auf "view" bei Nova Byte klicken. Zeigen: **5 Beweisstücke**, darunter E04. Sag:
+"E04 enthält den **Namen** statt der ID — die Funktion prüft beides."
+
+**3. Den Parameter in der Adresse zeigen:** in der Adressleiste `nova-byte` durch `kernel-colt` ersetzen, Enter →
+andere Person. Sag: "**eine** Route, sechs Personen — das Wort in der Adresse ist der Parameter."
+
+**4. Den Fehlerfall:** `nova-byte` durch `irgendwer` ersetzen → "There is no person with the id …". Sag: "der
+Router hat die Adresse akzeptiert, denn sie passt auf das Muster — nur die **Daten** passen nicht. Das fängt
+**unser** Code ab, nicht der Router."
+
+**5. Den Compiler zeigen:** in `PersonDetail.tsx` `const kaputt = personId.length;` einfügen,
+```bash
+npm run typecheck
+```
+→ `'personId' is possibly 'undefined'`. Zeile wieder entfernen.
+
+**6. Route- vs. Query-Parameter:** `…#/team/people?person=nova-byte` aufrufen → alle 6 Personen. Sag: "das
+Fragezeichen-Zeug wird ignoriert, weil die Seite es nicht liest — so unterscheiden sich die beiden Arten."

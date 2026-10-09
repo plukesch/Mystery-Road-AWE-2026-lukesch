@@ -1,3 +1,4 @@
+import { Link } from "react-router";
 import type { Person } from "../../../js/types";
 import { Card } from "./Card";
 import { BulletList } from "./BulletList";
@@ -5,13 +6,17 @@ import { BulletList } from "./BulletList";
 interface PersonCardProps {
   person: Person;
   evidenceCount: number;
+  // ue4 demo 9: ziel des "view"-links. optional, weil dieselbe karte AUCH auf
+  // der detailseite selbst steht - dort waere ein link "auf sich selbst" sinnlos.
+  detailTo?: string;
 }
 
 // spiegelbild eines einzelnen person-cards aus renderPeople() (js/views/people.ts).
-// der "view"-button der vanilla-version fehlt bewusst: er filtert die
-// evidence-liste und navigiert dorthin - beides braucht interaktivitaet bzw. die
-// noch nicht migrierte evidence-seite (ue5). nur der zaehler bleibt.
-export function PersonCard({ person, evidenceCount }: PersonCardProps) {
+// der "view"-button der vanilla-version filterte die evidence-liste und
+// navigierte dorthin (braucht die noch nicht migrierte evidence-seite, ue5).
+// ersatz ab demo 9: "view" ist ein link auf die person-detailseite, die die
+// zugehoerigen beweisstuecke selbst auflistet.
+export function PersonCard({ person, evidenceCount, detailTo }: PersonCardProps) {
   return (
     <Card variant="person">
       <div className="person-card-header">
@@ -28,6 +33,17 @@ export function PersonCard({ person, evidenceCount }: PersonCardProps) {
       <div className="person-statement">&ldquo;{person.statement}&rdquo;</div>
       <p>
         {evidenceCount} related evidence item{evidenceCount === 1 ? "" : "s"}
+        {/* "&&" mit einem STRING links: bei "" (leer) rendert React nichts - die
+            0-falle aus demo 2 betrifft nur Zahlen. */}
+        {detailTo && (
+          <>
+            {" "}
+            &mdash;{" "}
+            <Link className="evidence-count-link" to={detailTo}>
+              view
+            </Link>
+          </>
+        )}
       </p>
     </Card>
   );

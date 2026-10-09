@@ -8,15 +8,17 @@ src/
   main.tsx                    Einstiegspunkt (mountet <App /> in einem HashRouter)
   app/                        die Shell: App, PageRouter (Routen-Tabelle), Header, NavBar
   features/
-    dashboard/                DashboardPage, DashboardView, IntroCard, StatCard, StatusBadge, ... , bookmarks.ts
-    people-locations/         TeamLayout, PeopleTab, LocationsTab, PersonCard, LocationCard, Card, BulletList, countEvidence.ts
+    dashboard/                DashboardPage, DashboardView, IntroCard, StatCard, ... , bookmarks.ts
+    people-locations/         TeamLayout, PeopleTab, PersonDetail, LocationsTab, PersonCard, LocationCard, Card,
+                              BulletList, personEvidence.ts
     timeline/                 TimelinePage, TimelineEventItem, CertaintyBadge, timelineHelpers.ts
     evidence/                 Platzhalter (Migration in UE5)
     workspace/                Platzhalter (Migration in UE5)
   shared/                     nur, was von mehreren Stellen benutzt wird
     useCaseData.ts            Daten-Hook (Dashboard, People, Timeline)
-    routes.ts                 ROUTES: alle URL-Pfade an einer Stelle (Shell + Dashboard + People)
+    routes.ts                 ROUTES (alle URL-Pfade) und personPath() (Shell + Dashboard + People)
     Badge.tsx                 wiederverwendbarer Badge (Timeline + Dashboard, 3 Stellen)
+    StatusBadge.tsx           Status -> Badge-Variante (Dashboard + People-Detailseite)
   sandbox/                    Wegwerf-Beispiele (key-demo.html), nicht Teil der App
 ```
 
@@ -36,8 +38,11 @@ Beispiele aus dieser Struktur:
   obwohl sie generisch wirken.
 - `shared/Badge.tsx` wird in zwei Features an drei Stellen benutzt (`CertaintyBadge`, `StatusBadge`,
   `CaseSummaryCard`): shared. Es kam erst nach `shared/`, als der zweite Nutzer wirklich existierte.
-- `timeline/CertaintyBadge.tsx` und `dashboard/StatusBadge.tsx` sind dünne Fach-Wrapper um `Badge` (sie
-  übersetzen "Certainty" bzw. "Status" in eine Variante) und haben je genau einen Nutzer: lokal.
+- `timeline/CertaintyBadge.tsx` ist ein dünner Fach-Wrapper um `Badge` (übersetzt "Certainty" in eine Variante)
+  mit genau einem Nutzer: lokal.
+- `shared/StatusBadge.tsx` (derselbe Wrapper für "Status") lag zuerst in `dashboard/` und zog in Demo 9 nach
+  `shared/` um, als die Person-Detailseite (People) ihn ebenfalls brauchte. Ein Beispiel für die Regel "zieht
+  um, sobald ein zweiter Nutzer da ist".
 
 ## Abhängigkeitsrichtung
 
@@ -57,8 +62,11 @@ Mechanisch prüfbar mit einer Textsuche über die `import`-Zeilen (siehe `ue4/UE
   statischer Host ohne Rewrite-Regeln, und die Assets laden relativ zu `react.html`.
 - Die Routen-Tabelle steht in `app/PageRouter.tsx`, die Pfade selbst in `shared/routes.ts`.
 - Verschachtelte Route: `/team` ist das Layout (`TeamLayout`: Überschrift, Tab-Leiste, lädt die Daten
-  einmal), `/team/people` und `/team/locations` füllen dessen `<Outlet />` und lesen die Daten über den
-  Outlet-Context.
+  einmal), `/team/people`, `/team/people/:personId` und `/team/locations` füllen dessen `<Outlet />` und lesen
+  die Daten über den Outlet-Context.
+- Route mit Parameter: `/team/people/:personId`. `PersonDetail` liest die ID mit `useParams()` (Typ
+  `string | undefined`) und sucht die Person in den Daten; eine unbekannte ID zeigt eine eigene
+  "nicht gefunden"-Meldung. Links darauf baut `personPath(id)` (kodiert die ID für die URL).
 - Unbekannte URLs leiten per `<Navigate replace>` auf das Dashboard um.
 
 ## Innerhalb eines Features

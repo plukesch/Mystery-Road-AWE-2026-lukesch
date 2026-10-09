@@ -640,3 +640,95 @@ Ziel der Migration **Verhaltens-Parität**. Ein Router ermöglicht aber beides, 
 kommentarlos auf dem Dashboard. Für eine Fallakte mit fünf Ansichten ist das vertretbar; bei vielen
 verschickten Detail-Links (Demo 9: `/team/people/:personId`) wäre eine eigene "nicht gefunden"-Meldung
 besser — und Demo 9 braucht sie ohnehin für ungültige IDs.
+
+---
+
+## Demo 9 — Route-Parameter
+
+Route `/team/people/:personId` mit Detailseite `PersonDetail` gebaut (Karte + zugehörige Beweisstücke),
+"view"-Links an jeder Personen-Karte, unbekannte IDs mit eigener Meldung abgefangen. Alles live getestet,
+inklusive Randfällen, plus ein echter Compiler-Fehler als Beleg. Details in `UE4_CHANGES.md`.
+
+### F1: Wie liest du den Wert eines Route-Parameters in deiner Komponente, und welchen Typ hat er für TypeScript standardmäßig? Was musstest du tun, um ihn sicher zu benutzen (z. B. wenn die ID in der URL zu keiner echten Person passt)?
+
+**Einfach gesagt:** `useParams()` gibt ihn mir, aber **immer als `string | undefined`** — der Router kann
+nicht wissen, ob die URL wirklich eine gültige ID enthält. Sicher benutzen heißt: **beide** Fälle behandeln,
+"fehlt" **und** "gibt es nicht".
+
+**Wie man ihn liest:**
+
+```tsx
+const { personId } = useParams();   // personId: string | undefined
+```
+
+**Der Typ:** `useParams()` liefert ein Objekt, in dem **jeder** Parameter `string | undefined` ist. Zwei Gründe:
+die URL kommt vom Nutzer (er kann sie beliebig tippen), und der Router prüft zur Compile-Zeit nicht, ob die
+Komponente auch wirklich unter einer Route mit diesem Parameter hängt. Außerdem ist es immer ein **String** —
+auch bei `/orders/42` wäre `42` ein Text und müsste bei Bedarf in eine Zahl umgewandelt (und auf `NaN` geprüft)
+werden.
+
+**Echter Compiler-Beleg:** ich habe absichtlich `personId.length` ohne Prüfung geschrieben:
+
+```
+src/features/people-locations/PersonDetail.tsx:19:18 - error TS18048: 'personId' is possibly 'undefined'.
+```
+
+**Es gibt zwei verschiedene Fehlerfälle — und nur einen davon fängt der Compiler:**
+
+| Fall | Wer merkt es | Wie ich damit umgehe |
+|---|---|---|
+| Der Parameter ist `undefined` (Typ-Ebene) | **TypeScript** (Fehler oben) | `find(...)` mit `personId` ist erlaubt, ein Vergleich mit `undefined` findet einfach nichts — der Fall ist durch den nächsten mitabgedeckt |
+| Der Parameter ist ein String, aber **gehört zu keiner Person** (`/team/people/does-not-exist`) | **niemand automatisch** — die URL passt zum Muster, der Router ist zufrieden | `people.find(...)` liefert `undefined` → `if (!person)` zeigt eine eigene Meldung |
+
+Der zweite Fall ist der eigentliche, und er ist **nicht** durch Typen lösbar: die ID kommt zur Laufzeit, aus
+der Adresszeile. Genau wie schon bei den JSON-Daten (UE2 Demo 6 F2) gilt: **TypeScript prüft Code, nicht Daten
+von draußen.** Deshalb gibt es `if (!person)`.
+
+**Weitere Dinge, die ich geprüft habe** (live):
+
+| Prüfung | Ergebnis |
+|---|---|
+| Unbekannte ID `does-not-exist` | Meldung + Link zurück, die Tab-Leiste bleibt sichtbar |
+| Falsche Schreibweise `Nova-Byte` | ebenfalls "nicht gefunden" — der Vergleich ist **exakt**, die ID ist ein Slug in Kleinbuchstaben |
+| ID mit HTML-Zeichen (`<b>x</b>`, URL-kodiert) | wird als **Text** ausgegeben, **0** `<b>`-Elemente — React maskiert `{personId}`, die vom Nutzer kontrollierte Adresse kann kein Markup einschleusen |
+| Links bauen | `personPath()` kodiert die ID mit `encodeURIComponent`, damit Sonderzeichen die Route nicht zerreißen; `useParams()` dekodiert sie beim Lesen wieder |
+
+**Warum die Meldung im Layout steht (nicht als eigene Seite):** die Detailseite ist ein **Kind** von `/team`.
+Bei einer unbekannten ID bleibt die Tab-Leiste stehen, und der Nutzer kommt mit einem Klick zurück in die
+Liste. Das war auch die Lehre aus Demo 8 F2: ein kommentarloses Zurückspringen aufs Dashboard wäre hier
+schlechter.
+
+### F2: Was ist für die Nutzer:in der praktische Unterschied zwischen `/team/people/nova-byte` (Route-Parameter) und `/team/people?person=nova-byte` (Query-Parameter)? Warum passt für diesen konkreten Fall das eine besser?
+
+**Einfach gesagt:** der **Pfad** sagt, **welche Seite** gemeint ist ("die Seite über Nova Byte"). Die
+**Query** sagt, **wie** eine Seite angezeigt werden soll ("die Personen-Liste, aber mit diesem Filter").
+Hier geht es um die **Seite über eine Person** — also Pfad.
+
+| | Route-Parameter `/team/people/nova-byte` | Query-Parameter `/team/people?person=nova-byte` |
+|---|---|---|
+| Was es ausdrückt | **Identität**: *welches* Ding diese Seite zeigt | **Option**: *wie* dieselbe Seite angezeigt wird (Filter, Sortierung, Suche) |
+| Pflicht? | **ja** — ohne ihn ist es eine andere Seite (die Liste) | **nein** — ohne ihn gilt ein Standardwert ("alle") |
+| Wie viele sinnvoll? | genau einer pro Position | beliebig viele kombinierbar (`?person=a&sort=name`) |
+| Eigener Inhalt? | ja: eigene Seite mit eigenen Inhalten (Karte + zugehörige Beweisstücke) | nein: dieselbe Seite, anders gefiltert |
+| Ungültiger Wert | ein **Fehler** der Adresse → "nicht gefunden" (live: `…/does-not-exist`) | wird meist **ignoriert** oder fällt auf den Standard zurück |
+| Live gemessen | `…/people/nova-byte` → **1** Karte + 5 Beweisstücke | `…/people?person=nova-byte` → **alle 6** Personen (die Seite liest den Parameter gar nicht) |
+
+**Was die Nutzer:in praktisch davon hat:**
+
+- **Der Pfad ist eine Adresse für ein Ding.** Man kann ihn verschicken, speichern und sieht an der Adresse,
+  was man bekommt ("…/nova-byte"). Er passt in die Hierarchie "Team → Personen → eine Person" und lässt sich
+  als Brotkrumen-Navigation lesen.
+- **Die Query ist eine Einstellung.** Ein Link `…?person=nova-byte` sagt "wie die Liste, nur mit einer
+  Voreinstellung". Zurück zur ungefilterten Liste ist **dieselbe** Adresse ohne Query.
+
+**Warum hier der Route-Parameter:** die Detailseite einer Person ist **keine gefilterte Liste**, sondern eine
+eigene Ansicht — mit anderem Layout (eine Karte statt sechs) und eigenem Inhalt (die zugehörigen
+Beweisstücke). Die Person ist **Pflicht** für diese Ansicht, nicht optional. Das ist genau das Kriterium für
+einen Pfad-Parameter: *"würde ohne diesen Wert eine andere Seite erscheinen?"* — ja.
+
+**Der Gegenfall — wo die Query richtig ist:** die **Timeline** (Demo 10). Dort ist `…/timeline?person=nova-byte`
+weiterhin "die Timeline", nur mit einer **vorausgewählten Person** — es gibt sie auch ohne (dann zeigt sie
+alle), und man könnte einen zweiten Filter ergänzen (`&type=access-log`). Dort wäre ein Pfad-Parameter
+falsch: ohne `/nova-byte` bliebe eine gültige Seite übrig, nämlich die ganze Timeline.
+
+**Merksatz:** *Pfad = **was**. Query = **wie**.*

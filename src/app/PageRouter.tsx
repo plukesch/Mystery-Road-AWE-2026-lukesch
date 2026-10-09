@@ -4,6 +4,7 @@ import { DashboardPage } from "../features/dashboard/DashboardPage";
 import { EvidencePage } from "../features/evidence/EvidencePage";
 import { TeamLayout } from "../features/people-locations/TeamLayout";
 import { PeopleTab } from "../features/people-locations/PeopleTab";
+import { PersonDetail } from "../features/people-locations/PersonDetail";
 import { LocationsTab } from "../features/people-locations/LocationsTab";
 import { TimelinePage } from "../features/timeline/TimelinePage";
 import { WorkspacePage } from "../features/workspace/WorkspacePage";
@@ -24,6 +25,10 @@ export function PageRouter() {
             historie, "zurueck" springt also nicht in eine leere zwischenseite. */}
         <Route index element={<Navigate to={ROUTES.people} replace />} />
         <Route path={ROUTES.people} element={<PeopleTab />} />
+        {/* ue4 demo 9: route MIT parameter. ":personId" passt auf ein beliebiges
+            url-segment (/team/people/nova-byte); der wert steht in der
+            komponente per useParams() zur verfuegung. */}
+        <Route path={ROUTES.personDetail} element={<PersonDetail />} />
         <Route path={ROUTES.locations} element={<LocationsTab />} />
       </Route>
       <Route path={ROUTES.timeline} element={<TimelinePage />} />

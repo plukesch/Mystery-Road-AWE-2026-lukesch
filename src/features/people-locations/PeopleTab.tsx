@@ -1,6 +1,7 @@
 import { useOutletContext } from "react-router";
 import type { CaseData } from "../../shared/useCaseData";
-import { countEvidenceForPerson } from "./countEvidence";
+import { personPath } from "../../shared/routes";
+import { evidenceMentioningPerson } from "./personEvidence";
 import { PersonCard } from "./PersonCard";
 
 // inhalt der route /team/people. die daten kommen aus dem Outlet-context des
@@ -14,7 +15,8 @@ export function PeopleTab() {
         <PersonCard
           key={person.id}
           person={person}
-          evidenceCount={countEvidenceForPerson(evidence, person)}
+          evidenceCount={evidenceMentioningPerson(evidence, person).length}
+          detailTo={personPath(person.id)}
         />
       ))}
     </div>

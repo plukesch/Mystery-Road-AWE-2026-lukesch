@@ -1,5 +1,5 @@
 import type { Evidence } from "../../../js/types";
-import { StatusBadge } from "./StatusBadge";
+import { StatusBadge } from "../../shared/StatusBadge";
 
 interface RecentEvidenceListProps {
   items: Evidence[];

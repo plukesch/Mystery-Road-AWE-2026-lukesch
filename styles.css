@@ -880,3 +880,13 @@ a.tab-btn {
 a.tab-btn.active {
   color: #fff;
 }
+
+/* ue4 demo 9: der "view"-link an den personen-karten (vorher ein <button>).
+   .evidence-count-link bringt die unterstreichung und farbe schon mit - hier
+   nur die schrift/zeilenhoehe des buttons nachziehen (nicht text-decoration
+   entfernen wie oben, die unterstreichung soll bleiben). */
+a.evidence-count-link {
+  display: inline-block;
+  line-height: normal;
+  font-family: Arial, Helvetica, sans-serif;
+}

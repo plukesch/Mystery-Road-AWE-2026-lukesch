@@ -189,3 +189,49 @@ Element, das Ergebnis ist also dasselbe wie bei `null`. Ein ausdrückliches `ret
 Komponente war in Demo 2 noch nicht nötig (jede bisherige Komponente zeigt immer etwas). Wo es
 auftaucht, wäre es die richtige Wahl — z. B. eine Komponente, die nur dann etwas zeigen soll, wenn
 ein Wert vorhanden ist — und nicht `<div></div>`.
+
+---
+
+## Demo 3 — Collections rendern
+
+Personen, Orte und Timeline-Events als gemappte Collections mit stabilen `key`s (jeweils die ID aus
+den Daten) gerendert; alle `.map()`-Aufrufe in `src/` durchgesehen, Eindeutigkeit der Schlüssel in
+den echten JSON-Daten geprüft. Details, Tabellen in `UE4_CHANGES.md`.
+
+### F1: Wofür benutzt React den `key` intern eigentlich?
+
+**Einfach gesagt:** der `key` ist ein **Namensschild** pro Listenelement. React benutzt ihn, um
+beim nächsten Rendern zu erkennen: "dieser Eintrag ist **derselbe** wie vorhin" — und damit sein
+bestehendes Element **wiederzuverwenden**, statt es wegzuwerfen und neu zu bauen.
+
+**Der Mechanismus (Abgleich, "Reconciliation"):** nach jedem Render vergleicht React die neue
+Beschreibung mit der vorigen (virtueller DOM, UE3 Demo 3). Bei einer Liste muss es dafür jedes
+**neue** Kind einem **alten** zuordnen. Das geht über den `key`:
+
+| Situation beim Vergleich | Was React tut |
+|---|---|
+| gleicher `key` **und** gleicher Typ wie vorher | derselbe Eintrag → **bestehendes** DOM-Element/Komponente **wiederverwenden**, nur geänderte Props/Inhalte aktualisieren |
+| `key` ist **neu** | neuer Eintrag → Element **erzeugen** und einfügen |
+| alter `key` kommt **nicht mehr** vor | Eintrag entfernt → Element **entfernen** (und Komponente aufräumen) |
+| gleiche Keys in **anderer Reihenfolge** | Einträge sind nur umsortiert → vorhandene Elemente **verschieben** statt neu zu schreiben |
+
+**Warum das wichtig ist:** "wiederverwenden" heißt, dass alles, was an dem Element hängt, **erhalten
+bleibt** — der State der Komponente, der Fokus, getippter Text in einem Eingabefeld, die
+Scroll-Position, ein laufendes Bild-Laden. Wird ein Element stattdessen verworfen und neu
+gebaut, geht all das verloren (und die Arbeit des Browsers ist größer). Im Bookmark-Beispiel aus
+UE3 Demo 3 sorgt genau das dafür, dass nur **eine** Karte angefasst wird, nicht alle 18.
+
+**Regeln, die sich daraus ergeben:**
+- **Eindeutig unter Geschwistern** (innerhalb *einer* Liste) — nicht global. Zwei verschiedene
+  Listen dürfen dieselben Keys benutzen.
+- **Stabil** — derselbe Eintrag muss bei jedem Render denselben `key` haben. Deshalb **keine**
+  `Math.random()`-Keys (jeder Render = alle Einträge neu) und mit Vorsicht der Array-Index (Demo 4).
+- **Der `key` ist kein normales Prop.** Die Komponente kann ihn **nicht** lesen (`props.key` ist
+  `undefined`) — er ist ausschließlich für React selbst da. Braucht eine Komponente die ID,
+  übergibt man sie zusätzlich als eigenes Prop (z. B. `evidenceId`).
+- **Ohne `key`** warnt React in der Konsole und fällt auf den Array-Index als Zuordnung zurück —
+  was bei Listen, die sich ändern, falsch sein kann (genau das Thema von Demo 4).
+
+**Nebenbefund:** ändert man den `key` eines Elements, behandelt React es als **ein anderes Element**
+— altes wird entfernt, neues frisch gebaut. Das nutzt man gelegentlich absichtlich, um den
+State einer Komponente zurückzusetzen.

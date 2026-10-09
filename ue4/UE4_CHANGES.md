@@ -181,3 +181,82 @@ merkt es der Compiler — bei einer if-Kette würde es nie auffallen." Zeile wie
 
 **4. Die `0`-Falle erklären** (Theorie-F1) — in `TimelineEventItem.tsx` auf
 `locationNames.length > 0 &&` zeigen und das `> 0` erklären.
+
+---
+
+## Demo 3 — Collections rendern
+
+### 🔰 Einfach erklärt — worum geht's hier überhaupt?
+
+Fast jede Seite zeigt **Listen**: sechs Personen, sechs Orte, fünfzehn Events. In React schreibt man
+dafür **nicht** jede Karte einzeln hin, sondern beschreibt **eine** Karte und lässt sie für jedes
+Datenelement wiederholen — mit `.map()`. Dazu gehört immer ein `key`: ein "Namensschild" pro
+Element, damit React beim nächsten Rendern erkennt, **welcher** Eintrag welcher ist.
+
+*Analogie:* eine Klassenliste. Ohne Namen sagt man "der Dritte von links" — kommt jemand dazu oder
+wechselt den Platz, ist "der Dritte" plötzlich jemand anderes. Mit Namensschild (`key`) bleibt jeder
+eindeutig erkennbar, egal wo er sitzt.
+
+### Task — die drei Listen als gemappte Collections mit `key`
+
+Alle drei Listen sind gemappt (`.map()`) und haben einen eigenen, **stabilen** `key`:
+
+| Liste | Datei | `key` | Warum dieser Schlüssel |
+|---|---|---|---|
+| Personen (6) | `src/pages/PeoplePage.tsx` | `person.id` (`"kernel-colt"`, …) | feste, einmalige ID aus der Datenquelle |
+| Orte (6) | `src/pages/PeoplePage.tsx` | `location.id` (`"L01"`, …) | dito |
+| Timeline-Events (15) | `src/pages/TimelinePage.tsx` | `event.id` | dito |
+
+Die kleineren Listen **innerhalb** der Karten haben ebenfalls Keys (React warnt sonst):
+
+| Liste | Datei | `key` |
+|---|---|---|
+| Verantwortlichkeiten / "Contains" | `BulletList.tsx` | der Text (`item`) — innerhalb **einer** Liste eindeutig |
+| "View E04"-Buttons je Event | `TimelineEventItem.tsx` | `evidenceId` |
+| Nav-Buttons, "How to use"-Einträge | `NavBar.tsx`, `IntroCard.tsx` | `viewName` |
+| Letzte Beweisstücke/Events (Dashboard) | `RecentEvidenceList.tsx`, `RecentTimelineList.tsx` | `ev.id` / `evt.id` |
+
+**Nicht jedes `.map()` braucht einen `key`:** `resolveLocationNames` (`src/lib/timeline.ts`)
+mappt IDs zu **Strings**, nicht zu JSX — nur Listen aus **Elementen/Komponenten** brauchen Keys.
+
+### Verifikation
+
+- **Alle** `.map()`-Aufrufe in `src/` per Suche durchgegangen: jeder, der JSX liefert, hat einen
+  `key`.
+- **Eindeutigkeit in den echten Daten geprüft** (direkt aus `public/data/*.json`): keine doppelten
+  IDs bei Personen, Orten, Timeline-Events, Evidence; keine doppelten Texte in einer
+  `responsibilities`-/`contains`-Liste; keine doppelten `evidenceIds` pro Event. Heißt: jeder
+  Schlüssel ist innerhalb seiner Liste einmalig.
+- Beim Aufruf von `/react.html#people` und `#timeline` (Demo 1/2) kamen keine React-Warnungen in
+  der Konsole.
+- **Gegenprobe live gemacht:** in `PeoplePage.tsx` den `key={person.id}` testweise entfernt →
+  die Seite rendert weiterhin alle 6 Karten (**optisch kein Unterschied**), aber die Konsole meldet
+  (zweimal, wegen StrictMode):
+  ```
+  Each child in a list should have a unique "key" prop. See https://react.dev/link/warning-keys
+  Check the render method of `PeoplePage`.
+  ```
+  Danach `key` wieder eingesetzt, Seite erneut geladen: keine neue Warnung. Wichtig fürs Verstehen:
+  ein fehlender Key bricht **nichts sichtbar** — React warnt nur. Warum das trotzdem ein echtes
+  Problem ist, zeigt Demo 4.
+- Beobachtungs-Detail: React warnt nur beim **ersten** Rendern einer Liste. Wer die Warnung live
+  vorführen will, lädt die Seite auf `#dashboard` und wechselt dann zu `#people` — bei einem
+  Direktaufruf auf `#people` passiert der erste Render schon, bevor man in die Konsole schaut.
+
+### 🎤 Live-Demo — was du im Unterricht herzeigst
+
+**1. Eine Liste und ihren `key` zeigen**
+`src/pages/PeoplePage.tsx`: `people.map((person) => <PersonCard key={person.id} … />)`. Sag: "eine
+Karte beschrieben, sechsmal wiederholt — und jede trägt ihr Namensschild `person.id`."
+
+**2. Die Warnung bei fehlendem `key` zeigen**
+In `PeoplePage.tsx` `key={person.id}` kurz löschen und speichern. Dann `/react.html#dashboard`
+öffnen, Konsole (`F12`) aufmachen, **danach** auf "People & Locations" klicken. Die Konsole zeigt:
+`Each child in a list should have a unique "key" prop … Check the render method of PeoplePage.`
+Die Seite selbst sieht dabei **normal** aus. Zeile wieder einfügen. Sag: "React sagt von sich aus,
+dass ihm das Namensschild fehlt — sichtbar kaputt ist aber noch nichts."
+
+**3. Den Kern erklären**
+"Der `key` ist nicht für uns und nicht im HTML sichtbar — er ist für React: so erkennt es beim
+nächsten Rendern, welcher Eintrag derselbe geblieben ist." (Theorie-F1; Demo 4 zeigt, was passiert,
+wenn dieser Schlüssel falsch gewählt ist.)

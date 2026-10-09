@@ -11,12 +11,12 @@ src/
     dashboard/                DashboardPage, DashboardView, IntroCard, StatCard, ... , bookmarks.ts
     people-locations/         TeamLayout, PeopleTab, PersonDetail, LocationsTab, PersonCard, LocationCard, Card,
                               BulletList, personEvidence.ts
-    timeline/                 TimelinePage, TimelineEventItem, CertaintyBadge, timelineHelpers.ts
+    timeline/                 TimelinePage, TimelineToolbar, TimelineEventItem, CertaintyBadge, timelineHelpers.ts
     evidence/                 Platzhalter (Migration in UE5)
     workspace/                Platzhalter (Migration in UE5)
   shared/                     nur, was von mehreren Stellen benutzt wird
     useCaseData.ts            Daten-Hook (Dashboard, People, Timeline)
-    routes.ts                 ROUTES (alle URL-Pfade) und personPath() (Shell + Dashboard + People)
+    routes.ts                 ROUTES (alle URL-Pfade), personPath(), timelinePath() (Shell + Dashboard + People)
     Badge.tsx                 wiederverwendbarer Badge (Timeline + Dashboard, 3 Stellen)
     StatusBadge.tsx           Status -> Badge-Variante (Dashboard + People-Detailseite)
   sandbox/                    Wegwerf-Beispiele (key-demo.html), nicht Teil der App
@@ -67,6 +67,12 @@ Mechanisch prüfbar mit einer Textsuche über die `import`-Zeilen (siehe `ue4/UE
 - Route mit Parameter: `/team/people/:personId`. `PersonDetail` liest die ID mit `useParams()` (Typ
   `string | undefined`) und sucht die Person in den Daten; eine unbekannte ID zeigt eine eigene
   "nicht gefunden"-Meldung. Links darauf baut `personPath(id)` (kodiert die ID für die URL).
+- Query-Parameter: `/timeline?person=<id>`. `TimelinePage` liest ihn mit `useSearchParams()` (nur lesend) und
+  leitet die angezeigte Liste daraus ab; eine unbekannte oder leere Person wird ignoriert. Faustregel: **Pfad =
+  was** (Identität, Pflicht), **Query = wie** (Einstellung, optional). Link darauf: `timelinePath(id)`.
+- Zustand: die migrierten Komponenten haben **keinen** eigenen Zustand (`useState`/`useReducer`); der einzige
+  Zustand liegt in `shared/useCaseData.ts` (Lade-Zustand der Daten). Die URL ist die Quelle der Wahrheit für
+  alles andere. Interaktivität (kontrollierte Formulare, Filter) folgt in UE5.
 - Unbekannte URLs leiten per `<Navigate replace>` auf das Dashboard um.
 
 ## Innerhalb eines Features
@@ -88,4 +94,9 @@ Die React-Seite importiert aus `js/` nur `import type` (Typen) und **reine** Fun
   frühere handgebaute Hash-Routing (`useHashRoute`). Sie beschreibt den damaligen Stand und wurde nicht
   nachträglich geändert.
 - Der Lade-/Fehler-Block (`useCaseData` + zwei frühe Returns) steckt noch in drei Feature-Komponenten
-  (`DashboardPage`, `TeamLayout`, `TimelinePage`).
+  (`DashboardPage`, `TeamLayout`, `TimelinePage`). Bewusst nicht extrahiert: UE5 verschiebt das Laden in eine
+  gemeinsame Datenschicht, dann verschwinden die Kopien von selbst.
+- Die Zeile "ID — Titel — Status-Badge" für ein Beweisstück steht zweimal (`RecentEvidenceList`,
+  `PersonDetail`). Erst bei einem dritten Nutzer (Workspace, UE5) extrahieren.
+- Der Leer-Zustand der Timeline ("No timeline events match …") ist mit den heutigen Daten nicht erreichbar
+  (jede Person hat mindestens ein Event).

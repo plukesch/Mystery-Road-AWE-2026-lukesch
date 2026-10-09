@@ -24,3 +24,11 @@ export const ROUTES = {
 export function personPath(personId: string): string {
   return `${ROUTES.people}/${encodeURIComponent(personId)}`;
 }
+
+// ue4 demo 10: link auf die timeline, optional mit vorausgewaehlter person.
+// die person steht in der QUERY (?person=...), nicht im pfad: die timeline ist
+// auch ohne person eine gueltige seite (dann zeigt sie alle events). siehe
+// THEORIE_ANTWORTEN demo 9 F2 (pfad = was, query = wie).
+export function timelinePath(personId?: string): string {
+  return personId ? `${ROUTES.timeline}?person=${encodeURIComponent(personId)}` : ROUTES.timeline;
+}

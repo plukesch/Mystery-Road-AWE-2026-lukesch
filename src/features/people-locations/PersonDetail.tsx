@@ -6,7 +6,7 @@
 // ---------------------------------------------------------------------
 import { Link, useOutletContext, useParams } from "react-router";
 import type { CaseData } from "../../shared/useCaseData";
-import { ROUTES } from "../../shared/routes";
+import { ROUTES, timelinePath } from "../../shared/routes";
 import { StatusBadge } from "../../shared/StatusBadge";
 import { evidenceMentioningPerson } from "./personEvidence";
 import { PersonCard } from "./PersonCard";
@@ -40,6 +40,14 @@ export function PersonDetail() {
         <Link to={ROUTES.people}>&larr; Back to all people</Link>
       </p>
       <PersonCard person={person} evidenceCount={related.length} />
+      {/* ue4 demo 10: link auf die timeline mit vorausgewaehlter person
+          (/timeline?person=<id>) - die query ist eine EINSTELLUNG der timeline,
+          keine eigene seite (siehe demo 9 F2). */}
+      <p>
+        <Link to={timelinePath(person.id)}>
+          Show {person.name}&rsquo;s events on the timeline &rarr;
+        </Link>
+      </p>
       <h3>Related evidence</h3>
       {related.length === 0 ? (
         <p>No evidence mentions this person.</p>

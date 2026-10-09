@@ -732,3 +732,133 @@ alle), und man könnte einen zweiten Filter ergänzen (`&type=access-log`). Dort
 falsch: ohne `/nova-byte` bliebe eine gültige Seite übrig, nämlich die ganze Timeline.
 
 **Merksatz:** *Pfad = **was**. Query = **wie**.*
+
+---
+
+## Demo 10 — Query-Parameter als URL-Zustand + Abschluss der Migration
+
+Die Timeline liest `?person=<id>` aus der URL und bestimmt damit die Start-Liste (Dropdowns sichtbar, aber
+nicht verdrahtet); Parität mit der vanilla-Filterung für alle 6 Personen belegt. Abschluss-Check: alle drei
+Views per frisch geladener URL erreichbar, kein `innerHTML`/manuelles DOM, vollständiges Zustands-Inventar.
+Details in `UE4_CHANGES.md`.
+
+### F1: Warum ist es mit der Regel dieser Übung ("kein Zustand über das hinaus, was zum Rendern der Startansicht nötig ist") vereinbar, einen Query-Parameter einmal beim ersten Rendern zu lesen? Was würde die Grenze zu echter Interaktivität überschreiten, die erst in Übung 5 dran ist?
+
+**Einfach gesagt:** der Query-Parameter ist **kein Zustand der Komponente**, sondern eine **Eingabe von außen** —
+wie ein Prop. Die Seite speichert nichts, sie liest die Adresse und rechnet daraus die Liste. Zur
+Interaktivität wird es erst, wenn **die Nutzer:in etwas ändert und die Seite darauf reagiert**.
+
+**Warum es kein "Zustand" im Sinne der Regel ist:**
+
+| Merkmal | Echter Zustand (`useState`) | Query-Parameter |
+|---|---|---|
+| Wem gehört der Wert? | der Komponente | **der URL** (dem Router) |
+| Wird er von der Komponente verändert? | ja, über einen Setter | **nein** — es gibt keinen Setter, die Seite schreibt die URL nie |
+| Überlebt er einen Reload? | nein (weg) | **ja** — steht in der Adresse |
+| Ist er teilbar? | nein | **ja** — ein Link transportiert ihn |
+| Die Seite ist … | eine Funktion aus (Props, **Zustand**) | eine Funktion aus (URL, Daten) — **rein** |
+
+Das habe ich nicht nur behauptet, sondern mechanisch geprüft: das Inventar von `useState`/`useEffect`/
+`useReducer`/`useRef`/`useContext` in `src/` (ohne Sandbox) ergibt **genau einen** `useState` und **einen**
+`useEffect`, beide in `shared/useCaseData.ts` (Lade-Zustand der JSON-Daten, ohne den es nichts anzuzeigen
+gäbe). **Keine** Komponente hat Zustand. `TimelinePage` benutzt nur `useSearchParams()` und davon nur den
+lesenden Teil (`const [searchParams] = …`), nicht den Setter.
+
+**Eine ehrliche Präzisierung zu "einmal":** technisch wird der Parameter bei **jedem** Rendern neu gelesen —
+nicht nur beim ersten. Das ist unproblematisch (und sogar nötig), weil das Ergebnis **abgeleitet** und nicht
+**gespeichert** wird. Live getestet: ändert sich die URL von `?person=nova-byte` auf `?person=kernel-colt`,
+zieht die Liste mit. Nur die **unkontrollierten Dropdowns** (`defaultValue`) lesen den Wert wirklich nur einmal
+— deshalb das `key={selectedPersonId}` (ohne `key` zeigte das Dropdown nach dem Wechsel weiter "Nova Byte",
+während die Liste schon auf Kernel Colt gefiltert war; live nachgestellt).
+
+**Was die Grenze zu Interaktivität überschreitet** — alles, bei dem **Nutzer-Eingabe die Anzeige verändert**:
+
+| Würde dazukommen | Warum das schon "echte Interaktivität" ist |
+|---|---|
+| `onChange` an einem Dropdown | die Seite reagiert auf eine Eingabe |
+| `useState` / `useReducer` für die Auswahl | die Komponente **besitzt** jetzt einen veränderlichen Wert |
+| `setSearchParams(...)` | die Seite **schreibt** die URL (Zustand in der Adresse, aber veränderlich) |
+| **kontrollierte** Dropdowns (`value` + `onChange`) | die Eingabe fließt durch React |
+| mehrere Filter, die sich kombinieren (Person **und** Typ **und** Ort) | braucht gemeinsamen Zustand und eine Regel, wie sie zusammenspielen — typischerweise einen Reducer |
+
+**Der Test, den ich benutzt habe:** *"Ändert Nutzer-Eingabe, was die Seite zeigt?"* Live: im Dropdown "Root
+Harbor" gewählt → die Liste bleibt bei 1 Event, die Adresse bleibt unverändert. Das Dropdown ist **sichtbar,
+aber stumm** — genau die Linie, die UE4 zieht.
+
+### F2: Was müsstest du ergänzen, damit die Filter der Timeline *tatsächlich* filtern, wenn Nutzer:innen sie ändern? (Du musst es nicht bauen — nur das Konzept benennen.)
+
+**Einfach gesagt:** **Zustand plus Event-Handler** — die Dropdowns müssen "kontrollierte Komponenten" werden
+(`value` + `onChange`), und die gewählten Filter müssen irgendwo **gespeichert** werden, von wo aus die Liste
+sie liest.
+
+**Das Konzept in drei Teilen:**
+
+1. **Kontrollierte Komponenten:** statt `defaultValue` (der Browser verwaltet die Auswahl) ein `value`, das aus
+   dem Zustand kommt, plus ein `onChange`, der den Zustand aktualisiert. Dann steuert React die Auswahl, nicht
+   mehr der Browser.
+2. **Ein Ort für den Zustand — "State hochziehen" (Lifting State Up):** die vier Filter stehen heute **in der
+   Toolbar** (Dropdowns), aber die **Liste** weiter unten muss sie kennen. Der gemeinsame Besitzer ist
+   `TimelinePage`. Es gibt zwei vernünftige Orte dafür:
+
+   | Ort | Wie | Vorteil | Nachteil |
+   |---|---|---|---|
+   | **Die URL** | `onChange` → `setSearchParams({ person: … })` | **bleibt** die eine Quelle der Wahrheit, teilbar, "Zurück" geht, das `key`-Detail entfällt | jede Eingabe schreibt die Adresse |
+   | **Komponenten-Zustand** | `useState` bzw. bei vier Filtern `useReducer` | einfacher, kein URL-Rauschen | Auswahl nicht teilbar, nach Reload weg |
+
+   Meine Empfehlung wäre hier die **URL**, weil `?person=` schon da ist und die Teilbarkeit der ganze Sinn dieser
+   Demo war.
+3. **Die Filter-Logik erweitern:** heute gibt es nur `filterByPerson()`. Es fehlen die drei Gegenstücke
+   (Ort: `locationIds.includes`, Typ: `event.type === …`, Reihenfolge: auf-/absteigend sortieren) und eine Stelle,
+   die sie **zusammensetzt** (z. B. `applyFilters(events, filters)`).
+
+**Was schon da ist und was fehlt:**
+
+| Schon vorhanden | Fehlt |
+|---|---|
+| die Toolbar mit allen vier Dropdowns | `onChange`-Handler |
+| `filterByPerson()` + die Ableitung der Liste aus der URL | Zustand für **Ort, Typ, Reihenfolge** |
+| `selectedPersonId` als eine Quelle der Wahrheit | `value` statt `defaultValue` an den Dropdowns |
+| `sortByTimeAscending()` | absteigende Reihenfolge, `filterByLocation`, `filterByType` |
+
+Das ist inhaltlich der Stoff von **Übung 5**: kontrollierte Formulare, `useState`, ein Reducer.
+
+### F3: Welches Stück duplizierte Logik oder doppeltes Markup ist dir über die 3 migrierten Views aufgefallen, das du aber noch nicht extrahiert hast? Warum nicht, und würdest du es mit mehr Zeit tun?
+
+**Einfach gesagt:** der **Lade-/Fehler-Block** steht **dreimal fast identisch** in den drei Feature-Seiten. Ich
+habe ihn bewusst nicht extrahiert, weil UE5 ihn ohnehin an **eine** Stelle verschiebt — eine Extraktion jetzt
+wäre Arbeit, die gleich wieder weggeworfen wird.
+
+**Der Fund** (mit Fundstellen, per Suche belegt):
+
+```tsx
+if (caseDataState.status === "loading") { return (<section><h2>…</h2><p>Loading case file…</p></section>); }
+if (caseDataState.status === "error")   { return (<section><h2>…</h2><p>Could not load the case data. …</p></section>); }
+```
+
+| Datei | Zeilen |
+|---|---|
+| `features/dashboard/DashboardPage.tsx` | 20, 29 |
+| `features/people-locations/TeamLayout.tsx` | 22, 31 |
+| `features/timeline/TimelinePage.tsx` | 33, 42 |
+
+Der **einzige Unterschied** zwischen den drei Kopien ist die Überschrift (`Case Dashboard`, `People &
+Locations`, `Investigation Timeline`).
+
+**Ein zweiter, kleinerer Fund:** die Zeile "ID — Titel — Status-Badge" für ein Beweisstück steht in
+`RecentEvidenceList.tsx:17` und `PersonDetail.tsx:57` fast identisch.
+
+**Warum ich beides nicht extrahiert habe:**
+
+| Kandidat | Grund |
+|---|---|
+| **Lade-/Fehler-Block** (3 Kopien) | (1) **UE5 löst es strukturell:** sobald es eine gemeinsame Datenschicht gibt (Context/Provider statt dass jede Seite selbst `useCaseData()` aufruft), steht Laden/Fehler **einmal** im Provider — die drei Kopien verschwinden von allein. Ein Wrapper jetzt wäre Arbeit, die dann wieder entfernt wird. (2) Eine saubere Extraktion ist nicht trivial: die drei Seiten haben **verschiedene Überschriften** und eine davon (`TeamLayout`) reicht die Daten zusätzlich per `<Outlet context>` an Kinder — ein Wrapper bräuchte "Children als Funktion" (`{(data) => …}`), also eine neue Abstraktion. (3) Kosten/Nutzen: dreimal etwa zehn Zeilen, die sich selten ändern |
+| **Evidence-Zeile** (2 Kopien) | Erst **zwei** Stellen — unterhalb der Faustregel "extrahiere beim dritten Mal". Außerdem wird die Evidence-Seite (UE5) die Zeile wahrscheinlich in einer **anderen Form** brauchen (Karte statt Zeile); wer jetzt abstrahiert, rät die Schnittstelle und riskiert die falsche (vgl. Demo 6 F2: auf den echten zweiten/dritten Nutzer warten) |
+
+**Würde ich es mit mehr Zeit tun?** **Ja, den Lade-Block** — aber **zusammen mit** der UE5-Datenschicht, nicht
+zweimal: einmal jetzt als Wrapper, und gleich danach wieder umgebaut. Die Evidence-Zeile würde ich
+extrahieren, **sobald** die Workspace-Seite sie als dritten Nutzer braucht (die vanilla-Version dupliziert dasselbe
+`.mini-list-item`-Muster auch dort, `renderBookmarksList`/`renderNotesList`).
+
+**Das Prinzip dahinter:** Duplikate sind ein **Signal**, kein Befehl. Eine Abstraktion lohnt sich, wenn sie
+(a) mehrere **echte** Nutzer hat und (b) nicht schon durch einen **geplanten** Umbau überholt wird. Beides ist
+hier (noch) nicht gegeben.

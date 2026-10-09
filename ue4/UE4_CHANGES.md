@@ -135,8 +135,10 @@ Events, aufsteigend nach Zeit (wie der vanilla-Default), mit Ortsnamen und Certa
 **Die zwei geforderten Fälle:**
 
 1. **Leer-Zustand:** `TimelinePage`: `events.length === 0 ? <p>No timeline events match…</p> : events.map(…)`.
-   Mit den heutigen Daten kommt er nie vor (immer 15 Events). Er wird in Demo 10 real, wenn ein
-   `?person=…`-Filter eine Person ohne Events auswählen kann.
+   Mit den heutigen Daten kommt er nie vor (immer 15 Events). *(Korrektur aus Demo 10: ich hatte hier
+   erwartet, er werde mit dem `?person=…`-Filter real. Das stimmt **nicht**: jede der 6 Personen hat
+   mindestens ein Event, Kernel Colt genau eines. Der Leer-Zustand bleibt mit gültigen Daten unerreichbar,
+   siehe Demo 10.)*
 2. **Zustandsabhängiger Stil/Label:** das Certainty-Badge (`CertaintyBadge`) **und** die
    CSS-Klasse `certainty-${event.certainty}` am Event selbst — `.certainty-contradictory` färbt den
    Zeitstrahl-Punkt rot (`styles.css`).
@@ -950,3 +952,156 @@ npm run typecheck
 
 **6. Route- vs. Query-Parameter:** `…#/team/people?person=nova-byte` aufrufen → alle 6 Personen. Sag: "das
 Fragezeichen-Zeug wird ignoriert, weil die Seite es nicht liest — so unterscheiden sich die beiden Arten."
+
+---
+
+## Demo 10 — Query-Parameter als URL-Zustand + Abschluss der Migration
+
+### 🔰 Einfach erklärt — worum geht's hier überhaupt?
+
+Eine **Query** (`?person=nova-byte`) ist wie ein **Post-it am Link**: "zeig diese Seite, aber mit Nova Byte
+vorausgewählt". Die Seite liest den Zettel beim Anzeigen und richtet sich danach. Sie **merkt sich nichts
+selbst** — den ganzen "Zustand" trägt die Adresse. Deshalb zählt das noch nicht als "Zustand", den UE4
+verbietet.
+
+*Analogie:* ein Lesezeichen in einem Buch, auf dem eine Notiz klebt ("Kapitel 3, ab der markierten Stelle").
+Das Buch muss sich die Stelle nicht merken — wer das Lesezeichen mitbringt, bringt die Einstellung mit.
+
+Der zweite Teil dieser Demo ist ein **Kassensturz**: ist von UE4 wirklich alles React, ohne `innerHTML`,
+ohne manuelles DOM, per echte URLs erreichbar?
+
+### Task 1 — Timeline liest `?person=…` und bestimmt damit die Start-Liste
+
+| Datei | Änderung |
+|---|---|
+| `src/features/timeline/TimelinePage.tsx` | liest `?person=` mit `useSearchParams()`, leitet daraus die gefilterte Liste ab |
+| `src/features/timeline/TimelineToolbar.tsx` | **neu**: die Filter-Leiste (4 Dropdowns: Order, Person, Location, Event type), **visuell komplett** wie in vanilla, nicht gekoppelt |
+| `src/features/timeline/timelineHelpers.ts` | `filterByPerson()` und `uniqueEventTypes()` |
+| `src/shared/routes.ts` | `timelinePath(personId?)` baut `/timeline?person=<id>` |
+| `src/features/people-locations/PersonDetail.tsx` | neuer Link "Show Nova Byte's events on the timeline →" — ein echter Weg zu einer `?person=`-URL |
+
+**Der Kern in zwei Zeilen:**
+
+```tsx
+const requestedPersonId = searchParams.get("person");          // string | null (Nutzer-Eingabe!)
+const selectedPerson = people.find((p) => p.id === requestedPersonId);   // unbekannte id -> undefined
+```
+
+Eine **unbekannte oder leere** Person wird **ignoriert** (alle Events, Dropdown zeigt "All people") — anders
+als beim Pfad-Parameter in Demo 9, wo eine unbekannte ID ein Fehler ist. Eine Query ist eine optionale
+Einstellung, kein Pflichtwert.
+
+**Die Dropdowns sind unkontrolliert** (`defaultValue`, kein `value`/`onChange`): sie starten mit dem Wert aus
+der URL, der Browser verwaltet danach die Auswahl. Das ist genau das, was UE4 verlangt ("visuell komplett,
+nicht verdrahtet"). Mit `value` ohne `onChange` wäre das Dropdown stattdessen schreibgeschützt.
+
+**Ein Stolperstein, den ich gefunden habe:** `defaultValue` gilt nur beim **ersten** Rendern. Wechselt die URL
+von `?person=nova-byte` auf `?person=kernel-colt`, bleibt **dieselbe** Komponente stehen. Deshalb hat das
+Personen-Dropdown ein `key={selectedPersonId}` (Demo 3: neuer `key` = neues Element = frischer `defaultValue`).
+
+### Task 2 — Abschluss-Check der Migration
+
+**a) Alle drei Views sind React und per echter, speicherbarer URL erreichbar** (jede Adresse **frisch
+geladen**, nicht nur per Hash-Wechsel, wie ein echtes Lesezeichen):
+
+| View | Adresse | Ergebnis |
+|---|---|---|
+| Dashboard | `#/` | 5 Stat-Karten, "Dashboard" aktiv |
+| People & Locations | `#/team/people` | 6 Personen, Tab "People" aktiv |
+| People & Locations | `#/team/locations` | 6 Orte, Tab "Locations" aktiv |
+| Person (Detail) | `#/team/people/root-harbor` | "Root Harbor", 5 zugehörige Beweisstücke |
+| Timeline | `#/timeline?person=patch-vector` | 2 Events, Dropdown "Patch Vector", "Timeline" aktiv |
+
+**b) Kein `innerHTML`, kein manuelles DOM** — mechanisch per Textsuche über **ganz `src/`** geprüft
+(`innerHTML`, `outerHTML`, `insertAdjacent`, `createElement(`, `appendChild`, `removeChild`, `.classList`,
+`document.getElementById/querySelector`, `dangerouslySetInnerHTML`):
+
+- **Einziger Treffer: `main.tsx:20`** — `document.getElementById("react-root")`. Das ist der **Einhängepunkt**:
+  React muss wissen, in welchen `<div>` es seinen Baum setzt (`createRoot(...)`). Ohne diese eine Zeile gibt es
+  keinen React-Baum. Es ist **kein Manipulieren** von Inhalten, sondern das Anmelden von React selbst — die
+  einzige legitime Ausnahme, und sie steht nicht in einer Komponente.
+- **Keine** Treffer in einer der Komponenten, Seiten, Hooks oder Helfer.
+
+**c) Kein Zustand über das Nötige hinaus** — Inventar **aller** `useState`/`useEffect`/`useReducer`/
+`useRef`/`useContext`/`useMemo`/`useCallback` außerhalb der Sandbox:
+
+| Wo | Was | Wofür |
+|---|---|---|
+| `shared/useCaseData.ts` | **ein** `useState` + **ein** `useEffect` | der Lade-Zustand ("lädt / Fehler / fertig") der JSON-Daten — ohne ihn gäbe es nichts anzuzeigen |
+| **jede Komponente** | **keiner** | — |
+
+Dazu **keine einzige** Event-Handler-Prop (`onClick`, `onChange`, …) außerhalb der Sandbox: Navigation läuft
+über Router-Links, nicht über eigene Handler. Router-Hooks (`useParams` ×1, `useSearchParams` ×1,
+`useOutletContext` ×4) **lesen** nur von der URL bzw. vom Layout, sie halten keinen eigenen Zustand. Die
+**Sandbox** (`key-demo.html`, 2 `useState`) ist ein Wegwerf-Beispiel aus Demo 4 und gehört nicht zu den
+migrierten Views.
+
+*(Eine Prüfung hatte ich zuerst zu eng gefasst: mein Suchmuster übersah `useState<…>(` wegen des Generics und
+hätte nur den `useEffect` gefunden. Mit korrigiertem Muster steht das vollständige Inventar oben.)*
+
+### Verifikation
+
+| Test | Ergebnis |
+|---|---|
+| `/timeline` ohne Parameter | 15 Events, Dropdown "All people", 4 Dropdowns mit den richtigen Optionen (Order 2, Person 7, Location 7, Event type 12 — wie vanilla) |
+| `?person=nova-byte` / `kernel-colt` | **3** bzw. **1** Event(s), Dropdown folgt |
+| **Parität mit vanilla**, alle 6 Personen | Anzahl **und** Titel-Prüfsumme in der Reihenfolge **identisch** (z. B. `kernel-colt` 1 / 937136720, `nova-byte` 3 / 570130937) |
+| `?person=does-not-exist` und `?person=` | alle 15 Events, Dropdown "All people" (ignoriert) |
+| URL wechselt in derselben Seite `nova-byte` → `kernel-colt` | Liste **und** Dropdown ziehen mit |
+| **Ohne `key`** (testweise entfernt) | Liste filtert schon auf 1 Event, Dropdown zeigt noch **"Nova Byte"** — der Fehler, den `key` verhindert |
+| Nutzer ändert das Dropdown selbst (auf "Root Harbor") | **nichts passiert** an der Liste (1 Event bleibt), die Adresse bleibt — wie von UE4 verlangt |
+| Link auf der Personen-Detailseite | `href="#/timeline?person=nova-byte"`; Klick → 3 Events, Dropdown "Nova Byte"; "Zurück" → Detailseite |
+| Konsole | keine neuen Fehler |
+
+**Die Daten hinter den Zahlen:** Events pro Person: Signal Scholar 3, Kernel Colt 1, Nova Byte 3, Patch Vector
+2, Refactor Rex 2, Root Harbor 2. Die Events **T11–T13 haben gar keine `personIds`** und fallen deshalb bei
+**jedem** konkreten Personen-Filter heraus (wie in vanilla).
+
+**Eine Erwartung aus Demo 2, die sich als falsch herausstellte:** dort hatte ich geschrieben, der
+Leer-Zustand ("No timeline events match the current filters") werde mit dem `?person=`-Filter real. Das stimmt
+nicht — **jede** Person hat mindestens ein Event, und eine unbekannte ID wird ignoriert. Mit **gültigen** Daten
+bleibt dieser Zustand unerreichbar. Er ist trotzdem sinnvoll (Daten können sich ändern), aber ich habe ihn nicht
+live gesehen, nur im Code. Die Stelle in Demo 2 ist entsprechend korrigiert.
+
+- **Nach dem Umbau ausgeführt:** `npm run typecheck` → 0 Fehler, `npm run build` → grün (139 Module, `react.html`
+  und `index.html` werden beide gebaut), `npm run format:check` → sauber. (`format:check` meldete zunächst
+  `src/shared/routes.ts`: mein mehrzeiliger Ternary passte mit 97 Zeichen in eine Zeile, Prettier wollte ihn
+  zusammenziehen. Behoben, Wiederholung sauber.)
+
+**Bundle über ganz UE4** (aus den echten Builds, `react-*.js`):
+
+| Stand | Größe | gzip |
+|---|---|---|
+| UE4 Demo 6 (Feature-Struktur) | 229,98 KB | 71,48 KB |
+| UE4 Demo 7 (+ `Badge`) | 230,18 KB | 71,50 KB |
+| UE4 Demo 8 (+ `react-router`) | 268,77 KB | 84,84 KB |
+| UE4 Demo 9 (+ Detailseite) | 269,88 KB | 85,08 KB |
+| **UE4 Demo 10 (+ Timeline-Filter)** | **272,31 KB** | **85,79 KB** |
+
+Der Sprung kommt **fast allein** von `react-router` (Demo 8, +38,6 KB). Alles andere seit Demo 6 — `Badge`,
+Detailseite, Timeline-Toolbar und weitere Komponenten — kostet zusammen **3,7 KB** (229,98 → 272,31 KB sind
++42,3 KB, minus die 38,6 KB des Routers). Die vanilla-App bleibt unverändert bei 20,11 KB.
+
+### 🎤 Live-Demo — was du im Unterricht herzeigst
+
+**1. Die Adresse als Speicher zeigen:** `/react.html#/timeline` → 15 Events. Dann in der Adressleiste
+`?person=nova-byte` anhängen, Enter → **3** Events, das Dropdown steht auf "Nova Byte". Sag: "die Seite hat sich
+nichts gemerkt — es steht alles in der Adresse."
+
+**2. Den Weg über einen echten Link zeigen:** `#/team/people/nova-byte` → "Show Nova Byte's events on the
+timeline →" klicken. Sag: "so kommt man normalerweise zu so einer Adresse."
+
+**3. Ungültigen Wert zeigen:** `?person=quatsch` → alle 15, Dropdown "All people". Sag: "eine Query ist eine
+Einstellung — ist sie ungültig, gilt der Standard. Beim Pfad (`/people/quatsch`) war das ein Fehler."
+
+**4. Zeigen, dass nichts verdrahtet ist:** im Dropdown eine andere Person wählen → die Liste ändert sich **nicht**.
+Sag: "genau das verlangt UE4 — sichtbar, aber noch nicht verdrahtet. Dafür bräuchte es Zustand und
+Event-Handler (UE5)."
+
+**5. Den Kassensturz zeigen:** im Terminal (oder mit der Editor-Suche) nach `innerHTML` in `src/` suchen → keine
+Treffer; nach `useState` → nur `useCaseData.ts`. Die Ausnahme erklären: `document.getElementById("react-root")`
+in `main.tsx` ist der Einhängepunkt von React.
+
+**6. Das `key`-Detail (für Neugierige):** in `TimelineToolbar.tsx` `key={selectedPersonId}` entfernen, in der
+Adressleiste von `?person=nova-byte` auf `?person=kernel-colt` wechseln → Liste filtert, Dropdown zeigt noch
+"Nova Byte". `key` wieder einsetzen.

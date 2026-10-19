@@ -1,4 +1,4 @@
-import { useState, type ChangeEvent, type FormEvent } from "react";
+import { useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import type { Evidence, Person } from "../../../js/types";
 import { loadHypothesis, saveHypothesis, type HypothesisFields } from "./hypothesisStorage";
 
@@ -28,6 +28,12 @@ export function HypothesisForm({ people, evidence }: HypothesisFormProps) {
   // eine FUNKTION als startwert: der localStorage wird nur beim ersten rendern gelesen
   const [values, setValues] = useState<HypothesisFields>(loadHypothesis);
   const [showSaved, setShowSaved] = useState(false);
+  // ue5 demo 9: die ID des laufenden "Saved"-Timers. ein useRef ist ein Wert, der
+  // Neurendern UEBERLEBT, aber beim Aendern KEIN Neurendern ausloest (genau
+  // richtig fuer eine Timer-ID, die nie angezeigt wird). vorher gab es keine
+  // Referenz auf den Timer: ein zweites Speichern startete einen zweiten, und der
+  // ERSTE blendete die Meldung zu frueh aus (siehe UE5_CHANGES demo 9, Fall 3).
+  const savedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   // ein setter fuer alle felder. `previous` ist der aktuelle stand; das neue
   // objekt kopiert ihn ({ ...previous }) und ersetzt NUR das eine feld - das
@@ -51,7 +57,9 @@ export function HypothesisForm({ people, evidence }: HypothesisFormProps) {
       return;
     }
     setShowSaved(true);
-    setTimeout(() => setShowSaved(false), 2000);
+    // den alten Timer abbrechen, BEVOR ein neuer startet: nur der letzte Timer zaehlt
+    clearTimeout(savedTimer.current);
+    savedTimer.current = setTimeout(() => setShowSaved(false), 2000);
   }
 
   return (

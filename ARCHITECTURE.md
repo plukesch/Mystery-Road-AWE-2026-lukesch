@@ -17,7 +17,7 @@ src/
     workspace/                WorkspacePage, BookmarksList, NotesList, HypothesisForm, workspaceHelpers.ts,
                               hypothesisStorage.ts
   shared/                     nur, was von mehreren Stellen benutzt wird
-    useCaseData.ts            Daten-Hook (Dashboard, People, Timeline, Evidence, Workspace)
+    useCaseData.ts            Daten-Hook (nur von app/PageRouter aufgerufen) und der Typ CaseData (alle Seiten)
     routes.ts                 ROUTES (alle URL-Pfade), personPath(), timelinePath(), evidencePath()
     storage.ts                localStorage-Helfer für Bookmarks und Notizen (BookmarksProvider, PageRouter)
     BookmarksContext.tsx      BookmarksProvider + useBookmarks(): die Bookmarks als Context (Dashboard, Evidence,
@@ -43,7 +43,8 @@ dieses Features, auch wenn sie "allgemein aussehen könnte". Taucht später ein 
 
 Beispiele aus dieser Struktur:
 
-- `shared/useCaseData.ts` wird von Dashboard, People und Timeline benutzt: shared.
+- `shared/useCaseData.ts` lieferte den Daten-Hook an fünf Features und liegt deshalb in shared. Seit UE5 Demo 9
+  ruft ihn nur noch `app/PageRouter` auf (einmal); die Seiten benutzen den Typ `CaseData`.
 - `shared/routes.ts` (die URL-Pfade) wird von der Shell (NavBar, PageRouter) und von Features (IntroCard,
   TeamLayout) benutzt: shared.
 - `people-locations/Card.tsx` und `BulletList.tsx` werden nur innerhalb von People & Locations benutzt: lokal,
@@ -136,13 +137,14 @@ Die React-Seite importiert aus `js/` nur `import type` (Typen) und **reine** Fun
 - Die Doku zu UE3 und UE4 Demo 1 bis 5 nennt noch die alten Pfade (`src/components/…`, `src/pages/…`) und das
   frühere handgebaute Hash-Routing (`useHashRoute`). Sie beschreibt den damaligen Stand und wurde nicht
   nachträglich geändert.
-- Der Lade-/Fehler-Block (`useCaseData` + zwei frühe Returns) steckt jetzt in fünf Feature-Komponenten
-  (`DashboardPage`, `TeamLayout`, `TimelinePage`, `EvidencePage`, `WorkspacePage`). Bewusst nicht extrahiert: UE5
-  verschiebt das Laden in eine gemeinsame Datenschicht (Demo 5 bis 8), dann verschwinden die Kopien von selbst.
+- (Erledigt in UE5 Demo 9: der Lade-/Fehler-Block stand in fünf Feature-Komponenten, und jede lud die Daten selbst,
+  fünf Mal derselbe Fetch pro Seitenwechsel. Jetzt lädt `PageRouter` **einmal**, behandelt Laden und Fehler **einmal** und
+  gibt fertige Daten als Prop `data` weiter; die Status-Änderungen werden dort ebenfalls **einmal** über die Daten gelegt.)
 - `PageRouter` ist seit UE5 Demo 5 nicht mehr nur eine Routen-Tabelle, sondern hält auch den gemeinsamen State
-  (Notizen, Status-Änderungen) und reicht Props an die Seiten weiter (seit Demo 8 höchstens vier an `EvidencePage`,
-  die Bookmarks laufen über Context). Zwei Mechanismen (Context für Bookmarks, Props für den Rest) sind ein
-  bewusst akzeptierter Preis der Abwägung aus Demo 8.
+  (Notizen, Status-Änderungen), lädt (seit Demo 9) die Daten und reicht Props an die Seiten weiter (höchstens vier an
+  `EvidencePage`; die Bookmarks laufen über Context). Zwei Mechanismen (Context für Bookmarks, Props für den Rest) sind
+  ein bewusst akzeptierter Preis der Abwägung aus Demo 8. Während des Ladens zeigt die Seite eine allgemeine Meldung
+  statt der seitenspezifischen Überschrift.
 - Filter und Suchtext von `EvidencePage` sind lokaler State: sie gehen beim Wechsel auf eine andere Seite verloren
   (in vanilla blieb der Text stehen). Status-Änderungen leben nur im Speicher und überleben keinen Neustart (wie in
   vanilla); Bookmarks und Notizen liegen zusätzlich im `localStorage`.

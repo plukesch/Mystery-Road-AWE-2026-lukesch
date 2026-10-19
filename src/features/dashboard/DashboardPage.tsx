@@ -1,53 +1,30 @@
 // ---------------------------------------------------------------------
 // DASHBOARD-SEITE (ue3 demo 10, ue4 demo 5 aufgeteilt) - FEATURE/CONTAINER
-// beantwortet nur EINE frage: "woher kommen die daten und sind sie schon da?"
-// holt sie (useCaseData), behandelt lade-/fehlerzustand und reicht fertige
-// daten an DashboardView weiter, die nur noch darstellt. frueher stand beides in
-// dieser einen datei (siehe UE4_CHANGES demo 5).
+// verbindet die fertigen daten mit dem, was nur diese seite wissen muss: wie viele
+// Beweisstuecke gemerkt sind. DashboardView stellt dann nur noch dar. frueher stand
+// beides in einer datei (siehe UE4_CHANGES demo 5).
 //
-// ue5 demo 5: die status-aenderungen kommen als PROP vom gemeinsamen vorfahren
-// (PageRouter); die seite liest NICHTS aus dem localStorage.
-// ue5 demo 8: die bookmarks kommen nicht mehr als Prop, sondern aus dem CONTEXT
-// (useBookmarks). die seite sieht eine bookmark-aenderung aus der evidence-seite
-// SOFORT, beim naechsten rendern.
+// ue5 demo 8: die bookmarks kommen aus dem CONTEXT (useBookmarks). die seite sieht
+// eine bookmark-aenderung aus der evidence-seite SOFORT, beim naechsten rendern.
+// ue5 demo 9: die seite laedt keine daten mehr (kein useCaseData, kein
+// lade-/fehler-block) und kennt die status-aenderungen nicht mehr: `data` kommt
+// FERTIG von PageRouter, die beweisstuecke tragen die aenderungen schon.
 // ---------------------------------------------------------------------
-import { useCaseData } from "../../shared/useCaseData";
+import type { CaseData } from "../../shared/useCaseData";
 import { useBookmarks } from "../../shared/BookmarksContext";
 import { bookmarkedEvidence } from "../../shared/bookmarks";
-import { applyReviewEdits, type ReviewEdit } from "../../shared/reviewEdits";
 import { DashboardView } from "./DashboardView";
 
 interface DashboardPageProps {
-  reviewEdits: Readonly<Record<string, ReviewEdit>>;
+  data: CaseData;
 }
 
-export function DashboardPage({ reviewEdits }: DashboardPageProps) {
-  const caseDataState = useCaseData();
+export function DashboardPage({ data }: DashboardPageProps) {
   const { bookmarks } = useBookmarks();
 
-  if (caseDataState.status === "loading") {
-    return (
-      <section>
-        <h2>Case Dashboard</h2>
-        <p>Loading case file&hellip;</p>
-      </section>
-    );
-  }
-
-  if (caseDataState.status === "error") {
-    return (
-      <section>
-        <h2>Case Dashboard</h2>
-        <p>Could not load the case data. Please reload the page.</p>
-      </section>
-    );
-  }
-
-  // abgeleitet, nicht gespeichert (demo 4): die beweisstuecke MIT den
-  // aenderungen, und der zaehler als laenge derselben bookmark-liste, die der
-  // workspace anzeigt. DashboardView bleibt eine reine funktion ihrer props.
-  const evidence = applyReviewEdits(caseDataState.data.evidence, reviewEdits);
-  const bookmarkCount = bookmarkedEvidence(evidence, bookmarks).length;
-  const data = { ...caseDataState.data, evidence };
+  // abgeleitet, nicht gespeichert (demo 4): der zaehler ist die laenge derselben
+  // bookmark-liste, die der workspace anzeigt. DashboardView bleibt eine reine
+  // funktion ihrer props.
+  const bookmarkCount = bookmarkedEvidence(data.evidence, bookmarks).length;
   return <DashboardView data={data} bookmarkCount={bookmarkCount} />;
 }

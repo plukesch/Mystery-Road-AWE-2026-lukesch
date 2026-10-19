@@ -6,11 +6,12 @@
 // jedem Rendern aus der id-liste ABGELEITET (bookmarkedEvidence), mit derselben
 // funktion wie der dashboard-zaehler.
 // ue5 demo 5: die notizen kommen als PROP vom gemeinsamen vorfahren (PageRouter).
-// ue5 demo 8: die bookmarks kommen aus dem CONTEXT (useBookmarks), nicht mehr als
-// Prop. nur das hypothesen-formular besitzt noch eigenen state (kein anderer
-// braucht ihn).
+// ue5 demo 8: die bookmarks kommen aus dem CONTEXT (useBookmarks).
+// ue5 demo 9: die daten kommen FERTIG als Prop `data` (PageRouter laedt sie
+// einmal); kein eigener useCaseData-aufruf, kein lade-/fehler-block mehr. nur
+// das hypothesen-formular besitzt noch eigenen state (kein anderer braucht ihn).
 // ---------------------------------------------------------------------
-import { useCaseData } from "../../shared/useCaseData";
+import type { CaseData } from "../../shared/useCaseData";
 import { useBookmarks } from "../../shared/BookmarksContext";
 import { bookmarkedEvidence } from "../../shared/bookmarks";
 import { BookmarksList } from "./BookmarksList";
@@ -19,32 +20,13 @@ import { NotesList } from "./NotesList";
 import { noteEntries } from "./workspaceHelpers";
 
 interface WorkspacePageProps {
+  data: CaseData;
   notes: Readonly<Record<string, string>>;
 }
 
-export function WorkspacePage({ notes }: WorkspacePageProps) {
-  const caseDataState = useCaseData();
+export function WorkspacePage({ data, notes }: WorkspacePageProps) {
   const { bookmarks } = useBookmarks();
-
-  if (caseDataState.status === "loading") {
-    return (
-      <section>
-        <h2>Investigator Workspace</h2>
-        <p>Loading case file&hellip;</p>
-      </section>
-    );
-  }
-
-  if (caseDataState.status === "error") {
-    return (
-      <section>
-        <h2>Investigator Workspace</h2>
-        <p>Could not load the case data. Please reload the page.</p>
-      </section>
-    );
-  }
-
-  const { people, evidence } = caseDataState.data;
+  const { people, evidence } = data;
 
   return (
     <section>

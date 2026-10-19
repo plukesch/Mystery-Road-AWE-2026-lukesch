@@ -1326,3 +1326,139 @@ und Status bleiben bei Props. Preis: +18 Codezeilen, unsichtbare Abhängigkeit, 
 mit `useBookmarks() must be used inside <BookmarksProvider>` ab. Wieder einsetzen.
 
 ---
+
+## Demo 9 — Häufige State-Probleme finden und beheben
+
+### 🔰 Einfach erklärt — worum geht's hier überhaupt?
+
+Fast alle Fehler in Oberflächen mit State stammen aus **fünf** wiederkehrenden Mustern. Diese Demo ist ein **Gesundheitscheck
+des eigenen Codes**: durchgehen, ob eines davon vorkommt, und die echten Funde beheben.
+
+| # | Problem | In einem Satz | Alltagsbild |
+|---|---|---|---|
+| 1 | **Duplizierter State** | dieselbe Tatsache steht an **mehreren** Orten | zwei Kalender, in beiden steht derselbe Termin, einer wird gepflegt |
+| 2 | **Veralteter State** | ein Wert ändert sich **nicht**, wenn er es müsste | die Uhr, die stehengeblieben ist |
+| 3 | **Zu viel Prop-Drilling** | Werte werden durch viele Komponenten geschleust, die sie nicht brauchen | eine Postkette, in der jeder nur weiterreicht |
+| 4 | **Unnötiger globaler State** | etwas ist überall erreichbar, obwohl nur eine Stelle es braucht | ein Hausschlüssel für alle Nachbarn |
+| 5 | **Direktes Mutieren** | ein bestehender Wert wird verändert statt ersetzt | in einem Buch radieren, das andere gerade lesen |
+
+### Task 1 — das eigene Code-Review
+
+Ich habe `src/` (ohne die Sandbox) nach jedem der fünf Muster durchsucht: Textsuche (`grep`), Zählen von Aufrufen, und im
+Browser Netzwerk-Anfragen und Verhalten **gemessen**.
+
+| # | Problem | Befund | Wie gefunden | Folge |
+|---|---|---|---|---|
+| 1 | Duplizierter State | **JA, zweimal** (Fälle 1 und 2) | Textsuche: `useCaseData()` in **5** Seiten, `applyReviewEdits(` an **3** Stellen. Danach Netzwerk-Messung | **behoben** |
+| 2 | Veralteter State | **JA** (Fall 3), dazu der alte Dashboard-Zähler (schon in Demo 5 behoben) | Beim Wiederlesen der eigenen Notiz aus Demo 2 ("zwei schnelle Klicks starten zwei Timer"), dann **live reproduziert** | **behoben** |
+| 3 | Prop-Drilling | **Teilweise:** `reviewEdits` wurde an **drei** Seiten durchgereicht (jede legte sie selbst über die Daten) | Props-Liste von `PageRouter` gelesen | **behoben** durch Fall 2 (die Prop entfällt) |
+| 4 | Unnötiger globaler State | **kein Fund**, nur der bekannte Grenzfall: `BookmarksProvider` umschließt **alle** Routen (auch Timeline, People) | Demo-8-Abwägung erneut gelesen. Filter, Entwurf und geöffnetes Detail sind lokal bzw. in der URL | **bewusst belassen** (Demo 8) |
+| 5 | Mutieren | **kein Fund** | Textsuche nach `.push(`, `.pop(`, `.shift(`, `.splice(`, `.sort(`, `.reverse(`, `.fill(` und Zuweisungen an Eigenschaften | nichts zu beheben |
+
+**Zum Mutieren konkret** (Textsuche über `src/` ohne Sandbox): die einzigen Treffer sind (a) Kommentare, die vanilla-Fehler
+beschreiben, (b) `types.push(type)` in `uniqueTypes` auf einem **lokal in der Funktion** gebauten Array (kein State, kein Prop),
+(c) `evidence.slice(-5).reverse()` und `[...x].sort(...)` in `DashboardView`/`evidenceHelpers`/`timelineHelpers` — jeweils auf einer
+**Kopie**. Kein State und kein Prop wird mutiert.
+
+### Task 2 — drei echte Fälle, behoben
+
+#### Fall 1 — Duplizierter State: dieselben Daten **fünfmal** geladen und gehalten
+
+| | |
+|---|---|
+| **Kategorie** | Duplizierter State (und eine Folge: fünf Kopien desselben Lade-/Fehler-Blocks) |
+| **Wie bemerkt** | Beim Review der Aufrufe von `useCaseData()`: es stand in **fünf** Seiten (`DashboardPage`, `EvidencePage`, `WorkspacePage`, `TimelinePage`, `TeamLayout`), jede mit eigenem `useState`/`useEffect`-Laden und eigenem Lade-/Fehler-Block. Das war schon in UE4 Demo 10 F3 als "Lade-Block dreimal kopiert" aufgefallen und mit "UE5 löst das" vertagt |
+| **Beleg vorher (gemessen)** | `performance`-Einträge für `data/*.json`: **10 Anfragen** beim ersten Laden und **10 bei jedem Seitenwechsel**; nach 5 Wechseln insgesamt **60** (`case.json` 12×, `evidence.json` 12×, …). *(10 statt 5, weil `StrictMode` den Effekt in der Entwicklung doppelt ausführt; im Build wären es 5 pro Seitenaufruf.)* |
+| **Warum ein Problem** | jede Seite hält **ihre eigene Kopie** der Daten; die geladenen Beweisstücke verlieren bei jedem Wechsel ihre Identität; 5-fach derselbe Code für "lädt / Fehler" |
+| **Fix** | `PageRouter` ruft `useCaseData()` **einmal** auf, behandelt lade/Fehler **einmal** (`early return`) und reicht fertige Daten als Prop `data` an die Seiten. Die Seiten rufen `useCaseData` nicht mehr auf |
+| **Beleg nachher (gemessen)** | **10 Anfragen** beim ersten Laden (5 im Build), danach **0** bei jedem der 5 Seitenwechsel; **60 → 10** |
+| **Zusatz** | zentraler Fehlerfall getestet (`case.json` testweise entfernt): `main` zeigt "Could not load the case data. Please reload the page.", Navigation bleibt sichtbar; Datei danach wiederhergestellt (`git status` sauber) |
+
+#### Fall 2 — Duplizierte Ableitung + Prop-Drilling: `reviewEdits` an drei Seiten
+
+| | |
+|---|---|
+| **Kategorie** | Duplizierter State (die **gleiche Berechnung** an drei Stellen) und Prop-Drilling (`reviewEdits` an drei Seiten) |
+| **Wie bemerkt** | Textsuche nach `applyReviewEdits(`: **drei** Aufrufer (`DashboardPage`, `TeamLayout`, `EvidencePage`), und die Prop `reviewEdits` in drei Seiten-Signaturen |
+| **Warum ein Problem** | **Veraltungs-Falle:** jede neue Seite, die Beweisstücke zeigt (heute `Timeline`, `Workspace` zeigen keine Status), müsste **dran denken**, die Änderungen selbst über die Daten zu legen. Vergisst sie es, zeigt sie den **alten** Status, während Evidence den neuen zeigt. Das ist genau der "Dashboard-Zähler"-Fehler aus UE1 in neuem Gewand |
+| **Fix** | `PageRouter` legt die Änderungen **einmal** über die geladenen Beweisstücke (`applyReviewEdits`) und gibt **fertige** Daten weiter. `DashboardPage`, `TeamLayout`, `EvidencePage` kennen `reviewEdits` nicht mehr; `applyReviewEdits` hat **einen** Aufrufer |
+| **Beleg nachher** | Textsuche: `applyReviewEdits(` nur noch in `PageRouter`, Prop `reviewEdits` nirgends mehr als Seiten-Prop. Live: E03 auf "reviewed" → Dashboard "2 Reviewed", Personen-Detail `patch-vector` zeigt E03 `reviewed`, Evidence-Filter "reviewed" → `E03,E12` |
+
+#### Fall 3 — Veralteter State: der "Saved"-Timer im Hypothesen-Formular
+
+| | |
+|---|---|
+| **Kategorie** | Veralteter State (ein **alter** Timer ändert den State, obwohl er längst überholt ist) |
+| **Wie bemerkt** | Beim Wiederlesen der Annahme aus Demo 2 ("zwei schnelle Klicks starten zwei Timer; der erste blendet früher aus"). Dann **reproduziert** |
+| **Beleg vorher (gemessen)** | "Save" bei 0,1 s, nochmal bei 1,6 s. Bei **2,2 s** (0,6 s nach dem zweiten Speichern) war "Saved" **schon weg**: der erste Timer hatte es ausgeblendet |
+| **Fix** | `useRef` für die Timer-ID: vor jedem neuen Timer `clearTimeout(savedTimer.current)`; **nur der letzte** Timer zählt |
+| **Beleg nachher (gemessen)** | dasselbe Muster: bei 2,2 s und 3,2 s weiter sichtbar, erst bei 3,9 s (2,3 s nach dem zweiten Speichern) weg |
+| **Ehrlich** | ein `useRef` ist ein Wert, der Neurendern **überlebt**, aber beim Ändern **keines** auslöst (richtig für eine Timer-ID). Das Aufräumen **beim Verlassen der Seite** (`useEffect`-Cleanup) fehlt weiter: ein Timer, der nach dem Entmounten feuert, setzt State einer ausgehängten Komponente (in React 19 ohne Warnung, harmlos). Das braucht `useEffect` und gehört in UE6 |
+
+### Was sich dabei verändert hat (ehrliche Bilanz)
+
+| | vorher | nachher |
+|---|---|---|
+| Codezeilen in den sieben berührten Dateien (ohne Kommentare/Leerzeilen) | 481 | **399** (−82) |
+| Lade-/Fehler-Blöcke | **5** | **1** |
+| `useCaseData()`-Aufrufer | 5 | **1** |
+| `applyReviewEdits`-Aufrufer | 3 | **1** |
+| Daten-Anfragen bei 5 Seitenwechseln (Entwicklung) | **50** | **0** |
+| Props von `PageRouter` nach unten, zusammen | 7 | **9** (+2) |
+| `PageRouter` (Codezeilen) | 62 | 74 |
+
+Die Prop-Zahl **steigt** (jede Seite bekommt `data`), aber jede Seite verliert dafür Ladecode, den Aufruf von `useCaseData` und, wo es sie gab, die
+Prop `reviewEdits`. Der Preis: `PageRouter` wird größer (Routen + State + Laden). Dass er "die Daten besitzt", ist die logische
+Folge der Regel aus Demo 5 (State lebt beim niedrigsten gemeinsamen Besitzer).
+
+**Nebenwirkungen:**
+
+- Während des Ladens zeigt die Seite jetzt eine **allgemeine** Meldung ("Loading case file…") statt der **seiten­spezifischen** Überschrift
+  (z. B. "Case Dashboard"). Die Navigation oben bleibt sichtbar.
+- Das Beispiel "Early return" aus UE4 Demo 2 (`TimelinePage`) steht jetzt in `PageRouter.tsx`; in der UE4-Doku ist es vermerkt.
+
+### Verifikation
+
+- **Daten-Anfragen:** vorher 60 (10 pro Seitenaufruf), nachher 10 insgesamt (siehe Fall 1).
+- **Verhalten unverändert** (kompletter Durchlauf ohne Neuladen): zwei Sterne, E03 auf "reviewed", Notiz → Evidence zeigt es;
+  **Dashboard** "2 Bookmarked / 2 Reviewed"; **Workspace** E03, E14 samt Notiz; der "Open"-Link öffnet E03 in Evidence; Personen-Detail
+  zeigt E03 `reviewed`; Timeline `?person=nova-byte` 3 Events, Dropdown "nova-byte"; Evidence-Filter "reviewed" → `E03,E12`.
+- **Timer-Fall** vorher/nachher gemessen (Fall 3).
+- **Konsole:** zwischen zwei Markern (alle Seiten, Locations, Detail) keine Meldung.
+- **Aufräumen:** `remotion_*`-Keys wieder entfernt; `public/data/case.json` nach dem Fehlertest wiederhergestellt.
+- **Nach dem Umbau ausgeführt:** `npm run typecheck` → 0 Fehler (die neuen `data`-Props, der `useRef<ReturnType<typeof
+  setTimeout> | undefined>` und die entfernten Aufrufe kompilieren). `npm run format:check` → sauber (beim ersten Versuch).
+  `npm run build` → grün (154 Module).
+
+  | Stand | `react-*.js` | gzip | Module |
+  |---|---|---|---|
+  | UE5 Demo 8 | 288,16 KB | 89,42 KB | 154 |
+  | **UE5 Demo 9** | **286,49 KB** | **89,33 KB** | **154** |
+  | Unterschied | **−1,67 KB** | **−0,09 KB** | 0 |
+
+  Das Bundle wird **kleiner**: vier Kopien des Lade-Blocks und zwei der Ableitung sind weg. Es ist die deutlichste Verkleinerung in UE5
+  (Demo 7 hatte nur −0,09 KB).
+
+### 🎤 Live-Demo — was du im Unterricht herzeigst
+
+**1. Fall 1 beweisen (Netzwerk):** `F12` → Tab "Netzwerk", filtern nach `json`. Zwischen Dashboard, Evidence, Workspace wechseln.
+**Nachher:** keine neuen Anfragen. Sag: "vorher hat jede Seite beim Öffnen alle fünf JSON-Dateien neu geladen, 10 Anfragen pro
+Wechsel (5 im Build)." Oder in der Konsole:
+```js
+performance.getEntriesByType("resource").filter((e) => /data\/.*\.json/.test(e.name)).length
+```
+vor und nach dem Wechseln vergleichen (bleibt gleich).
+
+**2. Fall 2 zeigen:** `PageRouter.tsx`, der Block
+```tsx
+const data = { ...caseDataState.data, evidence: applyReviewEdits(caseDataState.data.evidence, reviewEdits) };
+```
+Sag: "die Änderungen werden **einmal** über die Daten gelegt. Keine Seite kann es vergessen."
+
+**3. Fall 3 live (stark):** Workspace, im Formular zweimal schnell **Save** (z. B. bei 0 s und bei 1,5 s). "Saved" bleibt bis 2 s nach dem **zweiten**
+Klick. In `HypothesisForm.tsx` die Zeile `clearTimeout(savedTimer.current);` zeigen und kurz auskommentieren → "Saved" verschwindet 2 s nach dem **ersten** Klick.
+
+**4. Das Review-Ergebnis vortragen:** "fünf Muster geprüft. Zwei sind wirklich aufgetreten (duplizierter und veralteter State), eines
+teilweise (Drilling), zwei nicht (Mutieren, unnötig global). Ich habe drei Fälle behoben."
+
+---

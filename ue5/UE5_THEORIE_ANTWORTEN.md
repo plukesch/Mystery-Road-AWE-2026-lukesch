@@ -845,3 +845,67 @@ Bookmarks werden von **drei** Seiten gelesen und sind **fachlich app-weit** (wie
 "knapp, und nur für die Bookmarks" — und die Rückfall-Option (zurück zu Props) ist ein Handgriff.
 
 ---
+
+## Demo 9 — Häufige State-Probleme finden und beheben
+
+Das eigene Code-Review über die fünf Problemklassen (duplizierter State, veralteter State, Prop-Drilling, unnötiger globaler
+State, Mutieren). Drei echte Fälle behoben: die Daten wurden von **fünf** Seiten einzeln geladen (60 statt 10 Anfragen bei fünf
+Seitenwechseln), `applyReviewEdits` und die Prop `reviewEdits` steckten in **drei** Seiten, und ein **alter** Timer blendete im Hypothesen-Formular
+die Meldung zu früh aus. Details, Messwerte und Bilanz in `UE5_CHANGES.md`.
+
+### F1: Für jedes der zwei (hier drei) behobenen Probleme: in welche der fünf Kategorien fiel es, und wie hast du es bemerkt (sichtbarer Fehler, Code-Review-artiges Wiederlesen, React DevTools, etwas anderes)?
+
+**Einfach gesagt:** zwei Funde waren **Duplizierter State** (Kopien derselben Tatsache), einer **Veralteter State** (ein überholter Timer). Bemerkt
+habe ich sie **durch Wiederlesen und Zählen im Code** und erst danach **im Browser gemessen**. Keiner war als Fehler **sichtbar**,
+bevor ich gezielt hinsah.
+
+| Fall | Kategorie | Wie bemerkt | Warum es nicht von selbst auffiel |
+|---|---|---|---|
+| **1:** Daten in **fünf** Seiten geladen | **Duplizierter State** (fünf Kopien derselben Daten, fünf Kopien desselben Lade-Blocks) | **Code-Review per Suche:** `useCaseData()` in fünf Dateien. Zweite Stufe: **Netzwerk-Messung** (`performance`-Einträge: 10 Anfragen pro Seitenwechsel, 60 gesamt) | Die Seite sieht **richtig** aus. Die Daten sind klein und lokal, jede Anfrage dauert Millisekunden |
+| **2:** `reviewEdits` an drei Seiten, `applyReviewEdits` dreifach | **Duplizierter State** (dieselbe **Ableitung** an drei Stellen) und **Prop-Drilling** | **Code-Review per Suche:** `applyReviewEdits(` hatte drei Aufrufer, `reviewEdits` stand in drei Signaturen | Heute **stimmen** alle drei. Der Fehler wäre erst bei der **vierten** Seite entstanden, die es vergisst |
+| **3:** "Saved"-Timer | **Veralteter State** (ein überholter Timer ändert den State) | **Wiederlesen** der eigenen Notiz aus Demo 2 ("zwei Klicks, zwei Timer"), dann **live reproduziert** (bei 2,2 s war die Meldung nach dem zweiten Speichern schon weg) | Man klickt "Save" meistens **einmal**. Nur wer schnell zweimal klickt, sieht es |
+
+**Was ich nicht benutzt habe:** React DevTools. Die Fälle zeigten sich in der **Struktur** (Aufrufer zählen) und im
+**Netzwerk-Verkehr**, nicht in einem Komponentenbaum. DevTools wären für Fall 1 hilfreich gewesen ("welche Komponenten halten diesen State?"),
+ich habe stattdessen den React-Baum per Skript gelesen, wie in Demo 6.
+
+**Wie ich suche** (eine wiederholbare Methode): (1) **Wer ruft das auf?** (Aufrufer zählen: `useCaseData`, `applyReviewEdits`, `useState`), (2) **Wo steht dieselbe
+Tatsache noch?** (zweiter Speicherort, zweite Berechnung), (3) **Was startet etwas, das sich selbst überholt?** (Timer, Anfragen),
+(4) **Stimmt die Zahl bei einer Wiederholung?** (zweimal klicken, zweimal wechseln).
+
+**Was ich außerdem geprüft und nicht gefunden habe:** **Mutieren** (Textsuche nach `.push/.splice/.sort/...`: nur lokale Arrays und Kopien),
+**unnötigen globalen State** (nur der in Demo 8 abgewogene Grenzfall: `BookmarksProvider` um alle Routen).
+
+### F2: Welches der fünf benannten Probleme (duplizierter State, veralteter State, Prop-Drilling, unnötiger globaler State, Mutieren) ist die Geschichte dieser App (die Fehler aus Übung 1) am deutlichsten ein Beispiel für? Erkläre die Verbindung direkt.
+
+**Einfach gesagt:** **Duplizierter State.** Die drei Fehler aus der Einleitung der Angabe (veralteter Zähler, State an zwei Orten,
+abgeleitet gegen gespeichert) und der Aliasing-Fehler haben **eine Wurzel**: dieselbe Tatsache stand **mehr als einmal** da und musste
+**von Hand** gleich gehalten werden. Veraltete Werte und Mutationsfehler sind die **Folgen**.
+
+**Die Fehler aus Übung 1, jeweils auf die Wurzel zurückgeführt:**
+
+| vanilla-Fehler (UE1) | Wo stand die Tatsache **zweimal**? | Folge |
+|---|---|---|
+| **Dashboard-Zähler konnte veralten** | im State (`state.bookmarks`) **und** als Text im DOM, den `renderDashboard()` beim Rendern hineinschrieb | der DOM-Text wurde **nicht** nachgeführt, wenn die Bookmarks sich änderten (Guard `viewRendered.dashboard`) = **veralteter State** |
+| **Bookmark an zwei Orten** | `state.bookmarks` (ID-Liste) **und** das Feld `ev.bookmarked` an jedem Beweisstück | beide mussten bei jeder Änderung von Hand gleich gehalten werden (`applyStoredBookmarkFlags`) |
+| **`filteredEvidence === allEvidence`** | `state.allEvidence` **und** `state.filteredEvidence`, am Anfang **dasselbe** Array unter zwei Namen | `filteredEvidence.sort()` ordnete die Master-Liste mit um = **Mutieren** über eine geteilte Referenz |
+| **Abgeleitet mit Gespeichert verwechselt** | die gefilterte Liste und der Zähler wurden **gespeichert**, obwohl sie sich aus den Rohdaten berechnen lassen | jede Quelländerung brauchte ein Nachführen |
+| **Dashboard-Zähler 2, Liste 1** (in Demo 4 live gezeigt) | "wie viele" (`state.bookmarks.length`) und "welche" (gefilterte Liste) | die zwei Darstellungen liefen auseinander |
+
+**Die Verbindung in einem Satz:** *veralteter State* beschreibt, **wie** es kaputtgeht (die Kopie wurde nicht nachgeführt), *Mutieren*
+beschreibt **einen Mechanismus** (zwei Namen für dasselbe Array); aber **die Ursache** ist jedes Mal die **doppelte Darstellung**.
+
+**Warum nicht die anderen drei?**
+
+| Kandidat | Warum nicht "am deutlichsten" |
+|---|---|
+| Veralteter State | ist das **Symptom**, nicht die Ursache (siehe oben). Er tritt in vanilla nur **auf**, weil es Kopien gab |
+| Mutieren | betrifft **einen** der Fehler (Sortieren); der Bookmark- und der Zähler-Fehler sind keine Mutationen |
+| Prop-Drilling | vanilla hatte **keine Props**: ein globales `state`-Objekt, das jedes Modul importiert. Das ist eher **unnötiger globaler State** (ein Schlüssel für alle) als Drilling |
+| Unnötiger globaler State | trifft auf `state` zu, erklärt aber die **Zähler-/Bookmark-Fehler** nicht: die passierten, **weil** Daten doppelt standen, nicht weil sie global waren |
+
+**Der Beleg, dass es dieselbe Familie ist** (aus dieser Demo): **mein eigener Fall 2 war derselbe Fehler in neuem Gewand.** Drei Seiten legten die
+Änderungen **selbst** über die Daten, jede hatte ihre **eigene** Ableitung: eine Kopie der Regel an drei Orten, von Hand gleich zu halten.
+Die React-Antwort ist durchgehend dieselbe: **eine Quelle, alles andere wird abgeleitet** (Demo 4, 5, 9).
+
+---

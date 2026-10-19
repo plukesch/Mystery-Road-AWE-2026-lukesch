@@ -17,12 +17,16 @@
 // (PageRouter) und kommen hier als PROPS an (werte) plus CALLBACKS (aenderungen,
 // siehe demo 6). vorher hielt diese seite sie selbst und ging beim wechsel auf
 // eine andere seite (entmounten) mitsamt der status-aenderungen unter.
+// ue5 demo 9: die beweisstuecke kommen FERTIG als Prop `data` (PageRouter laedt sie
+// einmal und legt die status-aenderungen schon darueber). diese seite ruft kein
+// useCaseData mehr auf, hat keinen lade-/fehler-block mehr und kennt die prop
+// "reviewEdits" nicht mehr.
 // ---------------------------------------------------------------------
 import { useReducer } from "react";
 import { useSearchParams } from "react-router";
-import { useCaseData } from "../../shared/useCaseData";
+import type { CaseData } from "../../shared/useCaseData";
 import { useBookmarks } from "../../shared/BookmarksContext";
-import { applyReviewEdits, type ReviewEdit } from "../../shared/reviewEdits";
+import type { ReviewEdit } from "../../shared/reviewEdits";
 import { EvidenceCard } from "./EvidenceCard";
 import { EvidenceDetail } from "./EvidenceDetail";
 import { EvidenceToolbar } from "./EvidenceToolbar";
@@ -38,19 +42,14 @@ import {
 import { INITIAL_FILTERS, filterReducer } from "./filterReducer";
 
 interface EvidencePageProps {
+  data: CaseData;
   notes: Readonly<Record<string, string>>;
-  reviewEdits: Readonly<Record<string, ReviewEdit>>;
   onSaveNote: (evidenceId: string, text: string) => void;
   onChangeReview: (evidenceId: string, edit: ReviewEdit) => void;
 }
 
-export function EvidencePage({
-  notes,
-  reviewEdits,
-  onSaveNote,
-  onChangeReview,
-}: EvidencePageProps) {
-  const caseDataState = useCaseData();
+export function EvidencePage({ data, notes, onSaveNote, onChangeReview }: EvidencePageProps) {
+  const { people, locations, evidence } = data;
   // ue5 demo 8: die bookmarks (Wert UND Aenderungs-funktion) kommen aus dem
   // CONTEXT, nicht mehr als Props "bookmarks"/"onToggleBookmark" von PageRouter.
   // die KARTE bleibt trotzdem eine reine darstellung: sie bekommt weiter
@@ -63,29 +62,6 @@ export function EvidencePage({
   // den neuen zustand berechnet. der zustand bleibt HIER: nur diese seite braucht ihn.
   const [filters, dispatch] = useReducer(filterReducer, INITIAL_FILTERS);
   const [searchParams, setSearchParams] = useSearchParams();
-
-  if (caseDataState.status === "loading") {
-    return (
-      <section>
-        <h2>Evidence Catalogue</h2>
-        <p>Loading case file&hellip;</p>
-      </section>
-    );
-  }
-
-  if (caseDataState.status === "error") {
-    return (
-      <section>
-        <h2>Evidence Catalogue</h2>
-        <p>Could not load the case data. Please reload the page.</p>
-      </section>
-    );
-  }
-
-  const { people, locations } = caseDataState.data;
-  // die angezeigte liste = die geladene liste + die aenderungen des nutzers.
-  // berechnet bei JEDEM rendern, nirgends gespeichert (siehe demo 4).
-  const evidence = applyReviewEdits(caseDataState.data.evidence, reviewEdits);
 
   // ---- die event-handler, die NUR diese seite betreffen ----
 

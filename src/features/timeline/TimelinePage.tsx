@@ -5,9 +5,12 @@
 // quelle, die seite ist eine reine funktion aus (URL, daten). die dropdowns
 // stehen sichtbar da, filtern aber (noch) nichts, wenn man sie aendert -
 // das kommt mit ue5.
+// ue5 demo 9: die daten kommen FERTIG als Prop `data` (PageRouter laedt sie
+// einmal). der "early return" fuer lade-/fehlerzustand (ue4 demo 2), der hier
+// stand, steht jetzt EINMAL in PageRouter statt in fuenf seiten.
 // ---------------------------------------------------------------------
 import { useSearchParams } from "react-router";
-import { useCaseData } from "../../shared/useCaseData";
+import type { CaseData } from "../../shared/useCaseData";
 import {
   filterByPerson,
   resolveLocationNames,
@@ -17,34 +20,15 @@ import {
 import { TimelineEventItem } from "./TimelineEventItem";
 import { TimelineToolbar } from "./TimelineToolbar";
 
-export function TimelinePage() {
-  const caseDataState = useCaseData();
-  // hooks muessen VOR den fruehen returns stehen (regel der hooks: immer in
-  // derselben reihenfolge aufrufen). nur der lesende teil [0] wird benutzt - kein
-  // setter, die seite aendert die URL nie selbst.
+interface TimelinePageProps {
+  data: CaseData;
+}
+
+export function TimelinePage({ data }: TimelinePageProps) {
+  // nur der lesende teil [0] wird benutzt - kein setter, die seite aendert die
+  // URL nie selbst.
   const [searchParams] = useSearchParams();
-
-  // technik "early return": zwei sonderfaelle werden VOR dem eigentlichen
-  // inhalt abgehandelt, der rest der funktion muss sie nicht mehr beachten.
-  if (caseDataState.status === "loading") {
-    return (
-      <section>
-        <h2>Investigation Timeline</h2>
-        <p>Loading case file&hellip;</p>
-      </section>
-    );
-  }
-
-  if (caseDataState.status === "error") {
-    return (
-      <section>
-        <h2>Investigation Timeline</h2>
-        <p>Could not load the case data. Please reload the page.</p>
-      </section>
-    );
-  }
-
-  const { timeline, locations, people } = caseDataState.data;
+  const { timeline, locations, people } = data;
 
   // der query-parameter ist EINGABE VOM NUTZER (er kann ihn beliebig tippen):
   // get() liefert "string | null". eine id, die zu keiner person gehoert, wird

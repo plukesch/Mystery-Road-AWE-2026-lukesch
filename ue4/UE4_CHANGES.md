@@ -127,7 +127,7 @@ Events, aufsteigend nach Zeit (wie der vanilla-Default), mit Ortsnamen und Certa
 
 | Technik | Wo im Code | Fall | Warum diese und keine andere |
 |---|---|---|---|
-| **Early return** | `TimelinePage.tsx` (loading / error) | Seite ist noch nicht bereit | Zwei **Sonderfälle**, nach denen der Rest der Funktion gar nicht mehr gebraucht wird. Alles danach darf davon ausgehen, dass `data` da ist — ohne jedes Mal `data?.…` |
+| **Early return** | `TimelinePage.tsx` (loading / error; **seit UE5 Demo 9 steht er einmal in `app/PageRouter.tsx`**) | Seite ist noch nicht bereit | Zwei **Sonderfälle**, nach denen der Rest der Funktion gar nicht mehr gebraucht wird. Alles danach darf davon ausgehen, dass `data` da ist — ohne jedes Mal `data?.…` |
 | **Ternary** (`? :`) | `TimelinePage.tsx` (Leer-Zustand) | `events.length === 0` → Hinweistext, sonst die Liste | **Genau zwei** Fälle, **beide** liefern etwas Anzuzeigendes. Ein ternary ist ein `if/else`, das einen Wert ergibt |
 | **`&&`** | `TimelineEventItem.tsx` (Ortszeile) | Ortszeile nur zeigen, wenn es Orte gibt | Es gibt **nur einen** Fall (da / nicht da) — der Else-Zweig wäre `null`. `&&` spart das |
 | **Lookup / Mapping** | `CertaintyBadge.tsx` | `confirmed → reviewed`, `reported → flagged`, `contradictory → critical` | **Drei** Zustände → eine Tabelle ist lesbarer als eine verschachtelte Ternary-Kette. Mit `Record<Certainty, string>` erzwingt der Compiler zusätzlich, dass **kein** Fall vergessen wird |

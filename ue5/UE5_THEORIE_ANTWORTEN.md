@@ -514,3 +514,104 @@ auseinanderlaufen könnte; die anderen Seiten **lesen** nur.
 **weniger** State (einer), nicht mehr Synchronisierung.
 
 ---
+
+## Demo 6 — Callbacks nach unten reichen
+
+`PageRouter` besitzt den State und gibt den Kindern **Callbacks** (`onToggleBookmark`, `onSaveNote`, `onChangeReview`)
+statt der Setter. Den Weg des Bookmark-Callbacks live aus dem React-Baum gelesen (`EvidenceCard → EvidencePage →
+PageRouter`: drei Komponenten, zwei Props-Ebenen), den Unterschied zum durchgereichten Setter in einer Sandbox gezeigt
+und den Vertrag mit echten Compiler-Fehlern belegt. Details und Messtabellen in `UE5_CHANGES.md`.
+
+### F1: Warum kann (oder sollte) eine tief verschachtelte Kind-Komponente nicht einfach direkt State ändern, der in einem weit entfernten Vorfahren liegt? Was bringt das Herunterreichen eines Callbacks stattdessen?
+
+**Einfach gesagt:** Ein Kind **kann** den State des Vorfahren schon technisch nicht anfassen, und wenn man ihm den **Setter**
+gäbe, **sollte** es das nicht: dann kennt jedes Kind die Regeln, und die Regeln gehen auseinander. Mit einem **Callback**
+**meldet** das Kind nur, und **eine** Stelle entscheidet.
+
+**Warum es nicht geht (technisch):**
+
+| Grund | Erklärung | Beleg |
+|---|---|---|
+| **Gültigkeitsbereich** | `bookmarks` und `setBookmarks` sind **lokale Variablen** der Funktion `PageRouter`. Eine andere Funktion kommt nur heran, wenn man ihr den Wert **übergibt** | Compiler: `Cannot find name 'setBookmarks'` |
+| **Einbahnstraße der Daten** | Props gehen nur **von oben nach unten**. Ein Prop-Wert ist für das Kind nur-lesen | Compiler: `Property 'push' does not exist on type 'readonly string[]'` (die Props sind als `readonly` typisiert) |
+| **Mutieren würde nichts bewirken** | selbst wenn ein Kind das Array verändern könnte, sähe React es nicht (Demo 3: gleiche Referenz → kein Neurendern) | Sandbox Demo 3 |
+
+**Warum man dem Kind den Setter trotzdem nicht geben sollte** (live in der Sandbox `callback-demo.html`):
+
+| Problem | Was passiert | Beleg |
+|---|---|---|
+| **Regeln wandern in die Kinder** | jedes Kind muss wissen: "umschalten statt anhängen", "speichern nicht vergessen" | Sandbox: Kind B hängt nur an (`[E01, E01]`) und speichert nicht (`Gespeichert: []`) |
+| **Abweichende Kopien derselben Regel** | zwei Kinder, zwei Varianten; welche stimmt? | Sandbox: Kind A und Kind B verhalten sich verschieden |
+| **Nichts schränkt ein** | der Setter akzeptiert **jeden** Wert (`setBookmarks([])` löscht alles) | Typ des Setters: beliebiges `string[]` |
+| **Nicht wiederverwendbar** | die Karte müsste wissen, **wo** der State liegt | `EvidenceCard` kennt nur `onToggleBookmark(id)` und läuft überall |
+| **Schwer zu finden, wer ändert** | jedes Kind könnte es sein | mit Callbacks: Suche nach `onToggleBookmark` zeigt alle Auslöser |
+
+**Was ein Callback bringt:**
+
+1. **Eine Stelle für die Regel.** `handleToggleBookmark` berechnet die neue Liste, setzt State und speichert. Alle
+   Auslöser nutzen sie; keiner kann sie verbiegen.
+2. **Ein schmaler, typisierter Vertrag.** `(evidenceId: string) => void` sagt genau, was das Kind melden darf —
+   `onToggleBookmark(42)` und `onToggleBookmark()` sind Compilerfehler (`TS2345`, `TS2554`).
+3. **Das Kind bleibt dumm und wiederverwendbar.** `EvidenceCard` weiß nichts über `localStorage`, Router oder
+   Besitzer. Man könnte sie in einer Sandbox mit `onToggleBookmark={console.log}` rendern.
+4. **Der Datenfluss bleibt lesbar:** Werte laufen **nach unten**, Meldungen **nach oben**. Wer wissen will, wer
+   Bookmarks ändert, sucht `onToggleBookmark`.
+5. **Kleinste Berechtigung:** nur wer etwas ändern muss, bekommt einen Callback. `WorkspacePage` und `DashboardPage` bekommen
+   **keinen**, können also nichts ändern.
+
+**Zum Vergleich vanilla:** `state` ist ein **globales** veränderbares Objekt, das jedes Modul importieren kann
+(`dashboard.ts`, `workspace.ts`, `evidence.ts`, `storage.ts`). Dort **kann** jede Datei `state.bookmarks` ändern und
+muss selbst daran denken, danach zu speichern. In React gibt es diesen Weg nicht.
+
+### F2: Verfolge einen Callback vom Ort seiner Definition (mit dem echten `useState`-Setter darin) bis zur aufrufenden Komponente. Durch wie viele Komponentenebenen geht er, und fühlt sich das nach "zu viel" an? Wird Prop-Drilling hier bereits zum echten Problem?
+
+**Einfach gesagt:** Der Bookmark-Callback geht durch **drei** Komponenten (`PageRouter` → `EvidencePage` →
+`EvidenceCard`), also **zwei Props-Ebenen**. Nur **eine** davon (`EvidencePage`) reicht ihn **bloß weiter**. Das ist **kein**
+echtes Problem.
+
+**Der Weg von `onToggleBookmark`** (live aus dem React-Baum gelesen):
+
+```
+PageRouter                  definiert handleToggleBookmark   (hier steckt setBookmarks + saveBookmarks)
+  └─ <EvidencePage onToggleBookmark={handleToggleBookmark}>      Prop-Ebene 1
+       └─ <EvidenceCard onToggleBookmark={onToggleBookmark}>     Prop-Ebene 2
+            └─ handleBookmarkClick()  ruft  onToggleBookmark(evidence.id)   (beim Klick auf den Stern)
+```
+
+| Messung | Wert |
+|---|---|
+| Komponentenkette (unsere) | `PageRouter` → `EvidencePage` → `EvidenceCard`: 3 Komponenten, **2 Prop-Ebenen** |
+| Dazwischen (nicht unsere) | `Routes`, `RenderedRoute` aus React Router: halten nur unser Element, **kein** Prop-Durchreichen |
+| Ist es überall **dieselbe** Funktion? | ja (`===` auf beiden Ebenen) |
+| Props gesamt | `EvidencePage` **6**, `EvidenceDetail` **7**, `EvidenceCard` **4** |
+| Davon **nur durchgereicht** (von `EvidencePage` nie selbst aufgerufen) | **3**: `onToggleBookmark`, `onSaveNote`, `onChangeReview` |
+| `onSaveNote` / `onChangeReview` | `PageRouter` → `EvidencePage` → `EvidenceDetail`: ebenfalls 2 Prop-Ebenen |
+
+**Fühlt sich das nach "zu viel" an?** Nein. Die Gründe:
+
+1. **Die Tiefe ist klein.** Zwei Ebenen, und die mittlere (`EvidencePage`) ist keine reine Rohrleitung: sie **benutzt**
+   `bookmarks`, `notes` und `reviewEdits` selbst, besitzt die Filter und setzt Karten und Detail zusammen. Dass sie
+   nebenbei drei Callbacks weiterreicht, ist Teil ihrer Aufgabe ("Komposition").
+2. **Die Weitergabe ist sichtbar und geprüft.** Ändert sich die Signatur eines Callbacks, meldet TypeScript **alle drei
+   Stellen** als Fehler. Nichts bleibt unbemerkt (anders als beim "heimlichen" Zugriff auf globalen State).
+3. **Änderungsgrund.** Würde sich `PageRouter` ändern, müsste nur `EvidencePage` angepasst werden, nicht die Karte.
+
+**Was mir trotzdem auffällt** (ehrlich, die Stelle, an der es **anfangen** könnte, weh zu tun): nicht die **Tiefe**, sondern die
+**Menge** — `EvidencePage` hat **6** Props, `EvidenceDetail` **7**. Würde man noch ein Feature ergänzen (z. B. Notiz
+löschen), käme ein siebtes dazu. Das ist das Signal, über **Bündeln** (ein `actions`-Objekt) oder **Context**
+nachzudenken (Demo 8), nicht über Weglassen.
+
+**Meine Schwelle, ab der Prop-Drilling ein echtes Problem wird:**
+
+| Zeichen | Hier? |
+|---|---|
+| ≥ 3 Ebenen, auf denen eine Komponente eine Prop **nur** weiterreicht | nein (eine Ebene) |
+| dieselbe Prop an **vielen** weit entfernten Stellen gebraucht | nein (die Nutzer hängen alle **direkt** unter `PageRouter`, eine Ebene tief) |
+| Zwischen-Komponenten müssen sich ändern, **obwohl** sie die Prop nicht interessiert | nein (`EvidencePage` benutzt sie / gehört zur Aufgabe) |
+| Props-Liste so lang, dass man den Überblick verliert | **an der Grenze** (6 bis 7) |
+
+**Fazit:** heute **handhabbar**. Für diese App in ihrer jetzigen Größe ist Weiterreichen **gut genug**. Demo 8 prüft, ob
+Context sich lohnt; mein Zwischenstand ist: noch nicht, aber die Prop-Menge in `EvidencePage` ist der Kandidat für die
+erste Entlastung.
+
+---

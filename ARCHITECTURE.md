@@ -29,7 +29,7 @@ src/
                               (Evidence)
     Badge.tsx                 wiederverwendbarer Badge (Timeline + Dashboard, 3 Stellen)
     StatusBadge.tsx           Status -> Badge-Variante (Dashboard + People-Detailseite)
-  sandbox/                    Wegwerf-Beispiele (key-demo.html, mutation-demo.html), nicht Teil der App
+  sandbox/                    Wegwerf-Beispiele (key-demo, mutation-demo, callback-demo), nicht Teil der App
 ```
 
 ## Regel: "shared" oder "feature-lokal"?
@@ -98,6 +98,10 @@ Mechanisch prüfbar mit einer Textsuche über die `import`-Zeilen (siehe `ue4/UE
   der Entwurf in `HypothesisForm` (ein `useState`-Objekt). Die **sichtbare Liste ist kein State**: sie wird in
   jedem Render aus (geladene Liste + Änderungen + Filter) abgeleitet (`applyReviewEdits` → `filterEvidence` →
   `sortEvidence`). Timeline ist weiter zustandslos. Das geöffnete Detail steht in der URL.
+- Datenfluss (UE5 Demo 6): **Werte laufen nach unten (Props), Meldungen nach oben (Callbacks)**. Ein Kind bekommt nie
+  den Setter, sondern einen schmalen, typisierten Callback (z. B. `onToggleBookmark(evidenceId)`); die Regel
+  (neue Liste berechnen, State setzen, speichern) steht an **einer** Stelle im Besitzer. Nur wer etwas ändern muss,
+  bekommt einen Callback (Workspace und Dashboard nur Werte).
 - Unveränderliche Updates (UE5 Demo 3): jede State-Änderung erzeugt ein **neues** Array/Objekt. Die geladenen
   Beweisstücke werden nie verändert; Status-Änderungen stehen separat (`reviewEdits`), `applyReviewEdits` legt sie
   über die geladene Liste. Lesende Helfer nehmen `readonly`-Parameter, damit Mutieren ein Typfehler ist.

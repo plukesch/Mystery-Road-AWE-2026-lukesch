@@ -858,3 +858,144 @@ bewusst **lokal**, weil nur diese Seite sie braucht. Sie verschwinden mit der Se
 Formular-Entwurf im Formular, Bookmarks/Notizen/Status im `PageRouter`."
 
 ---
+
+## Demo 6 — Callbacks nach unten reichen
+
+### 🔰 Einfach erklärt — worum geht's hier überhaupt?
+
+In Demo 5 haben wir den State **nach oben** gezogen. Jetzt das Gegenstück: wie ändert ein **Kind** etwas, das dem
+**Elternteil** gehört? **Gar nicht direkt.** Das Elternteil gibt dem Kind eine **Funktion** ("ruf das an, wenn etwas
+passiert"), und das Kind **ruft sie auf**. Die Daten fließen **nach unten** (Props), die Meldungen **nach oben** (Callbacks).
+
+*Analogie:* ein **Amt**. Du darfst nicht ins Archiv gehen und selbst in der Akte schreiben. Du gibst am **Schalter** ein
+Formular ab (`onToggleBookmark("E03")`). Der **Beamte** (das Elternteil) führt die Akte nach den Regeln (neue Liste
+berechnen, speichern) und alle Schalter zeigen danach denselben Stand. Wüsstest du selbst, wie man die Akte führt,
+führte jeder Besucher sie ein bisschen anders.
+
+### Task 1 — Callback für Bookmarks bis zu jedem Auslöser
+
+Der Besitzer ist `PageRouter` (Demo 5). Die Änderungs-Funktion dort kennt als Einzige den **Setter**:
+
+```tsx
+function handleToggleBookmark(evidenceId: string) {
+  const next = toggleBookmark(bookmarks, evidenceId);   // neue Liste berechnen (Demo 3)
+  setBookmarks(next);                                     // State ändern  -> React rendert neu
+  saveBookmarks(next);                                    // speichern (localStorage)
+}
+```
+
+**Der Weg dieses Callbacks** (live aus dem React-Baum ausgelesen, siehe Verifikation):
+
+| Ebene | Komponente | Was sie mit `onToggleBookmark` macht |
+|---|---|---|
+| 0 | `PageRouter` | **definiert** die Funktion (hier steckt `setBookmarks`) und gibt sie als Prop an `EvidencePage` |
+| 1 | `EvidencePage` | **reicht sie unverändert weiter** an `EvidenceCard` (ruft sie selbst nie auf) |
+| 2 | `EvidenceCard` | **ruft sie auf**, in `handleBookmarkClick`, beim Klick auf den Stern: `onToggleBookmark(evidence.id)` |
+
+Dazwischen liegen noch `RenderedRoute` und `Routes` — das sind Komponenten **aus React Router**, die unser Element
+nur halten; sie bekommen keine Props von uns.
+
+**Nur wer etwas ändern muss, bekommt einen Callback:**
+
+| Komponente | liest | ändert | bekommt |
+|---|---|---|---|
+| `EvidenceCard` | `isBookmarked` | Bookmark | `onToggleBookmark` |
+| `EvidenceDetail` | Notiz, Status | Notiz, Status | `onSaveNote`, `onChangeReview` |
+| `DashboardPage`, `WorkspacePage`, `TeamLayout` | Bookmarks / Notizen / Änderungen | **nichts** | **keinen** Callback, nur Werte |
+
+Der Workspace **kann** Bookmarks lesen, aber nicht ändern — auch nicht aus Versehen. (In vanilla konnte jedes Modul, das
+`state` importiert, `state.bookmarks` verändern: `dashboard.ts`, `workspace.ts`, `evidence.ts`, `storage.ts` — heute
+schreiben nur `evidence.ts` und `storage.ts`, aber nichts **verhindert** es.)
+
+**Die Verträge sind typisiert** (ein Callback ist eine Signatur, kein `any`):
+
+| Callback | Typ |
+|---|---|
+| `onToggleBookmark` | `(evidenceId: string) => void` |
+| `onSaveNote` | `(evidenceId: string, text: string) => void` |
+| `onChangeReview` | `(evidenceId: string, edit: ReviewEdit) => void` |
+
+### Task 2 — mindestens eine weitere Interaktion
+
+Zwei weitere Interaktionen ändern **vom Elternteil besessenen** State (sie wurden in Demo 5 mit hochgezogen und laufen
+nach demselben Muster):
+
+| Interaktion | Auslöser | Callback | Besitzer-Funktion in `PageRouter` |
+|---|---|---|---|
+| **Notiz speichern** | `EvidenceDetail.handleSubmit` | `onSaveNote(id, text)` | `handleSaveNote`: `{ ...notes, [id]: text }` + `saveNotes` |
+| **Status / Relevanz ändern** | `EvidenceDetail.handleStatusChange` / `handleRelevanceChange` | `onChangeReview(id, { status })` bzw. `{ relevance }` | `handleChangeReview`: zweistufiges unveränderliches Update |
+
+Beide haben **dieselbe Gestalt**: das Kind **meldet** ("für E03 ist die Notiz jetzt …"), das Elternteil **entscheidet**,
+wie der State neu aussieht.
+
+Dazu gibt es **Callbacks, die nicht in den gemeinsamen State gehen**, sondern in den lokalen State der Seite
+(Filter) oder in die URL (Detail): `onOpen`/`onClose` (→ `?open=`), `onFilterChange`/`onClearFilters` (→ die 7 `useState`).
+Sie folgen demselben Muster, nur dass der Besitzer `EvidencePage` ist.
+
+### Die Wegwerf-Sandbox: Callback gegen durchgereichten Setter
+
+Wie in den früheren Demos eine Sandbox **außerhalb** der App (`callback-demo.html`, `src/sandbox/CallbackDemo.tsx`; nicht
+in `vite.config.js` → nie gebaut). Dieselbe Aktion zweimal: links bekommen die Kinder einen **Callback**, rechts den
+**Setter**. "Gespeichert" steht für den `localStorage`.
+
+| Klick | Links (Callback) | Rechts (Setter durchgereicht) |
+|---|---|---|
+| Kind B | State `[E01]`, Gespeichert `[E01]` | State `[E01]`, Gespeichert **`[]`** (Kind B vergisst das Speichern) |
+| Kind B nochmal | State `[]`, Gespeichert `[]` (toggelt richtig) | State **`[E01, E01]`** (Kind B hängt nur an, kein Umschalten) |
+| Kind A | State `[E01]`, Gespeichert `[E01]` | State `[]`, Gespeichert `[]` (Kind A schaltet um und speichert) |
+
+Rechts hat **jedes Kind seine eigene Regel** — Kind B die falsche. Links gibt es **eine** Regel (`handleToggle`), die
+Kinder können sie nicht verbiegen.
+
+### Verifikation
+
+- **Callback-Weg live aus dem React-Baum gelesen** (über die interne Fiber-Struktur des Stern-Buttons, jeweils die
+  Funktionskomponenten nach oben):
+  - Kette: `EvidenceCard → EvidencePage → RenderedRoute → Routes → PageRouter`.
+  - `onToggleBookmark` steht als Prop auf **zwei** Ebenen (`EvidenceCard`, `EvidencePage`), und es ist auf beiden
+    **dieselbe Funktion** (`===`).
+  - Für `onSaveNote` und `onChangeReview` (vom Formular bzw. Dropdown im Detail): Kette
+    `EvidenceDetail → EvidencePage → RenderedRoute → Routes → PageRouter`, Props auf `EvidenceDetail` und
+    `EvidencePage`.
+- **Prop-Anzahl gemessen:** `EvidencePage` 6, `EvidenceDetail` 7, `EvidenceCard` 4. `EvidencePage` **benutzt** drei Props
+  selbst (`bookmarks`, `notes`, `reviewEdits`) und **reicht nur** die drei Callbacks weiter.
+- **Echte Compiler-Fehler** für den Vertrag (installierte TypeScript-Version, Test-Datei **außerhalb** des Projekts):
+  ```
+  error TS2552: Cannot find name 'setBookmarks'. Did you mean 'bookmarks'?   // an den Setter kommt das Kind nicht
+  error TS2339: Property 'push' does not exist on type 'readonly string[]'.   // den Prop-Wert mutieren geht nicht
+  error TS2345: Argument of type 'number' is not assignable to parameter of type 'string'.   // onToggleBookmark(42)
+  error TS2554: Expected 1 arguments, but got 0.   // onToggleBookmark()
+  ```
+- **Sandbox** mit den Klicks aus der Tabelle oben durchgespielt, Werte exakt wie dort.
+- **Funktioniert in der App** (gleicher Code wie Demo 5, dort live geprüft): Stern, Notiz speichern und Status ändern
+  sind im Dashboard, Workspace und der Personen-Detailseite sichtbar.
+- **Nach dem Umbau ausgeführt:** `npm run typecheck` → 0 Fehler (inklusive der neuen Sandbox, die `tsc` über
+  `src/**/*.tsx` mitprüft). `npm run format:check` → sauber (beim ersten Versuch, auch `callback-demo.html`).
+  `npm run build` → grün (152 Module). Es gab in Demo 6 **keine Änderung am App-Code**, nur die Sandbox kam dazu
+  (Callbacks und Props standen seit Demo 5): das Bundle ist **byte-identisch** zu Demo 5 (`react-*.js` 287,99 KB,
+  gzip 89,34 KB, gleicher Datei-Hash `B6JqClwE`), und die Sandbox taucht in `dist/` nicht auf.
+
+### 🎤 Live-Demo — was du im Unterricht herzeigst
+
+**1. Den Callback verfolgen (die Frage, die kommt):** `PageRouter.tsx` → `handleToggleBookmark` (hier steckt `setBookmarks`)
+→ `<EvidencePage onToggleBookmark=…>` → in `EvidencePage.tsx` `onToggleBookmark={onToggleBookmark}` an die Karte →
+`EvidenceCard.tsx` → `handleBookmarkClick` ruft `onToggleBookmark(evidence.id)`. Sag: "drei Dateien, zwei Props-Hops."
+
+**2. Die Sandbox zeigen:** `http://localhost:5173/Mystery-Road-AWE-2026-lukesch/callback-demo.html`. In beiden Spalten Kind B
+zweimal, dann Kind A klicken. Links bleibt alles gleich. Rechts laufen State und "Gespeichert" auseinander und es
+entsteht `[E01, E01]`. Sag: "wer den Setter hat, muss die Regel kennen. Wer nur einen Callback hat, kann sie nicht
+verbiegen."
+
+**3. Den Typschutz zeigen:** in `EvidenceCard.tsx` `onToggleBookmark(42)` schreiben,
+```bash
+npm run typecheck
+```
+→ `Argument of type 'number' is not assignable to parameter of type 'string'`. Zeile wieder entfernen.
+
+**4. Das Prinzip-Minimum zeigen:** `WorkspacePage.tsx` hat **keinen** Callback. Sag: "die Seite zeigt nur. Sie kann Bookmarks nicht
+ändern — auch nicht aus Versehen."
+
+**5. Die Prop-Drilling-Frage ehrlich beantworten:** `EvidencePage.tsx` öffnen, auf die Prop-Liste zeigen (6). Sag: "drei
+benutzt die Seite selbst, drei reicht sie nur weiter. Das ist eine Ebene Durchreichen, noch kein Problem."
+
+---

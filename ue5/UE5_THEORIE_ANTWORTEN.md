@@ -615,3 +615,132 @@ Context sich lohnt; mein Zwischenstand ist: noch nicht, aber die Prop-Menge in `
 erste Entlastung.
 
 ---
+
+## Demo 7 — `useReducer` für den Filter-Zustand
+
+Die sieben Filterwerte der Evidence-Seite (Suche, Typ, Person, Ort, Status, Relevanz, Sortierung) sind jetzt **ein**
+`useReducer` mit drei Aktionen (`SET_FILTER`, `SET_SORT`, `CLEAR_FILTERS`). Das Verhalten ist gegenüber vanilla
+unverändert (dieselben 22 Kombinationen, "Clear" lässt die Sortierung stehen). Der Reducer ist eine **reine Funktion** in
+`filterReducer.ts`. Details und Messtabellen in `UE5_CHANGES.md`.
+
+### F1: Warum passt dieser Zustand ("Evidence-Filter") besser zu `useReducer` als ein Haufen einzelner `useState`? Was wurde konkret einfacher, nachdem du umgestellt hast?
+
+**Einfach gesagt:** Die sieben Werte **gehören zusammen** (immer gemeinsam gelesen, oft gemeinsam geändert,
+gemeinsam zurückgesetzt) und ändern sich auf **wenige, benennbare Arten**. Dafür ist ein Reducer gemacht: er sammelt
+**alle** Übergänge an einer Stelle und gibt jedem einen Namen.
+
+**Woran man erkennt, dass ein Reducer passt:**
+
+| Merkmal | Evidence-Filter |
+|---|---|
+| mehrere **zusammengehörige** Werte | 7 Werte, alle beeinflussen dieselbe Liste |
+| Änderungen auf **wenige Arten** | "einen Filter setzen", "Sortierung setzen", "alles zurücksetzen" |
+| Ein Übergang **berührt mehrere Werte** | `CLEAR_FILTERS` setzt sechs Werte und lässt einen stehen |
+| Die **Regeln** der Übergänge sind selbst Wissen | "Clear lässt die Sortierung" ist eine Regel (wie vanilla) |
+
+**Was konkret einfacher wurde** (gemessene Zahlen aus `UE5_CHANGES.md`):
+
+| # | Vorher (7× `useState`) | Nachher (`useReducer`) |
+|---|---|---|
+| 1 | Filter-Code in `EvidencePage`: **49** Codezeilen | **11** Zeilen in der Seite + **25** im Reducer |
+| 2 | Ein `switch` mit **7 Fällen** für **7 Setter** in der Komponente | **2** Zweige (`sort` oder nicht), der Rest ist `SET_FILTER` |
+| 3 | "Clear": **6 Setter** nacheinander von Hand | **1** Aktion, die Regel steht im Reducer |
+| 4 | Das Zustandsobjekt für Toolbar und Filterfunktion **von Hand** aus sieben Variablen zusammengesetzt | der Zustand **ist** das Objekt (`filters`) |
+| 5 | Zustandsübergänge **verstreut** in Handlern der Komponente | alle in **einer** reinen Funktion, **ohne React testbar** (live mit eingefrorenem Zustand ausprobiert) |
+| 6 | Ein neuer Filter: neuer `useState` + neuer `case` + neuer Setter in Clear + Feld im Objekt (**vier** Stellen) | neues Feld im Typ + im `INITIAL_FILTERS` (der Compiler erzwingt es); `SET_FILTER` und `CLEAR_FILTERS` funktionieren **unverändert** |
+| 7 | Eine "Tippfehler-Sortierung" (`"newest"`) kommt als String an und wird erst im Handler geprüft | der Aktionstyp `SET_SORT` verlangt ein `SortOrder`: `"newest"` ist ein **Compilerfehler** |
+
+**Ehrlich, was nicht besser wurde:**
+- Es ist **nicht dramatisch weniger Code** (36 gegen 49 Zeilen). Der Gewinn liegt in der **Struktur**.
+- Es gibt **mehr Wörter** ("dispatch", "Aktion", "Reducer") für jemanden, der es zum ersten Mal sieht. Für **einen**
+  Zähler oder **ein** Suchfeld wäre `useReducer` übertrieben, dort ist `useState` richtig.
+
+**Meine Faustregel:** `useState` für **ein** unabhängiges Stück Zustand; `useReducer`, sobald **mehrere zusammengehörige** Werte
+**mehrere Arten** von Änderung haben, vor allem wenn eine Änderung **mehrere Werte gleichzeitig** berührt.
+
+### F2: Zeig deine `CLEAR_FILTERS`-Aktion. Wie macht ein Reducer "mehrere zusammengehörige Werte auf einmal, konsistent zurücksetzen" leichter richtig zu machen, als sie einzeln zurückzusetzen?
+
+**Einfach gesagt:** Die Antwort auf "wie sieht ein **leerer** Filter aus?" steht **einmal** (`INITIAL_FILTERS`), und `CLEAR_FILTERS`
+**benutzt** sie, statt sie zu **wiederholen**. Vergessen ist dadurch nicht mehr möglich.
+
+**Die Aktion** (`filterReducer.ts`):
+
+```ts
+case "CLEAR_FILTERS":
+  // wie vanilla: Suche und die fünf Filter leeren, die SORTIERUNG bleibt
+  return { ...INITIAL_FILTERS, sort: state.sort };
+```
+
+**Der Auslöser** (`EvidencePage.tsx`): `dispatch({ type: "CLEAR_FILTERS" })`: eine Zeile.
+
+**Vorher** (Demo 4/5) standen sechs Setter von Hand:
+
+```tsx
+setSearch(""); setTypeFilter(""); setPersonFilter(""); setLocationFilter(""); setStatusFilter(""); setRelevanceFilter("");
+```
+
+**Warum der Reducer das leichter richtig macht** — vier Gründe, jeder prüfbar:
+
+| # | Grund | Erklärung |
+|---|---|---|
+| 1 | **Eine Quelle für "leer"** | `INITIAL_FILTERS` ist der Startwert **und** das Ergebnis von Clear. Ändert sich ein Startwert, ändert sich Clear automatisch. Vorher stand `""` an zwei Orten (`useState("")` **und** `setX("")`) |
+| 2 | **Der Compiler erzwingt Vollständigkeit** | `INITIAL_FILTERS` ist vom Typ `EvidenceFilters` und **muss** jedes Feld enthalten. Ein achtes Feld `tag` ohne Startwert ist ein Compilerfehler: `Property 'tag' is missing in type … but required in type 'EvidenceFilters'` (echt gemessen). Man **kann** das neue Feld nicht in Clear vergessen |
+| 3 | **Eine Aktion, ein Render** | alle Werte ändern sich **in einem** Zustandsübergang. Bei sechs Settern fasst React sie zwar im selben Event zusammen, aber **die Verantwortung**, keinen zu vergessen, liegt beim Autor jedes Handlers |
+| 4 | **Die Ausnahme steht an einer Stelle** | "die Sortierung bleibt" ist **eine Zeile** im Reducer (`sort: state.sort`). Vorher war sie nur dadurch ausgedrückt, dass ein Setter **fehlt** — die Absicht war unsichtbar (man sah nicht, ob `setSort` absichtlich fehlt oder vergessen wurde) |
+
+**Konsistent heißt auch:** nach `CLEAR_FILTERS` ist der Zustand **immer** ein gültiger `EvidenceFilters` (alle sieben Felder
+vorhanden). Mit einzelnen Settern gibt es kurz Zwischenzustände (halb geleert), im selben Render sieht man sie nicht,
+aber **in der Logik** existieren sie.
+
+**Live belegt:** der Reducer mit **eingefrorenem** Zustand `{ search: "x", …, sort: "title-desc" }` aufgerufen →
+`CLEAR_FILTERS` liefert alle Filter `""`, `sort` bleibt `"title-desc"`, das Ergebnis ist ein **neues** Objekt
+(weder das alte noch `INITIAL_FILTERS`). In der App: Suche `log` und alle fünf Filter gesetzt, Sortierung `title-asc`
+(1 Karte) → nach "Clear filters" 18 Karten, Sortierung bleibt.
+
+### F3: Ist `useReducer` grundsätzlich etwas anderes als `useState`, oder ist `useState` im Grunde ein Spezialfall derselben Idee? Begründe.
+
+**Einfach gesagt:** `useState` ist ein **Spezialfall** von `useReducer`. Es ist derselbe Mechanismus mit einem
+**eingebauten**, besonders einfachen Reducer ("ersetze den Zustand durch das, was ich dir gebe").
+
+**Der Beweis aus dem installierten React-Quelltext** (React 19.3.0, `react-dom-client.development.js`):
+
+```js
+function basicStateReducer(state, action) {
+  return "function" === typeof action ? action(state) : action;
+}
+// beim Einhängen von useState:   lastRenderedReducer: basicStateReducer
+// bei jedem weiteren Render:     useState: function () { return updateReducer(basicStateReducer); }
+```
+
+`useState` ruft **intern denselben `updateReducer`** auf wie `useReducer` und gibt ihm den **eingebauten** Reducer
+`basicStateReducer`.
+
+**Die Übersetzung:**
+
+| `useState` | als `useReducer` gedacht |
+|---|---|
+| `const [x, setX] = useState(0)` | `const [x, dispatch] = useReducer(basicStateReducer, 0)` |
+| `setX(5)` | `dispatch(5)`, der Reducer gibt `5` zurück ("ersetze") |
+| `setX(prev => prev + 1)` | `dispatch(prev => prev + 1)`, der Reducer erkennt eine **Funktion** (`typeof action === "function"`) und ruft sie mit dem alten Zustand auf |
+
+Die **Funktionsform** des Setters (`setReviewEdits(previous => …)` aus Demo 3) ist also nichts anderes als eine **Aktion, die
+eine Funktion ist**.
+
+**Was beide gemeinsam haben** (weil es dieselbe Maschine ist): `Object.is`-Vergleich des neuen mit dem alten Zustand
+(gleiches Objekt → kein Neurendern, siehe Demo 3), gebündelte Updates, eine **stabile** `dispatch`-/Setter-Funktion
+(ändert ihre Identität zwischen Renderings nicht), Zustand pro Komponenten-Instanz.
+
+**Was sich unterscheidet** (die **Entscheidung, wo die Regeln stehen**, nicht die Maschine):
+
+| | `useState` | `useReducer` |
+|---|---|---|
+| Wer legt fest, was eine Änderung bewirkt? | **jeder Aufrufer** (er baut den neuen Wert selbst) | **der Reducer**, an einer Stelle |
+| Was schickt man los? | den **neuen Wert** | eine **Aktion** ("was ist passiert"), nicht "wie wird es" |
+| Wo wohnt die Logik? | verstreut in Handlern der Komponente | in einer **reinen Funktion**, außerhalb der Komponente |
+| Typisch gut für | ein unabhängiger Wert (Schalter, Zähler, ein Textfeld) | zusammengehörige Werte mit benannten Übergängen |
+
+**Die Konsequenz:** man kann **jedes** `useState` als `useReducer` schreiben und umgekehrt (ein Reducer mit einer einzigen
+Aktion "ersetze" **ist** `useState`). Die Wahl ist **eine Frage der Lesbarkeit**, nicht der Möglichkeiten. Deshalb ist die Regel
+aus F1 eine Faustregel, kein Gesetz.
+
+---

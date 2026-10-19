@@ -999,3 +999,172 @@ npm run typecheck
 benutzt die Seite selbst, drei reicht sie nur weiter. Das ist eine Ebene Durchreichen, noch kein Problem."
 
 ---
+
+## Demo 7 — `useReducer` für den Filter-Zustand
+
+### 🔰 Einfach erklärt — worum geht's hier überhaupt?
+
+Bisher hat die Seite für jeden der sieben Filterwerte ein eigenes `useState`, und für jede Änderung gab es einen eigenen
+Setter. Das ist wie eine **Fernbedienung, bei der man jeden Wert einzeln einstellen muss**. Mit `useReducer` gibt es
+**Tasten mit festen Bedeutungen**: man drückt "setze Typ auf X", "andere Sortierung", "Standardbild" — und **ein**
+Schaltplan (der **Reducer**) legt fest, was jede Taste mit den Einstellungen macht.
+
+*Analogie:* die **"Standardbild"-Taste** am Fernseher. Sie setzt Helligkeit, Kontrast und Farbe **auf einmal** zurück
+(und lässt die Lautstärke, wie sie ist). Niemand muss sich merken, welche Regler dazugehören — das steht **einmal** im
+Gerät. Bei sieben einzelnen Schiebereglern müsste der Bediener jeden selbst zurückstellen und könnte einen vergessen.
+
+`useReducer(reducer, startwert)` gibt zwei Dinge zurück: den **aktuellen Zustand** und eine Funktion **`dispatch`**, mit
+der man eine **Aktion** abschickt. React ruft dann `reducer(alterZustand, aktion)` auf und nimmt das Ergebnis als neuen
+Zustand.
+
+### Task 1 — die sieben Filterwerte als **eine** Zustands-Domäne
+
+Die sieben Werte gehören zusammen: sie werden **immer gemeinsam gelesen** (die Liste hängt von allen ab), ändern sich
+**als Gruppe** (Clear) und werden **zusammen** an die Toolbar gegeben.
+
+| Wert | Typ | Startwert |
+|---|---|---|
+| `search` | string | `""` |
+| `type` | string | `""` |
+| `person` | string | `""` |
+| `location` | string | `""` |
+| `status` | string | `""` |
+| `relevance` | string | `""` |
+| `sort` | `SortOrder` (`"date-desc"`, `"date-asc"`, `"title-asc"`, `"title-desc"`) | `"date-desc"` |
+
+**Vorher (Demo 4/5)** — sieben `useState`, ein `switch` mit sieben Fällen, sechs Setter für Clear, ein Objekt von Hand
+zusammengesteckt:
+
+```tsx
+const [search, setSearch] = useState("");
+const [typeFilter, setTypeFilter] = useState("");
+... (fünf weitere)
+function handleFilterChange(field, value) { switch (field) { case "search": setSearch(value); break; ... } }
+function handleClearFilters() { setSearch(""); setTypeFilter(""); ... (sechs Setter) }
+const filters = { search, type: typeFilter, ... };
+```
+
+**Nachher (Demo 7):**
+
+```tsx
+const [filters, dispatch] = useReducer(filterReducer, INITIAL_FILTERS);   // EvidencePage.tsx
+
+function handleFilterChange(field, value) {
+  if (field === "sort") { if (isSortOrder(value)) dispatch({ type: "SET_SORT", sort: value }); }
+  else dispatch({ type: "SET_FILTER", field, value });
+}
+function handleClearFilters() { dispatch({ type: "CLEAR_FILTERS" }); }
+```
+
+| Neue/geänderte Datei | Rolle |
+|---|---|
+| `evidence/filterReducer.ts` (neu) | der **Reducer**: Typen `FilterField`, `FilterAction`, der `INITIAL_FILTERS` und die Funktion `filterReducer` — **eine reine Funktion**, kein React, kein DOM |
+| `evidence/EvidencePage.tsx` | `useReducer` statt 7× `useState`; die Handler schicken nur noch Aktionen |
+| `evidence/EvidenceToolbar.tsx` | **unverändert** (bekommt weiter `filters`, `onFilterChange`, `onClearFilters`) |
+
+**Gemessen (Codezeilen ohne Kommentare und Leerzeilen):**
+
+| | vorher | nachher |
+|---|---|---|
+| Filter-Code in `EvidencePage` | **49** (7 `useState` + `handleFilterChange` 25 + `handleClearFilters` 8 + Objekt 9) | **11** (`useReducer` 1 + `handleFilterChange` 7 + `handleClearFilters` 3) |
+| Reducer-Datei | — | **25** |
+| **zusammen** | **49** | **36** |
+| `EvidencePage.tsx` insgesamt | 217 Zeilen | 174 Zeilen |
+
+Ehrlich: es wird **nicht** dramatisch weniger Code (36 gegen 49). Der Gewinn liegt in der **Struktur**: die Seite ist um 38 Zeilen
+leichter, und **alle** Zustandsübergänge stehen an **einer** Stelle.
+
+### Task 2 — mindestens 3 Aktionstypen
+
+| Aktion | Felder | Was der Reducer macht | Wann abgeschickt |
+|---|---|---|---|
+| **`SET_FILTER`** | `field` (eines der 6 String-Felder), `value` | `{ ...state, [field]: value }` | Suche getippt, Typ/Person/Ort/Status/Relevanz gewählt |
+| **`SET_SORT`** | `sort` (ein `SortOrder`) | `{ ...state, sort }` | Sortierung gewählt |
+| **`CLEAR_FILTERS`** | — | `{ ...INITIAL_FILTERS, sort: state.sort }` | "Clear filters" geklickt |
+
+```ts
+export type FilterAction =
+  | { type: "SET_FILTER"; field: FilterField; value: string }
+  | { type: "SET_SORT"; sort: SortOrder }
+  | { type: "CLEAR_FILTERS" };
+```
+
+**Der Weg einer Eingabe:**
+
+| Schritt | Was passiert |
+|---|---|
+| 1 | Nutzer wählt im Typ-Dropdown `access-log` |
+| 2 | `FilterSelect` ruft `onChange("access-log")` → die Toolbar `onFilterChange("type", "access-log")` |
+| 3 | `handleFilterChange` macht daraus `dispatch({ type: "SET_FILTER", field: "type", value: "access-log" })` |
+| 4 | React ruft `filterReducer(alterZustand, aktion)` auf → neuer Zustand mit `type: "access-log"` |
+| 5 | `EvidencePage` rendert neu → die abgeleitete Liste (`visibleEvidence`, Demo 4) wird mit dem neuen Zustand berechnet |
+
+**Zwei Typ-Entscheidungen, die Fehler verhindern:**
+
+- `FilterField` ist `Exclude<keyof EvidenceFilters, "sort">`: **`sort` ist bei `SET_FILTER` ausgenommen**. Die Sortierung ist ein
+  geschlossener Typ und hat ihre eigene Aktion; mit `SET_FILTER` kann man keine beliebige Zeichenkette als Sortierung
+  einschleusen.
+- Der Reducer hat **kein `default`**: TypeScript prüft, dass **jede** Aktion behandelt ist.
+
+### Verifikation
+
+- **Parität mit vanilla (dieselben 22 Kombinationen wie in Demo 4)** nach dem Umbau erneut durchgespielt: **22 von 22**
+  identisch (inklusive E04 über den Anzeigenamen, `Test-Report`/`test-report`, E12, Leer-Text).
+- **"Clear filters"** (Suche `log`, alle fünf Filter gesetzt, Sortierung `title-asc` → 1 Karte): nach dem Klick 18 Karten,
+  alle sechs Werte leer, **Sortierung bleibt `title-asc`** (wie vanilla).
+- **Der Reducer als reine Funktion** (direkt aus dem Dev-Server importiert, mit **eingefrorenem** Zustand):
+  - `SET_FILTER` → neues Objekt, nur `person` geändert, **Original unverändert**.
+  - `SET_SORT` → nur `sort` geändert, alle anderen Felder bleiben.
+  - `CLEAR_FILTERS` → alle Filter `""`, `sort` bleibt `title-desc`; Ergebnis ist ein **neues** Objekt (weder das alte noch
+    `INITIAL_FILTERS`).
+- **Echte Compiler-Fehler** (installierte TypeScript-Version, Test-Datei **außerhalb** des Projekts, dort ein achtes Feld
+  `tag` und eine vierte Aktion `RESET_SEARCH` ergänzt):
+  ```
+  error TS2741: Property 'tag' is missing in type '{ search: string; type: string; sort: "date-desc"; }' but required in type 'EvidenceFilters'.
+  error TS2366: Function lacks ending return statement and return type does not include 'undefined'.
+  error TS2322: Type '"sort"' is not assignable to type 'FilterField'.
+  error TS2322: Type '"CLEAR"' is not assignable to type '"CLEAR_FILTERS" | "RESET_SEARCH" | "SET_FILTER" | "SET_SORT"'.
+  error TS2322: Type '"newest"' is not assignable to type 'SortOrder'.
+  ```
+- **React-Quelltext nachgesehen** (installiert: React 19.3.0, `react-dom-client.development.js`): `useState` ist auf demselben
+  Mechanismus gebaut wie `useReducer` (Grundlage für Theorie F3), siehe dort.
+- **Konsole:** zwischen zwei Markern (alle fünf Seiten, Detail, Filter setzen, Clear) keine Meldung.
+- **Nach dem Umbau ausgeführt:** `npm run typecheck` → 0 Fehler (der Union-Typ `FilterAction`, die ausschließende
+  `switch`-Prüfung ohne `default` und `{ ...state, [action.field]: action.value }` kompilieren).
+  `npm run format:check` → sauber (beim ersten Versuch). `npm run build` → grün (153 Module).
+
+  | Stand | `react-*.js` | gzip | Module |
+  |---|---|---|---|
+  | UE5 Demo 6 | 287,99 KB | 89,34 KB | 152 |
+  | **UE5 Demo 7** | **287,90 KB** | **89,37 KB** | **153** |
+  | Unterschied | **−0,09 KB** | **+0,03 KB** | +1 (`filterReducer.ts`) |
+
+  Das Bundle bleibt praktisch gleich groß: der Reducer ersetzt den Code, den er aus der Seite herausnimmt.
+
+### 🎤 Live-Demo — was du im Unterricht herzeigst
+
+**1. Den Reducer zeigen:** `filterReducer.ts` öffnen. Sag: "alle **Zustandsübergänge** der Filter stehen hier, drei
+Zweige, eine reine Funktion."
+
+**2. Den Weg einer Eingabe zeigen:** `EvidencePage.tsx` → `handleFilterChange` (sieben Zeilen) und
+`dispatch({ type: "SET_FILTER", … })`. Sag: "vorher ein `switch` mit sieben Fällen, jetzt zwei Zweige."
+
+**3. Clear zeigen (Theorie F2):** Filter und Sortierung setzen, "Clear filters" → Filter leer, Sortierung bleibt.
+`CLEAR_FILTERS` im Reducer zeigen: `{ ...INITIAL_FILTERS, sort: state.sort }`.
+
+**4. Den Reducer ohne React ausprobieren (stark):** in der Konsole
+```js
+const m = await import("/Mystery-Road-AWE-2026-lukesch/src/features/evidence/filterReducer.ts");
+const s = m.filterReducer(m.INITIAL_FILTERS, { type: "SET_FILTER", field: "person", value: "nova-byte" });
+m.filterReducer(s, { type: "CLEAR_FILTERS" })
+```
+Sag: "eine reine Funktion: Zustand rein, Aktion rein, neuer Zustand raus. Kein Browser, kein React nötig."
+
+**5. Den Compiler-Schutz zeigen:** in `filterReducer.ts` bei `INITIAL_FILTERS` die Zeile `relevance: "",` löschen,
+```bash
+npm run typecheck
+```
+→ `Property 'relevance' is missing …`. Zeile wieder einsetzen. Sag: "ein neues Filterfeld **kann** gar nicht in `CLEAR_FILTERS`
+vergessen werden."
+
+---

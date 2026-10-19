@@ -13,7 +13,7 @@ src/
                               BulletList
     timeline/                 TimelinePage, TimelineToolbar, TimelineEventItem, CertaintyBadge, timelineHelpers.ts
     evidence/                 EvidencePage, EvidenceToolbar, EvidenceCard, EvidenceDetail, RelevanceBadge,
-                              evidenceHelpers.ts
+                              evidenceHelpers.ts, filterReducer.ts
     workspace/                WorkspacePage, BookmarksList, NotesList, HypothesisForm, workspaceHelpers.ts,
                               hypothesisStorage.ts
   shared/                     nur, was von mehreren Stellen benutzt wird
@@ -94,8 +94,9 @@ Mechanisch prüfbar mit einer Textsuche über die `import`-Zeilen (siehe `ue4/UE
   (je ein `useState`). Die Seiten bekommen die **Werte als Props** und `EvidencePage` die **Änderungs-Callbacks**
   (`onToggleBookmark`, `onSaveNote`, `onChangeReview`). Der `localStorage` ist nur noch Speicher (beim Start
   gelesen, bei jeder Änderung geschrieben), kein zweiter Leser mehr. Was nur **eine** Komponente braucht, bleibt
-  unten: die **sieben Filterwerte** in `EvidencePage` (je ein `useState`, Demo 7 macht daraus einen Reducer) und
-  der Entwurf in `HypothesisForm` (ein `useState`-Objekt). Die **sichtbare Liste ist kein State**: sie wird in
+  unten: die **sieben Filterwerte** in `EvidencePage` (seit Demo 7 **ein** `useReducer` mit den Aktionen
+  `SET_FILTER`, `SET_SORT`, `CLEAR_FILTERS`; der Reducer ist eine reine Funktion in `filterReducer.ts`) und der
+  Entwurf in `HypothesisForm` (ein `useState`-Objekt). Die **sichtbare Liste ist kein State**: sie wird in
   jedem Render aus (geladene Liste + Änderungen + Filter) abgeleitet (`applyReviewEdits` → `filterEvidence` →
   `sortEvidence`). Timeline ist weiter zustandslos. Das geöffnete Detail steht in der URL.
 - Datenfluss (UE5 Demo 6): **Werte laufen nach unten (Props), Meldungen nach oben (Callbacks)**. Ein Kind bekommt nie

@@ -3,8 +3,7 @@
 // ersetzt den platzhalter aus UE3. spiegelbild von js/views/evidence.ts:
 // toolbar, karten-raster, detail-panel. diese seite besorgt die daten und haelt
 // die dinge, die NUR sie braucht:
-//  - die sieben filter-werte (7x useState, demo 4; demo 7 fasst sie zu EINEM
-//    useReducer zusammen)
+//  - die filter (ein useReducer, demo 7; vorher sieben useState, demo 4)
 //  NICHT im state: die sichtbare liste. sie wird bei jedem rendern aus
 //  (geladene liste + aenderungen + filter) ABGELEITET (demo 4).
 //  - welches beweisstueck geoeffnet ist -> NICHT als useState, sondern in der
@@ -19,7 +18,7 @@
 // siehe demo 6). vorher hielt diese seite sie selbst und ging beim wechsel auf
 // eine andere seite (entmounten) mitsamt der status-aenderungen unter.
 // ---------------------------------------------------------------------
-import { useState } from "react";
+import { useReducer } from "react";
 import { useSearchParams } from "react-router";
 import { useCaseData } from "../../shared/useCaseData";
 import { applyReviewEdits, type ReviewEdit } from "../../shared/reviewEdits";
@@ -34,8 +33,8 @@ import {
   sortEvidence,
   uniqueTypes,
   type EvidenceFilters,
-  type SortOrder,
 } from "./evidenceHelpers";
+import { INITIAL_FILTERS, filterReducer } from "./filterReducer";
 
 interface EvidencePageProps {
   bookmarks: readonly string[];
@@ -55,18 +54,11 @@ export function EvidencePage({
   onChangeReview,
 }: EvidencePageProps) {
   const caseDataState = useCaseData();
-  // ue5 demo 4: die sieben filter-werte, je ein useState (die toolbar ist
-  // kontrolliert, siehe EvidenceToolbar). "" = "kein filter". EHRLICH: das ist
-  // ein haufen einzelner states, der immer gemeinsam gelesen wird und (clear)
-  // gemeinsam zurueckgesetzt werden muss - genau die stelle, an der demo 7 auf
-  // useReducer umstellt. sie bleiben HIER: nur diese seite braucht sie.
-  const [search, setSearch] = useState("");
-  const [typeFilter, setTypeFilter] = useState("");
-  const [personFilter, setPersonFilter] = useState("");
-  const [locationFilter, setLocationFilter] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");
-  const [relevanceFilter, setRelevanceFilter] = useState("");
-  const [sort, setSort] = useState<SortOrder>("date-desc");
+  // ue5 demo 7: ALLE sieben filter-werte in EINEM useReducer. `filters` ist der
+  // aktuelle zustand (das objekt, das vorher aus sieben useStates zusammengesetzt
+  // wurde), `dispatch` schickt eine AKTION an den reducer (filterReducer.ts), der
+  // den neuen zustand berechnet. der zustand bleibt HIER: nur diese seite braucht ihn.
+  const [filters, dispatch] = useReducer(filterReducer, INITIAL_FILTERS);
   const [searchParams, setSearchParams] = useSearchParams();
 
   if (caseDataState.status === "loading") {
@@ -102,67 +94,32 @@ export function EvidencePage({
     setSearchParams({});
   }
 
-  // die toolbar meldet (feldname, neuer wert); hier geht jeder an SEINEN setter.
-  // sieben faelle fuer sieben useStates - das ist die schreibarbeit, die demo 7
-  // mit einem reducer (eine aktion "SET_FILTER") spart. "sort" kommt als string
-  // aus dem <select>, erst der type guard macht daraus einen SortOrder.
+  // die toolbar meldet (feldname, neuer wert); hier wird daraus eine AKTION.
+  // vorher ein switch mit sieben faellen fuer sieben setter, jetzt zwei zweige.
+  // "sort" kommt als string aus dem <select>, erst der type guard macht daraus
+  // einen SortOrder (ein unbekannter wert wird ignoriert).
   function handleFilterChange(field: keyof EvidenceFilters, value: string) {
-    switch (field) {
-      case "search":
-        setSearch(value);
-        break;
-      case "type":
-        setTypeFilter(value);
-        break;
-      case "person":
-        setPersonFilter(value);
-        break;
-      case "location":
-        setLocationFilter(value);
-        break;
-      case "status":
-        setStatusFilter(value);
-        break;
-      case "relevance":
-        setRelevanceFilter(value);
-        break;
-      case "sort":
-        if (isSortOrder(value)) setSort(value);
-        break;
+    if (field === "sort") {
+      if (isSortOrder(value)) dispatch({ type: "SET_SORT", sort: value });
+    } else {
+      dispatch({ type: "SET_FILTER", field, value });
     }
   }
 
-  // "Clear filters": wie in vanilla (clearFilters() in js/views/evidence.ts)
-  // werden suche und die fuenf filter geleert, die SORTIERUNG bleibt. sechs
-  // setter von hand - vergisst man einen, bleibt ein filter "haengen". (demo 7
-  // zeigt, wie ein reducer das an EINER stelle regelt.)
+  // "Clear filters": EINE aktion. WAS dabei zurueckgesetzt wird (alles ausser der
+  // sortierung, wie in vanilla), steht im reducer - nicht hier.
   function handleClearFilters() {
-    setSearch("");
-    setTypeFilter("");
-    setPersonFilter("");
-    setLocationFilter("");
-    setStatusFilter("");
-    setRelevanceFilter("");
+    dispatch({ type: "CLEAR_FILTERS" });
   }
 
   // ---- abgeleitete werte (jeden render neu berechnet, nirgends gespeichert) ----
 
-  // die sieben useStates als EIN objekt - nur zum Weitergeben, kein state.
-  const filters: EvidenceFilters = {
-    search,
-    type: typeFilter,
-    person: personFilter,
-    location: locationFilter,
-    status: statusFilter,
-    relevance: relevanceFilter,
-    sort,
-  };
   // DIE sichtbare liste: (geladene liste + aenderungen) -> filtern -> sortieren.
   // wird bei JEDEM rendern neu gebaut und nirgends gespeichert. aendert sich ein
   // filter, ein bookmark, ein status oder die geladene liste, stimmt sie beim
   // naechsten rendern automatisch - es gibt keinen zweiten "gefilterten" stand,
   // der vergessen werden koennte (siehe THEORIE_ANTWORTEN demo 4).
-  const visibleEvidence = sortEvidence(filterEvidence(evidence, filters, people), sort);
+  const visibleEvidence = sortEvidence(filterEvidence(evidence, filters, people), filters.sort);
 
   const openId = searchParams.get("open");
   // unbekannte oder leere id -> undefined -> kein panel (wie bei ?person= in UE4).

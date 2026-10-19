@@ -388,7 +388,7 @@ spontan schreiben würde):
 
 ### Task 2 — der Bookmark-Fall, der das gezielt prüft
 
-**Die reine Funktion** (`features/evidence/evidenceHelpers.ts`):
+**Die reine Funktion** (`features/evidence/evidenceHelpers.ts`; seit Demo 5 in `shared/bookmarks.ts`, gleicher Code):
 
 ```ts
 export function toggleBookmark(bookmarks: readonly string[], evidenceId: string): string[] {
@@ -466,7 +466,7 @@ neu rendert, liest die Liste das mutierte Array), aber alles, was auf **Referenz
 | **Status-Änderungen gehen beim Seitenwechsel verloren** | live gemessen: E03 auf "reviewed" → Dashboard → zurück zu Evidence: wieder "unreviewed" (nur noch 1 reviewed-Karte statt 2) | `reviewEdits` lebt in `EvidencePage`; beim Verlassen wird die Seite entmountet, ihr State verworfen. In vanilla blieb die Änderung im Speicher (`ev.status` am geladenen Objekt) — allerdings **ohne** Dashboard-Aktualisierung. Wird in Demo 5 behoben (State nach oben) |
 | **Dashboard zeigt die Änderung nicht** | live: nach der Änderung zeigt das Dashboard weiter `1 Reviewed` (E12) | `DashboardPage` lädt **eigene** Daten (`useCaseData`); die Änderungen existieren nur in `EvidencePage`. Genau das Problem aus der Einleitung der Angabe ("ein Dashboard-Zähler, der veralten kann"); Demo 4/5 |
 | **Status-Änderungen werden nicht gespeichert** | nur im Speicher, nach `F5` weg | wie vanilla (dort ebenfalls nur im Speicher). Bookmarks/Notizen landen im `localStorage`, Status nicht |
-| `toggleBookmark` ist feature-lokal | in `evidenceHelpers.ts` | heute nur `EvidencePage` benutzt es; zieht in Demo 5 um, falls der State nach oben wandert |
+| `toggleBookmark` ist feature-lokal | in `evidenceHelpers.ts` | heute nur `EvidencePage` benutzt es; zieht in Demo 5 um, falls der State nach oben wandert (**ist passiert**: nach `shared/bookmarks.ts`, ebenso `applyReviewEdits` nach `shared/reviewEdits.ts`) |
 
 ### Verifikation
 
@@ -497,9 +497,10 @@ Links **2×** "Bookmark hinzufügen (push)" klicken → **nichts** passiert. Dan
 erscheinen plötzlich beide Einträge, **die Summary bleibt bei 0**. Rechts klicken → sofort richtig. Sag: "React
 vergleicht nur die **Referenz**. Dasselbe Array = nichts zu tun."
 
-**2. Den Bookmark-Fall zeigen:** `evidenceHelpers.ts`, `toggleBookmark` (4 Zeilen). In der Konsole:
+**2. Den Bookmark-Fall zeigen:** `shared/bookmarks.ts`, `toggleBookmark` (4 Zeilen; in Demo 3 stand er noch in
+`evidenceHelpers.ts`). In der Konsole:
 ```js
-const m = await import("/Mystery-Road-AWE-2026-lukesch/src/features/evidence/evidenceHelpers.ts");
+const m = await import("/Mystery-Road-AWE-2026-lukesch/src/shared/bookmarks.ts");
 const original = Object.freeze(["E01", "E02"]);
 const next = m.toggleBookmark(original, "E03");
 [next, next !== original, original]
@@ -698,5 +699,162 @@ npm run typecheck
 → Fehler "Property 'onChange' is missing … required in type 'Controlled'". Zeile wieder einsetzen.
 
 **5. "Clear filters":** Suche + Filter setzen, Sortierung auf "Title (A–Z)", Clear → Filter leer, Sortierung bleibt.
+
+---
+
+## Demo 5 — State zum nächsten gemeinsamen Besitzer nach oben ziehen
+
+### 🔰 Einfach erklärt — worum geht's hier überhaupt?
+
+Wenn **zwei Komponenten dasselbe wissen müssen**, darf keine von beiden es allein "besitzen". Sonst haben beide ihre
+**eigene Kopie** — und die Kopien laufen auseinander. Die Lösung heißt **"State nach oben ziehen"** (*lifting state up*):
+das Wissen wandert zu dem **nächsten gemeinsamen Vorfahren** der Komponenten, die es brauchen. Der gibt es per
+**Props** nach unten.
+
+*Analogie:* eine Familie und der **Einkaufszettel**. Führt jedes Kind seinen **eigenen** Zettel, kauft einer Milch, der
+andere nicht — und niemand weiß, was fehlt. Hängt **ein** Zettel am Kühlschrank (bei den Eltern), liest jeder davon.
+Will ein Kind etwas draufschreiben, sagt es den Eltern Bescheid (eine **Callback-Funktion**, Demo 6), die Eltern
+schreiben es auf, und der Zettel ist für alle neu.
+
+### Task 1 — den niedrigsten gemeinsamen Vorfahren finden und den State dorthin ziehen
+
+**Wer liest oder ändert was?** (Zustand **vor** Demo 5)
+
+| Wissen | Liest | Ändert | Wo es lag |
+|---|---|---|---|
+| **Bookmarks** (ID-Liste) | Evidence (Stern), **Workspace** (Liste), **Dashboard** (Zähler) | Evidence | `EvidencePage` hielt sie als State; Workspace und Dashboard lasen den `localStorage` **zusätzlich selbst** |
+| **Notizen** | Evidence (Detail), **Workspace** (Liste) | Evidence | `EvidencePage` als State, Workspace las den `localStorage` |
+| **Status-/Relevanz-Änderungen** | Evidence, **Dashboard** ("Reviewed", Fortschritt, "Recent"), **People-Detail** (Status-Badge) | Evidence | **nur** in `EvidencePage` — die anderen sahen sie nie |
+
+**Der Komponentenbaum** (nur die relevanten Teile):
+
+```
+App
+ ├─ Header, NavBar            (brauchen nichts davon)
+ └─ PageRouter                ◀── niedrigster Vorfahre, der ALLE Seiten enthält
+      ├─ DashboardPage         liest bookmarks, reviewEdits
+      ├─ EvidencePage          liest + ändert alles
+      ├─ TeamLayout            liest reviewEdits  (→ PeopleTab, PersonDetail über den Outlet-Context)
+      ├─ TimelinePage          braucht nichts davon
+      └─ WorkspacePage         liest bookmarks, notes
+```
+
+**Antwort:** der niedrigste gemeinsame Vorfahre ist **`PageRouter`**. `App` ist auch ein Vorfahre, aber nicht der
+**niedrigste**; `Header` und `NavBar` brauchen den State nicht und sollen ihn nicht kennen.
+
+**Was gezogen wurde** (alles, was von mehr als einer Seite gelesen wird):
+
+| State | von | nach |
+|---|---|---|
+| `bookmarks` | `EvidencePage` | **`PageRouter`** |
+| `notes` | `EvidencePage` | **`PageRouter`** |
+| `reviewEdits` | `EvidencePage` | **`PageRouter`** |
+
+**Was bewusst unten bleibt** (Regel: State lebt beim **niedrigsten** Besitzer, der ihn braucht):
+
+| State | bleibt in | Warum |
+|---|---|---|
+| die 7 Filterwerte | `EvidencePage` | nur diese Seite braucht sie (Demo 7: Reducer) |
+| Hypothesen-Entwurf | `HypothesisForm` | nur das Formular braucht ihn |
+| geöffnetes Detail | URL (`?open=`) | siehe Demo 1 |
+
+**Die mechanischen Schritte:**
+
+| # | Schritt | Wo |
+|---|---|---|
+| 1 | Die drei `useState` samt Startwert (`useState(loadBookmarks)` usw.) aus `EvidencePage` **ausschneiden** und in `PageRouter` einfügen | `app/PageRouter.tsx` |
+| 2 | Die drei Änderungs-Funktionen (`handleToggleBookmark`, `handleSaveNote`, `handleChangeReview`) mitnehmen, **dort** steht jetzt der echte Setter | `app/PageRouter.tsx` |
+| 3 | Den Seiten die **Werte** als Props geben (`bookmarks`, `notes`, `reviewEdits`) | Route-Elemente in `PageRouter` |
+| 4 | `EvidencePage` die **Callbacks** als Props geben (`onToggleBookmark`, `onSaveNote`, `onChangeReview`) | dito |
+| 5 | In `DashboardPage`, `WorkspacePage` das **eigene Lesen** des `localStorage` entfernen (ersetzt durch Props); `TeamLayout` legt `reviewEdits` über die Daten | die Seiten |
+
+**Die Props im Überblick:**
+
+| Seite | bekommt (Werte) | bekommt (Callbacks) |
+|---|---|---|
+| `DashboardPage` | `bookmarks`, `reviewEdits` | — |
+| `EvidencePage` | `bookmarks`, `notes`, `reviewEdits` | `onToggleBookmark`, `onSaveNote`, `onChangeReview` |
+| `TeamLayout` | `reviewEdits` | — |
+| `WorkspacePage` | `bookmarks`, `notes` | — |
+
+**Was sich sonst bewegt hat** (Regel aus UE4 Demo 6 — "shared/ nur bei mindestens zwei Nutzern"):
+
+| Datei | von | nach | neue Nutzer |
+|---|---|---|---|
+| `toggleBookmark` | `features/evidence/evidenceHelpers.ts` | `shared/bookmarks.ts` | `app/PageRouter.tsx` (die Shell darf keine Feature-Interna importieren) |
+| `ReviewEdit`, `applyReviewEdits` | `features/evidence/evidenceHelpers.ts` | `shared/reviewEdits.ts` | Dashboard, People & Locations, Evidence |
+
+**Ehrlich zu zwei Dingen:**
+
+- **`PageRouter` ist jetzt nicht mehr nur eine Routen-Tabelle**, sondern hält auch State. Das ist die Folge der Regel
+  "niedrigster Vorfahre". Demo 8 prüft, ob Context das besser löst.
+- **Demo 6 überschneidet sich:** die Callbacks (`onToggleBookmark`, …) müssen mit dem Hochziehen mitkommen, sonst
+  könnte die Evidence-Seite nichts mehr ändern. Demo 6 **erklärt und verfolgt** sie dann (Wie viele Ebenen? Zu viel?).
+
+### Task 2 — Bookmark in Evidence ist sofort im Dashboard sichtbar
+
+Live im Browser **ohne Neuladen** (alles per Klick durch die Navigation):
+
+| Schritt | Ergebnis |
+|---|---|
+| in Evidence zwei Sterne setzen (E14, E03), E03 auf "reviewed" stellen, Notiz speichern | `localStorage`: `["E14","E03"]` und `{"E03":"Notiz zu E03"}` |
+| **Dashboard** | **"2 Bookmarked"** und **"2 Reviewed"** (E12 aus den Daten + das gerade geänderte E03) |
+| **Workspace** | Bookmarks `E03, E14`, Notiz zu E03 |
+| zurück zu **Evidence** | E03 weiter `reviewed`, 2 aktive Sterne |
+| **Personen-Detail** (`patch-vector`) | E03 mit Status `reviewed` |
+
+### Was damit verschwunden ist (die zwei offenen Punkte aus Demo 3 und 4)
+
+| Schwäche | Zustand vorher | jetzt |
+|---|---|---|
+| Status-Änderung geht beim Seitenwechsel verloren (Demo 3) | E03 "reviewed" → Dashboard → zurück: wieder "unreviewed" | bleibt `reviewed` (der State lebt in `PageRouter`, das beim Seitenwechsel eingehängt bleibt) |
+| Dashboard zeigt die Änderung nicht (Demo 3) | "1 Reviewed" trotz Änderung | **"2 Reviewed"** |
+| Die Quelle der Wahrheit ist doppelt (State + `localStorage`) (Demo 4) | zwei Leser | **ein** State; der `localStorage` ist nur noch **Speicher** (wird beim Start gelesen, bei jeder Änderung geschrieben) |
+| `localStorage` wird im Render gelesen (Demo 4) | `loadBookmarks()` in Dashboard und Workspace bei **jedem** Rendern | gemessen: während Navigieren Dashboard → Workspace → Evidence → People **0** Lesezugriffe auf `remotion_bookmarks`/`remotion_notes` (nur `remotion_hypothesis`, 2× beim Einhängen des Formulars — `StrictMode` ruft Initialisierer doppelt auf) |
+
+### Was bewusst offen bleibt
+
+| Punkt | Zustand |
+|---|---|
+| **Filter und Suchtext gehen beim Seitenwechsel verloren** | live: "calibration" gesucht (7 Treffer), Dashboard, zurück → Suchfeld leer, 18 Karten. Die Filter sind **lokaler** State von `EvidencePage` (nur sie braucht ihn); in vanilla blieb der Text stehen (DOM wurde nur versteckt). Wäre ein Wunsch, könnte man sie nach oben ziehen oder in die URL legen |
+| **Status-Änderungen überleben keinen Neustart** | nur im Speicher (wie vanilla); Bookmarks und Notizen liegen zusätzlich im `localStorage` |
+| **Prop-Weitergabe wächst** | `PageRouter` reicht heute bis zu 6 Props an eine Seite; die Frage, ob das schon zu viel ist, stellt Demo 6/8 |
+
+### Verifikation
+
+- **Alles Obige live** (Tabelle Task 2): Dashboard "2 Bookmarked / 2 Reviewed" sofort, Workspace-Liste und Notiz,
+  Rückkehr zu Evidence mit erhaltener Änderung, Personen-Detail mit dem neuen Status.
+- **`localStorage`-Lesezugriffe** während der Navigation gezählt (`Storage.prototype.getItem` umhüllt): nur
+  `remotion_hypothesis`, 2×.
+- **Konsole:** zwischen zwei Markern (Evidence → Dashboard → Evidence → Workspace → Timeline → Locations →
+  Dashboard) keine Meldung.
+- **Aufräumen:** `remotion_*`-Keys wieder entfernt.
+- **Nach dem Umbau ausgeführt:** `npm run typecheck` → 0 Fehler (die neuen Props-Typen mit `readonly`,
+  `Readonly<Record<…>>` und die verschobenen Imports kompilieren). `npm run format:check` → sauber (beim ersten
+  Versuch). `npm run build` → grün (152 Module).
+
+  | Stand | `react-*.js` | gzip | Module |
+  |---|---|---|---|
+  | UE5 Demo 4 | 287,64 KB | 89,25 KB | 151 |
+  | **UE5 Demo 5** | **287,99 KB** | **89,34 KB** | **152** |
+  | Unterschied | **+0,35 KB** | **+0,1 KB** | +1 (`shared/reviewEdits.ts`) |
+
+### 🎤 Live-Demo — was du im Unterricht herzeigst
+
+**1. Den Baum zeichnen / zeigen:** `PageRouter.tsx` öffnen. Sag: "alle Seiten, die Bookmarks, Notizen oder Status brauchen,
+hängen unter `PageRouter` — also wohnt der State dort."
+
+**2. Den Beweis: sofort im Dashboard:** `react.html#/evidence`, einen Stern setzen, einen Status im Detail ändern,
+**ohne Neuladen** zum Dashboard klicken → "1 Bookmarked", "2 Reviewed". Dann Workspace → dieselbe Liste.
+Sag: "vorher (Demo 3) stand hier noch 1 Reviewed. Jetzt gibt es nur **einen** Besitzer."
+
+**3. Den Beweis: Änderung bleibt beim Seitenwechsel:** Status ändern, zum Dashboard, **zurück** zu Evidence → der
+Status ist noch da. Sag: "der State lebt im `PageRouter`, der beim Seitenwechsel nicht ausgehängt wird."
+
+**4. Den Preis zeigen (ehrlich):** im Suchfeld etwas tippen, zum Dashboard, zurück → leer. Sag: "die Filter sind
+bewusst **lokal**, weil nur diese Seite sie braucht. Sie verschwinden mit der Seite."
+
+**5. Die Regel erklären:** "State lebt beim **niedrigsten** Vorfahren, der ihn braucht — die Filter in `EvidencePage`, den
+Formular-Entwurf im Formular, Bookmarks/Notizen/Status im `PageRouter`."
 
 ---

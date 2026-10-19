@@ -2,55 +2,64 @@
 // EVIDENCE CATALOGUE (ue5 demo 1) - FEATURE/CONTAINER
 // ersetzt den platzhalter aus UE3. spiegelbild von js/views/evidence.ts:
 // toolbar, karten-raster, detail-panel. diese seite besorgt die daten und haelt
-// die dinge, die sich durch klicks und eingaben aendern:
-//  - bookmarks   (useState, aus dem localStorage gestartet)
-//  - notizen     (useState, aus dem localStorage gestartet)
+// die dinge, die NUR sie braucht:
 //  - die sieben filter-werte (7x useState, demo 4; demo 7 fasst sie zu EINEM
 //    useReducer zusammen)
-//  - aenderungen an status/relevanz (useState, demo 3: unveraenderliche updates)
 //  NICHT im state: die sichtbare liste. sie wird bei jedem rendern aus
 //  (geladene liste + aenderungen + filter) ABGELEITET (demo 4).
 //  - welches beweisstueck geoeffnet ist -> NICHT als useState, sondern in der
 //    URL (?open=E04), wie die timeline ihre person (UE4 demo 10). so ist ein
 //    geoeffnetes detail verlinkbar, "zurueck" schliesst es, und der
 //    "Open"-button im workspace ist einfach ein <Link>.
-// provisorisch: bookmarks und notizen leben vorerst HIER, der workspace liest
-// sie separat aus dem localStorage. das wird in demo 5 (state nach oben
-// ziehen) sauber gemacht.
+//
+// ue5 demo 5 - STATE NACH OBEN. bookmarks, notizen und status-aenderungen
+// gehoeren NICHT mehr dieser seite: sie werden auch vom dashboard, workspace und
+// den personen-seiten gelesen. sie leben deshalb im gemeinsamen vorfahren
+// (PageRouter) und kommen hier als PROPS an (werte) plus CALLBACKS (aenderungen,
+// siehe demo 6). vorher hielt diese seite sie selbst und ging beim wechsel auf
+// eine andere seite (entmounten) mitsamt der status-aenderungen unter.
 // ---------------------------------------------------------------------
 import { useState } from "react";
 import { useSearchParams } from "react-router";
 import { useCaseData } from "../../shared/useCaseData";
-import { loadBookmarks, loadNotes, saveBookmarks, saveNotes } from "../../shared/storage";
+import { applyReviewEdits, type ReviewEdit } from "../../shared/reviewEdits";
 import { EvidenceCard } from "./EvidenceCard";
 import { EvidenceDetail } from "./EvidenceDetail";
 import { EvidenceToolbar } from "./EvidenceToolbar";
 import {
-  applyReviewEdits,
   filterEvidence,
   isSortOrder,
   resolveLocationLabels,
   resolvePersonNames,
   sortEvidence,
-  toggleBookmark,
   uniqueTypes,
   type EvidenceFilters,
-  type ReviewEdit,
   type SortOrder,
 } from "./evidenceHelpers";
 
-export function EvidencePage() {
+interface EvidencePageProps {
+  bookmarks: readonly string[];
+  notes: Readonly<Record<string, string>>;
+  reviewEdits: Readonly<Record<string, ReviewEdit>>;
+  onToggleBookmark: (evidenceId: string) => void;
+  onSaveNote: (evidenceId: string, text: string) => void;
+  onChangeReview: (evidenceId: string, edit: ReviewEdit) => void;
+}
+
+export function EvidencePage({
+  bookmarks,
+  notes,
+  reviewEdits,
+  onToggleBookmark,
+  onSaveNote,
+  onChangeReview,
+}: EvidencePageProps) {
   const caseDataState = useCaseData();
-  // eine FUNKTION (ohne Klammern) als startwert: react ruft sie nur beim ERSTEN
-  // rendern auf ("lazy initial state"). mit loadBookmarks() wuerde der
-  // localStorage bei JEDEM rendern gelesen und das ergebnis verworfen.
-  const [bookmarks, setBookmarks] = useState<string[]>(loadBookmarks);
-  const [notes, setNotes] = useState<Record<string, string>>(loadNotes);
   // ue5 demo 4: die sieben filter-werte, je ein useState (die toolbar ist
   // kontrolliert, siehe EvidenceToolbar). "" = "kein filter". EHRLICH: das ist
   // ein haufen einzelner states, der immer gemeinsam gelesen wird und (clear)
   // gemeinsam zurueckgesetzt werden muss - genau die stelle, an der demo 7 auf
-  // useReducer umstellt.
+  // useReducer umstellt. sie bleiben HIER: nur diese seite braucht sie.
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
   const [personFilter, setPersonFilter] = useState("");
@@ -58,11 +67,6 @@ export function EvidencePage() {
   const [statusFilter, setStatusFilter] = useState("");
   const [relevanceFilter, setRelevanceFilter] = useState("");
   const [sort, setSort] = useState<SortOrder>("date-desc");
-  // ue5 demo 3: die AENDERUNGEN an status/relevanz, nicht eine kopie der liste:
-  // { E03: { status: "reviewed" } }. die geladenen beweisstuecke bleiben
-  // unberuehrt, die angezeigte liste wird jedes mal daraus abgeleitet (siehe
-  // applyReviewEdits und UE5_THEORIE_ANTWORTEN demo 3/4).
-  const [reviewEdits, setReviewEdits] = useState<Record<string, ReviewEdit>>({});
   const [searchParams, setSearchParams] = useSearchParams();
 
   if (caseDataState.status === "loading") {
@@ -88,28 +92,7 @@ export function EvidencePage() {
   // berechnet bei JEDEM rendern, nirgends gespeichert (siehe demo 4).
   const evidence = applyReviewEdits(caseDataState.data.evidence, reviewEdits);
 
-  // ---- die event-handler (hier steht der echte state-setter) ----
-
-  // jede der drei aenderungen unten erzeugt ein NEUES array bzw. objekt und
-  // uebergibt es dem setter - nie wird ein bestehender state veraendert.
-  function handleToggleBookmark(evidenceId: string) {
-    const next = toggleBookmark(bookmarks, evidenceId);
-    setBookmarks(next);
-    saveBookmarks(next);
-  }
-
-  // verschachteltes unveraenderliches update, zwei ebenen:
-  //  1. { ...previous, [evidenceId]: ... }  neues aussen-objekt
-  //  2. { ...previous[evidenceId], ...edit } neues innen-objekt
-  // beide ebenen muessen neu sein; sonst saehe react ein "gleiches" objekt.
-  // die FUNKTIONS-form des setters (previous => ...) arbeitet immer mit dem
-  // neuesten stand, auch wenn zwei aenderungen schnell aufeinander folgen.
-  function handleChangeReview(evidenceId: string, edit: ReviewEdit) {
-    setReviewEdits((previous) => ({
-      ...previous,
-      [evidenceId]: { ...previous[evidenceId], ...edit },
-    }));
-  }
+  // ---- die event-handler, die NUR diese seite betreffen ----
 
   function handleOpen(evidenceId: string) {
     setSearchParams({ open: evidenceId });
@@ -117,12 +100,6 @@ export function EvidencePage() {
 
   function handleClose() {
     setSearchParams({});
-  }
-
-  function handleSaveNote(evidenceId: string, text: string) {
-    const next = { ...notes, [evidenceId]: text };
-    setNotes(next);
-    saveNotes(next);
   }
 
   // die toolbar meldet (feldname, neuer wert); hier geht jeder an SEINEN setter.
@@ -217,7 +194,7 @@ export function EvidencePage() {
               key={item.id}
               evidence={item}
               isBookmarked={bookmarks.includes(item.id)}
-              onToggleBookmark={handleToggleBookmark}
+              onToggleBookmark={onToggleBookmark}
               onOpen={handleOpen}
             />
           ))
@@ -231,8 +208,8 @@ export function EvidencePage() {
           locationLabels={resolveLocationLabels(selected.locationIds, locations)}
           note={notes[selected.id] ?? ""}
           onClose={handleClose}
-          onSaveNote={handleSaveNote}
-          onChangeReview={handleChangeReview}
+          onSaveNote={onSaveNote}
+          onChangeReview={onChangeReview}
         />
       )}
     </section>

@@ -1,7 +1,8 @@
 import type { ChangeEvent, FormEvent } from "react";
 import type { Evidence } from "../../../js/types";
 import { formatDate } from "../../../js/utils";
-import { isRelevance, isReviewStatus, type ReviewEdit } from "./evidenceHelpers";
+import type { ReviewEdit } from "../../shared/reviewEdits";
+import { isRelevance, isReviewStatus } from "./evidenceHelpers";
 
 interface EvidenceDetailProps {
   evidence: Evidence;

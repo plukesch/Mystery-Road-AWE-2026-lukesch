@@ -7,12 +7,20 @@
 // layout liefert, was beide gemeinsam haben - ueberschrift, tab-leiste, und
 // EINMAL die daten laden (FEATURE-komponente, siehe demo 5). die kinder
 // bekommen die geladenen daten ueber den Outlet-context.
+// ue5 demo 5: die status-aenderungen kommen als PROP vom gemeinsamen vorfahren
+// (PageRouter) und werden hier ueber die geladenen beweisstuecke gelegt - die
+// personen-detailseite zeigt so denselben status wie die evidence-seite.
 // ---------------------------------------------------------------------
 import { NavLink, Outlet } from "react-router";
 import { useCaseData } from "../../shared/useCaseData";
 import { ROUTES } from "../../shared/routes";
+import { applyReviewEdits, type ReviewEdit } from "../../shared/reviewEdits";
 
-export function TeamLayout() {
+interface TeamLayoutProps {
+  reviewEdits: Readonly<Record<string, ReviewEdit>>;
+}
+
+export function TeamLayout({ reviewEdits }: TeamLayoutProps) {
   const caseDataState = useCaseData();
 
   if (caseDataState.status === "loading") {
@@ -33,6 +41,14 @@ export function TeamLayout() {
     );
   }
 
+  // abgeleitet (demo 4): die geladenen daten, bei denen die beweisstuecke die
+  // aenderungen des nutzers tragen. die kinder (PeopleTab, PersonDetail) lesen
+  // das ueber den Outlet-context und wissen nichts davon.
+  const data = {
+    ...caseDataState.data,
+    evidence: applyReviewEdits(caseDataState.data.evidence, reviewEdits),
+  };
+
   return (
     <section>
       <h2>People &amp; Locations</h2>
@@ -48,7 +64,7 @@ export function TeamLayout() {
       </div>
       {/* daten EINMAL im layout laden: ein tab-wechsel tauscht nur das kind aus,
           das layout (und damit der fetch) bleibt bestehen. */}
-      <Outlet context={caseDataState.data} />
+      <Outlet context={data} />
     </section>
   );
 }

@@ -431,3 +431,86 @@ Funktion** (`bookmarkedEvidence`) und können es nicht.
    die Ableitung ist konsistent, die Quelle noch doppelt. Das räumt Demo 5 auf.
 
 ---
+
+## Demo 5 — State zum nächsten gemeinsamen Besitzer nach oben ziehen
+
+Bookmarks, Notizen und Status-Änderungen leben jetzt in `PageRouter` (niedrigster gemeinsamer Vorfahre von
+Dashboard, Evidence, People & Locations und Workspace) und kommen als Props bei den Seiten an. Live geprüft:
+eine Änderung in Evidence ist **ohne Neuladen** im Dashboard ("2 Bookmarked / 2 Reviewed"), im Workspace und in der
+Personen-Detailseite sichtbar und bleibt beim Seitenwechsel erhalten. Details und Messtabellen in `UE5_CHANGES.md`.
+
+### F1: Was bedeutet "State nach oben ziehen" konkret, mechanisch? Geh durch, wo der Bookmark-State **vorher** lag und wo er **jetzt** liegt.
+
+**Einfach gesagt:** "Nach oben ziehen" heißt, das `useState` aus der Komponente **herausschneiden**, die es nur
+zufällig besaß, und in den **niedrigsten Vorfahren** einfügen, der alle Nutzer enthält. Von dort bekommen die
+Komponenten den **Wert** als Prop und eine **Funktion** zum Ändern.
+
+**Vorher (Stand Demo 4):**
+
+| Komponente | Wie sie an die Bookmarks kam |
+|---|---|
+| `EvidencePage` | **besaß** den State: `const [bookmarks, setBookmarks] = useState(loadBookmarks)` |
+| `WorkspacePage` | las den `localStorage` **selbst**, bei jedem Rendern (`loadBookmarks()`) |
+| `DashboardPage` | las den `localStorage` **selbst**, bei jedem Rendern |
+
+Drei Komponenten, **zwei verschiedene Wahrheiten** (der State in Evidence, der `localStorage` für die anderen). Sie
+stimmten nur überein, weil Evidence jede Änderung **zusätzlich** in den `localStorage` schrieb.
+
+**Jetzt:**
+
+| Komponente | Wie sie an die Bookmarks kommt |
+|---|---|
+| **`PageRouter`** | **besitzt** den State: `useState(loadBookmarks)`, plus `handleToggleBookmark` (ruft `setBookmarks` und `saveBookmarks`) |
+| `EvidencePage` | bekommt `bookmarks` (Wert) und `onToggleBookmark` (Callback) als **Props** |
+| `WorkspacePage` | bekommt `bookmarks` als Prop |
+| `DashboardPage` | bekommt `bookmarks` als Prop |
+
+**Der Weg eines Klicks:** Stern anklicken → `EvidenceCard` ruft `onToggleBookmark(id)` → das ist (über `EvidencePage`)
+die Funktion `handleToggleBookmark` in `PageRouter` → sie berechnet mit `toggleBookmark` ein **neues** Array,
+ruft `setBookmarks(neu)` → `PageRouter` rendert neu → **alle** Seiten bekommen die neue Prop → die sichtbare Seite
+zeigt es. (Der `localStorage` wird dabei nur **geschrieben**, nie zum Anzeigen gelesen.)
+
+**Wie findet man den "niedrigsten gemeinsamen Vorfahren"?**
+
+1. Alle Komponenten aufschreiben, die den State **lesen oder ändern** (Evidence-Karte, Dashboard-Zähler,
+   Workspace-Liste, …).
+2. Den Baum nach oben laufen, bis sich ihre Wege **das erste Mal treffen**. Hier: alle vier Seiten sind
+   Geschwister unter `PageRouter` — dort treffen sie sich.
+3. **Nicht höher** gehen als nötig: `App` wäre auch ein Vorfahre, aber `Header` und `NavBar` bräuchten den State nicht
+   und würden bei jeder Änderung unnötig mitrendern.
+
+**Die Gegenregel (was *nicht* nach oben gehört):** alles, was nur **eine** Komponente braucht, bleibt dort. Die sieben
+Filterwerte bleiben in `EvidencePage`, der Formular-Entwurf in `HypothesisForm`. State "auf Vorrat" nach oben zu legen
+macht die oberen Komponenten schwerer und jede Änderung löst mehr Neurendern aus.
+
+**Was man dafür bezahlt:** Der besitzende Vorfahre muss Werte und Callbacks **weiterreichen** (Props). Die Verbindung
+zwischen Besitzer und Nutzer wird dadurch **sichtbar** (man sieht an den Props, wer was liest), aber auch länger
+(Demo 6 und 8).
+
+### F2: Was würde konkret schiefgehen, wenn jede der Komponenten Dashboard, Evidence und Workspace ein **eigenes** `useState` für die Bookmarks hätte?
+
+**Einfach gesagt:** Es gäbe **drei Kopien** derselben Tatsache. Jede Kopie ändert sich nur, wenn **ihre eigene**
+Komponente etwas tut. Die anderen merken nichts — also zeigen die drei irgendwann **Verschiedenes**.
+
+**Was konkret passiert** (jede Zeile mit Herkunft):
+
+| # | Szenario | Folge | Beleg |
+|---|---|---|---|
+| 1 | In Evidence einen Stern setzen, **dann** ins Dashboard | das Dashboard hat **seine** Kopie, zeigt den alten Zähler (oder lädt neu aus dem `localStorage`, dann **doppelte Wahrheit**) | in Demo 3 live gemessen für die **Status**-Änderung: nach der Änderung zeigte das Dashboard weiter "1 Reviewed" (die Änderung steckte nur in Evidence) |
+| 2 | Änderung geht beim Seitenwechsel **verloren**, weil der State mit der Komponente ausgehängt wird | der Nutzer stellt E03 auf "reviewed", wechselt zum Dashboard und zurück: wieder "unreviewed" | in Demo 3 live gemessen (nur noch 1 reviewed-Karte statt 2) |
+| 3 | **Zwei Schreiber** überschreiben sich im `localStorage`: jede Komponente speichert **ihre** Liste | die zuletzt speichernde Seite gewinnt, die Bookmarks der anderen sind weg ("Lost Update") | aus dem Code abgeleitet, nicht gesondert gemessen |
+| 4 | Man ändert **eine** Stelle (Evidence-Karte) und muss an **zwei weitere** denken (Dashboard-Zähler, Workspace-Liste) | beim nächsten neuen Nutzer (z. B. ein Bookmark-Zähler in der Kopfzeile) muss man wieder an alles denken; vergisst man eine Stelle, **veraltet** sie still | vanilla-Dashboard-Zähler (UE1, in Demo 4 beschrieben); der Zähler stand auf 0, bis man neu lud |
+| 5 | **Drei Parser, drei Key-Strings** für `remotion_bookmarks` | ändert sich das Format, muss man drei Stellen finden | bis Demo 4 gab es tatsächlich zwei (Evidence/`storage.ts` und `dashboard/bookmarks.ts` mit kopiertem Key-String) |
+
+**Die zwei Fehlerklassen dahinter** (die Angabe nennt sie in Demo 9):
+- **Duplizierter State** — dieselbe Tatsache (welche Beweisstücke sind gemerkt) steht an mehreren Orten.
+- **Veralteter State** — eine der Kopien wird nicht aktualisiert, wenn die andere sich ändert.
+
+Beides sind **dieselbe Wurzel**: **mehr als ein Besitzer**. Mit **einem** Besitzer (`PageRouter`) gibt es nichts, was
+auseinanderlaufen könnte; die anderen Seiten **lesen** nur.
+
+**Was man dagegen nicht tun sollte:** die drei Kopien durch ein zusätzliches Hin-und-Her-Synchronisieren (z. B. mit
+`useEffect`) "reparieren". Das erzeugt noch mehr Stellen, an denen etwas vergessen werden kann. Die Lösung ist
+**weniger** State (einer), nicht mehr Synchronisierung.
+
+---

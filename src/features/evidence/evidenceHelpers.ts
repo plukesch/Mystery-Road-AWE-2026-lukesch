@@ -94,42 +94,9 @@ export function sortEvidence(evidence: readonly Evidence[], sort: SortOrder): Ev
   return [...evidence].sort(COMPARATORS[sort]);
 }
 
-// bookmark an/aus als REINE funktion: bekommt die alte liste, gibt eine NEUE
-// zurueck, fasst die alte nie an. vanilla (handleBookmarkClick) hat dieselbe
-// aktion zweimal mutiert: state.bookmarks.push(id) bzw. ein neu zugewiesenes
-// filter-ergebnis, dazu ev.bookmarked = true/false am beweisstueck.
-// die zwei zweige liefern beide ein NEUES array: filter() baut immer ein
-// neues, [...bookmarks, id] ebenfalls. "bookmarks.push(id); return bookmarks;"
-// waere der erste instinkt - dasselbe array mit anderem inhalt, das react
-// nicht als geaendert erkennt (siehe demo 3 F1).
-export function toggleBookmark(bookmarks: readonly string[], evidenceId: string): string[] {
-  return bookmarks.includes(evidenceId)
-    ? bookmarks.filter((id) => id !== evidenceId)
-    : [...bookmarks, evidenceId];
-}
-
-// die beiden felder, die das detail-panel aendern darf (status, relevanz).
-// der nutzer aendert nie ein beweisstueck selbst, sondern fuegt eine
-// "aenderung" hinzu: { E03: { status: "reviewed" } }. die geladene liste
-// bleibt unberuehrt (siehe applyReviewEdits).
-export type ReviewEdit = Partial<Pick<Evidence, "status" | "relevance">>;
-
-// legt die aenderungen ueber die geladene liste und gibt eine NEUE liste
-// zurueck. unveraenderte beweisstuecke sind dieselben objekte wie vorher
-// (nichts wird kopiert, was sich nicht aendert), geaenderte sind NEUE objekte
-// ({ ...item, ...edit } kopiert das alte und ueberschreibt nur die felder der
-// aenderung). das original-array und seine objekte werden nie veraendert.
-// vanilla hat dagegen direkt am geladenen objekt geschrieben:
-// `ev.status = ...` ("direct mutation of the loaded evidence object").
-export function applyReviewEdits(
-  evidence: readonly Evidence[],
-  edits: Readonly<Record<string, ReviewEdit>>
-): Evidence[] {
-  return evidence.map((item) => {
-    const edit = edits[item.id];
-    return edit ? { ...item, ...edit } : item;
-  });
-}
+// (toggleBookmark() und applyReviewEdits() lagen bis ue5 demo 4 hier. sie
+// brauchen jetzt mehrere stellen -> shared/bookmarks.ts bzw. shared/reviewEdits.ts,
+// siehe ue5 demo 5.)
 
 // ein <select> liefert IMMER einen string. diese pruefungen sagen dem
 // compiler ("type guards"), wann aus dem string einer unserer engeren

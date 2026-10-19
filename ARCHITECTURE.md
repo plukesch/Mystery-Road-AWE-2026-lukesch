@@ -8,9 +8,9 @@ src/
   main.tsx                    Einstiegspunkt (mountet <App /> in einem HashRouter)
   app/                        die Shell: App, PageRouter (Routen-Tabelle), Header, NavBar
   features/
-    dashboard/                DashboardPage, DashboardView, IntroCard, StatCard, ... , bookmarks.ts
+    dashboard/                DashboardPage, DashboardView, IntroCard, StatCard, ...
     people-locations/         TeamLayout, PeopleTab, PersonDetail, LocationsTab, PersonCard, LocationCard, Card,
-                              BulletList, personEvidence.ts
+                              BulletList
     timeline/                 TimelinePage, TimelineToolbar, TimelineEventItem, CertaintyBadge, timelineHelpers.ts
     evidence/                 EvidencePage, EvidenceToolbar, EvidenceCard, EvidenceDetail, RelevanceBadge,
                               evidenceHelpers.ts
@@ -19,8 +19,12 @@ src/
   shared/                     nur, was von mehreren Stellen benutzt wird
     useCaseData.ts            Daten-Hook (Dashboard, People, Timeline, Evidence, Workspace)
     routes.ts                 ROUTES (alle URL-Pfade), personPath(), timelinePath(), evidencePath()
-    storage.ts                localStorage-Helfer für Bookmarks und Notizen (Evidence + Workspace)
-    FilterSelect.tsx          Dropdown mit versteckter Label (Timeline-Toolbar + Evidence-Toolbar)
+    storage.ts                localStorage-Helfer für Bookmarks und Notizen (Evidence, Workspace, Dashboard)
+    bookmarks.ts              bookmarkedEvidence(): aus der ID-Liste die Beweisstücke ableiten (Dashboard-Zähler
+                              und Workspace-Liste benutzen dieselbe Funktion)
+    personEvidence.ts         "erwähnt dieses Beweisstück die Person?" (People-Detail + Evidence-Filter)
+    FilterSelect.tsx          Dropdown mit versteckter Label, unkontrolliert (Timeline) oder kontrolliert
+                              (Evidence)
     Badge.tsx                 wiederverwendbarer Badge (Timeline + Dashboard, 3 Stellen)
     StatusBadge.tsx           Status -> Badge-Variante (Dashboard + People-Detailseite)
   sandbox/                    Wegwerf-Beispiele (key-demo.html, mutation-demo.html), nicht Teil der App
@@ -47,6 +51,11 @@ Beispiele aus dieser Struktur:
 - `shared/StatusBadge.tsx` (derselbe Wrapper für "Status") lag zuerst in `dashboard/` und zog in Demo 9 nach
   `shared/` um, als die Person-Detailseite (People) ihn ebenfalls brauchte. Ein Beispiel für die Regel "zieht
   um, sobald ein zweiter Nutzer da ist".
+- `shared/personEvidence.ts` ("erwähnt dieses Beweisstück die Person?", prüft ID **und** Anzeigename wegen E04) lag
+  zuerst in `people-locations/` und zog in UE5 Demo 4 nach `shared/` um, als der Evidence-Filter "nach Person"
+  dieselbe Prüfung brauchte. So zählt "Nova Byte" auf der Detailseite und im Filter nie unterschiedlich.
+- `shared/bookmarks.ts` (`bookmarkedEvidence`) lag zuerst in `workspace/` und zog in UE5 Demo 4 um, als das
+  Dashboard denselben Wert für seinen Zähler brauchte.
 
 ## Abhängigkeitsrichtung
 
@@ -78,8 +87,10 @@ Mechanisch prüfbar mit einer Textsuche über die `import`-Zeilen (siehe `ue4/UE
   im Workspace ist ein `<Link>` darauf (`evidencePath(id)`).
 - Zustand: bis UE4 hatten die Komponenten **keinen** eigenen Zustand; der einzige lag in
   `shared/useCaseData.ts`. Ab UE5 kommt Zustand dazu, **schrittweise** (siehe `ue5/UE5_CHANGES.md`). Stand nach
-  Demo 3: `EvidencePage` hält Bookmarks, Notizen, den Suchtext und die **Änderungen** an Status/Relevanz
-  (`useState`, provisorisch, wird ab Demo 5 nach oben gezogen bzw. in Demo 7 zu einem Reducer);
+  Demo 4: `EvidencePage` hält Bookmarks, Notizen, die **sieben Filterwerte** (je ein `useState`, Demo 7 macht
+  daraus einen Reducer) und die **Änderungen** an Status/Relevanz (`useState`, provisorisch, wird ab Demo 5 nach
+  oben gezogen). Die **sichtbare Liste ist kein State**: sie wird in jedem Render aus (geladene Liste +
+  Änderungen + Filter) abgeleitet (`applyReviewEdits` → `filterEvidence` → `sortEvidence`);
   `HypothesisForm` besitzt seinen Entwurf selbst (ein `useState`-Objekt, niedrigster gemeinsamer Besitzer).
   Dashboard, People und Timeline sind weiter zustandslos. Das geöffnete Detail steht in der URL.
 - Unveränderliche Updates (UE5 Demo 3): jede State-Änderung erzeugt ein **neues** Array/Objekt. Die geladenen
@@ -110,9 +121,11 @@ Die React-Seite importiert aus `js/` nur `import type` (Typen) und **reine** Fun
 - Der Lade-/Fehler-Block (`useCaseData` + zwei frühe Returns) steckt jetzt in fünf Feature-Komponenten
   (`DashboardPage`, `TeamLayout`, `TimelinePage`, `EvidencePage`, `WorkspacePage`). Bewusst nicht extrahiert: UE5
   verschiebt das Laden in eine gemeinsame Datenschicht (Demo 5 bis 8), dann verschwinden die Kopien von selbst.
-- Bookmarks und Notizen werden von `EvidencePage` (State) und `WorkspacePage` (liest den `localStorage` beim
-  Einblenden) getrennt gehalten, und `features/dashboard/bookmarks.ts` liest den Bookmark-Key ein drittes Mal.
-  Drei Leser derselben Tatsache: genau das räumen UE5 Demo 4, 5 und 9 auf.
+- Bookmarks und Notizen: `EvidencePage` hält sie als State, `WorkspacePage` und `DashboardPage` lesen sie bei
+  jedem Rendern direkt aus dem `localStorage` (über `shared/storage.ts`). Seit UE5 Demo 4 gibt es nur noch **einen**
+  Lese-Code und **eine** Ableitung (`bookmarkedEvidence`), aber die "Quelle der Wahrheit" ist noch doppelt (State in
+  `EvidencePage` + `localStorage`). Das räumt UE5 Demo 5 auf (State nach oben). Außerdem liest ein Render den
+  `localStorage` (ein Zugriff auf die Außenwelt im Render); auch das verschwindet mit Demo 5.
 - Die Zeile "ID — Titel — Status-Badge" für ein Beweisstück steht zweimal (`RecentEvidenceList`,
   `PersonDetail`). Erst bei einem dritten Nutzer (Workspace, UE5) extrahieren.
 - Der Leer-Zustand der Timeline ("No timeline events match …") ist mit den heutigen Daten nicht erreichbar

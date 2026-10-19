@@ -8,7 +8,7 @@ import { Link, useOutletContext, useParams } from "react-router";
 import type { CaseData } from "../../shared/useCaseData";
 import { ROUTES, timelinePath } from "../../shared/routes";
 import { StatusBadge } from "../../shared/StatusBadge";
-import { evidenceMentioningPerson } from "./personEvidence";
+import { evidenceMentioningPerson } from "../../shared/personEvidence";
 import { PersonCard } from "./PersonCard";
 
 export function PersonDetail() {

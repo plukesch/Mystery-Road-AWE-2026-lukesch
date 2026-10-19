@@ -1,7 +1,7 @@
 import { useOutletContext } from "react-router";
 import type { CaseData } from "../../shared/useCaseData";
 import { personPath } from "../../shared/routes";
-import { evidenceMentioningPerson } from "./personEvidence";
+import { evidenceMentioningPerson } from "../../shared/personEvidence";
 import { PersonCard } from "./PersonCard";
 
 // inhalt der route /team/people. die daten kommen aus dem Outlet-context des

@@ -1,28 +1,31 @@
 import type { Location, Person } from "../../../js/types";
 import { FilterSelect } from "../../shared/FilterSelect";
+import type { EvidenceFilters } from "./evidenceHelpers";
 
 interface EvidenceToolbarProps {
   people: Person[];
   locations: Location[];
   types: string[];
-  searchTerm: string;
-  onSearchChange: (searchTerm: string) => void;
+  filters: EvidenceFilters;
+  onFilterChange: (field: keyof EvidenceFilters, value: string) => void;
+  onClearFilters: () => void;
 }
 
 // spiegelbild von #evidenceToolbar aus index.html + populateEvidenceDropdowns()
 // (js/views/evidence.ts). PRESENTATIONAL: bekommt alles per props.
-// ue5 demo 1: nur die STRUKTUR - alle sieben elemente sichtbar, nicht verdrahtet.
-// ue5 demo 2: das SUCHFELD ist jetzt KONTROLLIERT. sein angezeigter text kommt
-// aus dem prop `searchTerm` (value), jede taste meldet sich ueber onChange nach
-// oben (onSearchChange), dort steht der useState (EvidencePage). die komponente
-// selbst haelt nichts - sie zeigt, was sie bekommt. die filter-dropdowns folgen
-// ab demo 4/7; die suche FILTERT in demo 2 noch nicht (das ist demo 4).
+// ue5 demo 1: nur die STRUKTUR. ue5 demo 2: das suchfeld ist kontrolliert.
+// ue5 demo 4: ALLE sieben elemente sind jetzt kontrolliert - ihr angezeigter
+// wert kommt aus `filters` (value), jede eingabe meldet sich mit
+// (feldname, neuer wert) per onFilterChange nach oben, dort stehen die
+// useStates (EvidencePage). die toolbar haelt nichts selbst. "Clear filters"
+// ruft onClearFilters auf.
 export function EvidenceToolbar({
   people,
   locations,
   types,
-  searchTerm,
-  onSearchChange,
+  filters,
+  onFilterChange,
+  onClearFilters,
 }: EvidenceToolbarProps) {
   return (
     <div className="toolbar" id="evidenceToolbar">
@@ -35,13 +38,14 @@ export function EvidenceToolbar({
           id="evidenceSearch"
           placeholder="Search evidence by title, summary, or tag…"
           autoComplete="off"
-          value={searchTerm}
-          onChange={(event) => onSearchChange(event.target.value)}
+          value={filters.search}
+          onChange={(event) => onFilterChange("search", event.target.value)}
         />
         <FilterSelect
           id="filterType"
           label="Filter by type"
-          defaultValue=""
+          value={filters.type}
+          onChange={(value) => onFilterChange("type", value)}
           options={[
             { value: "", label: "All types" },
             ...types.map((type) => ({ value: type, label: type })),
@@ -50,7 +54,8 @@ export function EvidenceToolbar({
         <FilterSelect
           id="filterPerson"
           label="Filter by person"
-          defaultValue=""
+          value={filters.person}
+          onChange={(value) => onFilterChange("person", value)}
           options={[
             { value: "", label: "All people" },
             ...people.map((person) => ({ value: person.id, label: person.name })),
@@ -59,7 +64,8 @@ export function EvidenceToolbar({
         <FilterSelect
           id="filterLocation"
           label="Filter by location"
-          defaultValue=""
+          value={filters.location}
+          onChange={(value) => onFilterChange("location", value)}
           options={[
             { value: "", label: "All locations" },
             ...locations.map((location) => ({
@@ -73,7 +79,8 @@ export function EvidenceToolbar({
         <FilterSelect
           id="filterStatus"
           label="Filter by status"
-          defaultValue=""
+          value={filters.status}
+          onChange={(value) => onFilterChange("status", value)}
           options={[
             { value: "", label: "All statuses" },
             { value: "unreviewed", label: "Unreviewed" },
@@ -84,7 +91,8 @@ export function EvidenceToolbar({
         <FilterSelect
           id="filterRelevance"
           label="Filter by relevance"
-          defaultValue=""
+          value={filters.relevance}
+          onChange={(value) => onFilterChange("relevance", value)}
           options={[
             { value: "", label: "All relevance" },
             { value: "unknown", label: "Unknown" },
@@ -95,7 +103,8 @@ export function EvidenceToolbar({
         <FilterSelect
           id="sortEvidence"
           label="Sort evidence"
-          defaultValue="date-desc"
+          value={filters.sort}
+          onChange={(value) => onFilterChange("sort", value)}
           options={[
             { value: "date-desc", label: "Newest first" },
             { value: "date-asc", label: "Oldest first" },
@@ -103,7 +112,12 @@ export function EvidenceToolbar({
             { value: "title-desc", label: "Title (Z–A)" },
           ]}
         />
-        <button type="button" id="clearFiltersBtn" className="btn btn-secondary">
+        <button
+          type="button"
+          id="clearFiltersBtn"
+          className="btn btn-secondary"
+          onClick={onClearFilters}
+        >
           Clear filters
         </button>
       </div>

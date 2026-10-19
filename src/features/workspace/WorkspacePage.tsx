@@ -2,25 +2,23 @@
 // INVESTIGATOR WORKSPACE (ue5 demo 1) - FEATURE/CONTAINER
 // ersetzt den platzhalter aus UE3. spiegelbild von js/views/workspace.ts:
 // gemerkte beweisstuecke, notizen, hypothesen-formular.
-// provisorisch (wie in EvidencePage vermerkt): bookmarks und notizen werden hier
-// EINMAL beim Einblenden der Seite aus dem localStorage gelesen. das stimmt,
-// solange man die Seite nur ueber die Navigation betritt - es ist aber ein
-// zweiter Leser derselben Tatsache. demo 5 zieht den State nach oben, demo 9
-// benennt das als "duplizierter Zustand".
+// ue5 demo 4: die seite haelt KEINEN eigenen Zustand mehr. vorher hatte sie
+// `useState(loadBookmarks)` - eine KOPIE der gespeicherten bookmarks, beim
+// Einblenden gezogen und danach eingefroren. jetzt wird die liste bei jedem
+// Rendern aus der gespeicherten id-liste ABGELEITET (bookmarkedEvidence), mit
+// derselben funktion wie der dashboard-zaehler. provisorisch: die id-liste
+// kommt noch direkt aus dem localStorage; demo 5 zieht den State nach oben.
 // ---------------------------------------------------------------------
-import { useState } from "react";
 import { useCaseData } from "../../shared/useCaseData";
+import { bookmarkedEvidence } from "../../shared/bookmarks";
 import { loadBookmarks, loadNotes } from "../../shared/storage";
 import { BookmarksList } from "./BookmarksList";
 import { HypothesisForm } from "./HypothesisForm";
 import { NotesList } from "./NotesList";
-import { bookmarkedEvidence, noteEntries } from "./workspaceHelpers";
+import { noteEntries } from "./workspaceHelpers";
 
 export function WorkspacePage() {
   const caseDataState = useCaseData();
-  // kein Setter: die seite aendert beides nicht (das tut die evidence-seite).
-  const [bookmarks] = useState<string[]>(loadBookmarks);
-  const [notes] = useState<Record<string, string>>(loadNotes);
 
   if (caseDataState.status === "loading") {
     return (
@@ -41,6 +39,8 @@ export function WorkspacePage() {
   }
 
   const { people, evidence } = caseDataState.data;
+  const bookmarks = loadBookmarks();
+  const notes = loadNotes();
 
   return (
     <section>

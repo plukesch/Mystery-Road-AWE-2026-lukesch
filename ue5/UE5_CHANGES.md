@@ -382,7 +382,7 @@ spontan schreiben würde):
 |---|---|---|---|
 | 1 | **Bookmark an/aus** (`toggleBookmark`) | `bookmarks.push(id); setBookmarks(bookmarks)` bzw. `ev.bookmarked = true` (vanilla `handleBookmarkClick`: `state.bookmarks.push(...)` **und** `ev.bookmarked = true`) | `bookmarks.includes(id) ? bookmarks.filter(...) : [...bookmarks, id]` — beide Zweige liefern ein **neues** Array |
 | 2 | **Review-Status ändern** (neu in dieser Demo, `handleChangeReview`) | `evidence.status = "reviewed"` (vanilla: `ev.status = …` mit dem Kommentar "direct mutation of the loaded evidence object") | `setReviewEdits(previous => ({ ...previous, [id]: { ...previous[id], ...edit } }))` — **zwei Ebenen**, beide neu |
-| 3 | **Sortieren** (`sortNewestFirst`) | `evidence.sort(...)` (vanilla UE1 Demo 2: sortierte die Master-Liste mit) | `[...evidence].sort(...)` — Kopie |
+| 3 | **Sortieren** (`sortEvidence`; in Demo 3 noch `sortNewestFirst`) | `evidence.sort(...)` (vanilla UE1 Demo 2: sortierte die Master-Liste mit) | `[...evidence].sort(...)` — Kopie |
 | 4 | **Hypothesen-Feld** (`setField`, Demo 2) | `values.nature = "x"; setValues(values)` | `setValues(previous => ({ ...previous, [field]: value }))` |
 | 5 | **Notiz speichern** (`handleSaveNote`, Demo 1) | `notes[id] = text; setNotes(notes)` | `{ ...notes, [id]: text }` |
 
@@ -409,7 +409,7 @@ Array lässt kein `push`, `splice` oder Zuweisen zu — eine mutierende Implemen
 | das Original danach | unverändert `["E01","E02"]` |
 | zum Vergleich `frozen.push("E99")` | wirft `TypeError: Cannot add property 2, object is not extensible` |
 | `applyReviewEdits(eingefrorene Liste mit eingefrorenen Objekten, { A: { status: "reviewed" } })` | neue Liste; `A` ist ein **neues** Objekt (`status: "reviewed"`), das Original-`A` bleibt `"unreviewed"`; `B` ist **dasselbe** Objekt wie vorher (was sich nicht ändert, wird nicht kopiert) |
-| `sortNewestFirst(eingefrorene Liste)` | sortiert, wirft nicht (arbeitet auf einer Kopie) |
+| `sortNewestFirst(eingefrorene Liste)` (damals gemessen; heute `sortEvidence`, gleiche Kopie-Technik) | sortiert, wirft nicht (arbeitet auf einer Kopie) |
 
 ### Der Review-Status: wie die Änderung gespeichert wird
 
@@ -433,7 +433,7 @@ Stellen" (geladene Liste **und** Kopie davon); sobald die Daten neu geladen wür
 überein. Die Änderungen sind **neue** Information, die es sonst nirgends gibt. Mehr dazu in Demo 4 (abgeleitete
 Werte statt gespeicherter).
 
-**`readonly` als Compiler-Schutz.** Die lesenden Helfer (`sortNewestFirst`, `toggleBookmark`, `applyReviewEdits`,
+**`readonly` als Compiler-Schutz.** Die lesenden Helfer (`sortEvidence` — in Demo 3 `sortNewestFirst` —, `toggleBookmark`, `applyReviewEdits`,
 `uniqueTypes`) nehmen `readonly Evidence[]` bzw. `readonly string[]`. Auf einem `readonly`-Array **gibt es kein
 `push`, `sort`, `splice`** — ein versehentliches Mutieren ist ein Typfehler, bevor die Seite läuft. Echt vom Compiler
 (mit der installierten TypeScript-Version, an einer Test-Datei **außerhalb** des Projekts):
@@ -511,7 +511,7 @@ Fehler geflogen."
 wird sofort grün. Sag: "das Beweisstück selbst habe ich **nie** verändert — nur die Änderung gespeichert und die
 Liste daraus abgeleitet."
 
-**4. Den Compiler-Schutz zeigen:** in `evidenceHelpers.ts` in `sortNewestFirst` `[...evidence].sort(` testweise zu
+**4. Den Compiler-Schutz zeigen:** in `evidenceHelpers.ts` in `sortEvidence` `[...evidence].sort(` testweise zu
 `evidence.sort(` ändern,
 ```bash
 npm run typecheck
@@ -521,5 +521,182 @@ Compilerfehler." Zeile wieder zurücksetzen.
 
 **5. Die ehrliche Schwäche zeigen:** Status ändern, zum Dashboard, zurück: die Änderung ist weg. Sag: "der State
 liegt noch in der Seite — das löst Demo 5."
+
+---
+
+## Demo 4 — Abgeleitete Werte statt gespeicherter
+
+### 🔰 Einfach erklärt — worum geht's hier überhaupt?
+
+Es gibt zwei Arten von Wissen in einer Seite:
+
+- **Gespeichert (State):** Dinge, die nur der Nutzer bestimmt und die man sich **merken** muss (was im Suchfeld steht,
+  welche Sterne gesetzt sind).
+- **Abgeleitet:** Dinge, die man **ausrechnen** kann, wenn man das Gemerkte kennt (welche Karten bei diesem Filter
+  sichtbar sind, wie viele Sterne es gibt).
+
+Die Regel: **was man ausrechnen kann, speichert man nicht.**
+
+*Analogie:* eine **Excel-Tabelle**. Die Zelle "Summe" enthält eine **Formel** (`=SUMME(A1:A5)`), keine eingetippte Zahl.
+Ändert sich A3, stimmt die Summe sofort. Hätte jemand die Summe **eingetippt**, müsste er bei jeder Änderung daran
+denken, sie nachzutragen — und irgendwann stimmt sie nicht mehr. In vanilla stand an vielen Stellen die eingetippte
+Zahl; in React steht überall die Formel.
+
+### Task 1 — Filtern und Sortieren: die Liste wird abgeleitet
+
+**Die Kette, jedes Rendern neu** (`EvidencePage.tsx`):
+
+```
+geladene Liste ──▶ applyReviewEdits ──▶ filterEvidence ──▶ sortEvidence ──▶ sichtbare Karten
+(useCaseData)      (+ Status-Änderungen)  (7 Filter)         (4 Sortierungen)
+```
+
+| Schritt | Funktion | Eingaben | Ausgabe |
+|---|---|---|---|
+| 1 | `applyReviewEdits` (Demo 3) | geladene Liste, `reviewEdits` | neue Liste mit den Änderungen |
+| 2 | `filterEvidence` (neu) | Liste, die 7 Filterwerte, `people` | **neues** Array nur mit den passenden Beweisstücken |
+| 3 | `sortEvidence` (neu, ersetzt `sortNewestFirst`) | gefilterte Liste, Sortierung | **Kopie**, sortiert |
+
+**Was gespeichert wird und was nicht:**
+
+| | |
+|---|---|
+| **State (7× `useState`)** | `search`, `typeFilter`, `personFilter`, `locationFilter`, `statusFilter`, `relevanceFilter`, `sort` — nur, was der Nutzer gewählt hat |
+| **Abgeleitet (kein State)** | `visibleEvidence` — die Liste, die man sieht |
+| | `filters` — die 7 Werte als **ein** Objekt, nur zum Weiterreichen |
+| | `types` für das Typ-Dropdown (`uniqueTypes` aus der **vollen** Liste, schrumpft also nicht mit den Filtern) |
+
+```tsx
+const visibleEvidence = sortEvidence(filterEvidence(evidence, filters, people), sort);
+```
+
+**Die sieben Filter** (`filterEvidence`, Spiegelbild von `getFilteredEvidence()` in vanilla):
+
+| Filter | Regel | Daten-Eigenheit |
+|---|---|---|
+| Suche | Titel + Summary + Tags, klein geschrieben, `trim()` | — |
+| Typ | `item.type.toLowerCase() === Filterwert` | `evidence.json` mischt `test-report` und `Test-Report` → mit `toLowerCase()` vergleichen |
+| Person | über `evidenceMentionsPerson` (ID **oder** Anzeigename) | **E04** hat "Nova Byte" statt `nova-byte`. Die Prüfung steht jetzt in `shared/personEvidence.ts`, damit Detailseite und Filter nie unterschiedlich zählen |
+| Ort | `item.locationIds.includes(...)` | — |
+| Status | `item.status.toLowerCase() === Filterwert` | **E12** hat `"Reviewed"` mit großem R |
+| Relevanz | wie Status | **E12** hat `"Unknown"` |
+| Sortierung | Tabelle `COMPARATORS: Record<SortOrder, …>` (Datum auf/ab, Titel A–Z/Z–A) | — |
+
+**Die Änderungen an der Toolbar:**
+
+| Datei | Änderung |
+|---|---|
+| `shared/FilterSelect.tsx` | kann jetzt **kontrolliert** sein (`value` + `onChange`). Die Props sind ein Union-Typ: **entweder** `defaultValue` **oder** `value` + `onChange`, nie gemischt (Compiler-Fehler, siehe unten) |
+| `evidence/EvidenceToolbar.tsx` | alle 7 Elemente sind kontrolliert, bekommen `filters` und melden `onFilterChange(feld, wert)`; "Clear filters" ruft `onClearFilters` |
+| `evidence/EvidencePage.tsx` | 7 `useState`, `handleFilterChange` (ein `switch` mit sieben Fällen), `handleClearFilters`, die abgeleitete `visibleEvidence`, Leer-Zustand "No evidence matches the current filters." |
+
+**Bewusst "verbose" (die Vorlage für Demo 7):** sieben einzelne `useState` und ein `switch` mit sieben Fällen sind
+absichtlich der "Haufen" aus Demo 7. Hier sieht man die Schreibarbeit, die ein Reducer später spart.
+
+**"Clear filters" wie in vanilla:** leert Suche und die fünf Filter, die **Sortierung bleibt** (live in beiden Apps
+geprüft: nach Klick `sortEvidence=title-asc`).
+
+### Task 2 — Dashboard-Zähler und Workspace-Liste aus derselben Quelle
+
+**Vorher** (vier Darstellungen derselben Tatsache "welche Beweisstücke sind gemerkt"):
+
+| Wo | Wie |
+|---|---|
+| `EvidencePage` | State `bookmarks` (ID-Liste) |
+| `WorkspacePage` | **Kopie** davon: `useState(loadBookmarks)`, beim Einblenden gezogen und eingefroren |
+| `DashboardPage` | `getBookmarkCount()` in `features/dashboard/bookmarks.ts` — ein **zweiter Parser** mit **kopiertem** Key-String `"remotion_bookmarks"` |
+| vanilla (zum Vergleich) | `state.bookmarks` **und** ein Extra-Feld `ev.bookmarked` an jedem Beweisstück |
+
+**Nachher:**
+
+| Wo | Wie |
+|---|---|
+| `shared/bookmarks.ts` (neu) | `bookmarkedEvidence(evidence, bookmarks)` — **eine** Funktion: ID-Liste → Beweisstücke |
+| `WorkspacePage` | kein `useState` mehr; `bookmarkedEvidence(evidence, loadBookmarks())` bei jedem Rendern |
+| `DashboardPage` | `bookmarkedEvidence(evidence, loadBookmarks()).length` — der Zähler ist die **Länge derselben Liste** |
+| `features/dashboard/bookmarks.ts` | **gelöscht** (`git rm`): ein Parser und ein Key-String weniger |
+| `shared/personEvidence.ts` | aus `people-locations/` hierher umgezogen (zweiter Nutzer: Evidence-Filter) |
+
+**Ehrlich zur "einen Quelle":** die Quelle der Wahrheit ist hier die **ID-Liste** (`remotion_bookmarks` im
+`localStorage`); Zähler und Liste werden mit **derselben Funktion** daraus abgeleitet und können nicht
+auseinanderlaufen. Der State in `EvidencePage` bleibt aber vorerst ein **Spiegel** davon (er schreibt in den
+`localStorage`, beide Seiten lesen von dort). **Wirklich eine** Quelle entsteht erst in Demo 5, wenn der State nach
+oben wandert. Der Render liest dabei den `localStorage` (Zugriff auf die Außenwelt im Render) — auch das ist
+provisorisch bis Demo 5.
+
+### Verifikation
+
+- **Vergleich mit vanilla, 22 Kombinationen** (Suche mit Trim und Groß/Klein, Tag-Suche, Typ, Person inkl. E04, Ort,
+  Status inkl. E12, Relevanz, Kombinationen, alle 4 Sortierungen, leere Ergebnisse): in beiden Apps dieselben
+  Eingaben gesetzt (Werte + `change`/`input`-Events), **22 von 22** liefern **dieselbe ID-Reihenfolge** und
+  denselben Leer-Text. Beispiele: Person `nova-byte` → `E04,E18,E05,E06,E17` (E04 über den Anzeigenamen), Typ
+  `test-report` → `E03,E01` (E03 hat `Test-Report`), Status `unreviewed` → 17 Karten (ohne E12).
+- **"Clear filters":** vanilla und React geben nach dem Klick 18 Karten, alle sechs Werte leer, Sortierung
+  `title-asc` bleibt.
+- **Abgeleitet, nicht gespeichert (live):** Filter "unreviewed" (17 Karten) → im Detail den Status von E03 auf
+  "reviewed" → die Karte **verschwindet von selbst** (16), ohne dass irgendwo "neu filtern" aufgerufen wird; das Detail
+  bleibt offen. Filter auf "reviewed" → `E03,E12`.
+- **Detail trotz Filter:** `#/evidence?open=E14` bei aktivem Filter "reviewed" → das Detail von E14 öffnet (gesucht
+  wird in der **vollen** Liste), die Karte ist nicht im Raster.
+- **Typ-Dropdown schrumpft nicht** mit den Filtern (15 Optionen).
+- **Zähler und Liste stimmen überein** (Bookmarks E03, E12 gesetzt in Evidence): Dashboard "2 Bookmarked",
+  Workspace-Liste `E03, E12`; Stern zurück → Dashboard "1", Workspace `E12`.
+- **Der entscheidende Gegenbeweis (veralteter Eintrag):** `localStorage.remotion_bookmarks = ["E12","ZZ99"]`
+  (`ZZ99` gibt es nicht).
+  - **vanilla:** Dashboard **"2 Bookmarked"**, Workspace-Liste **1** Eintrag → **Zähler und Liste widersprechen sich**
+    (zwei Darstellungen: `state.bookmarks.length` gegen die gefilterte Liste).
+  - **React:** Dashboard **"1"**, Workspace **1** (`E12`) → dieselbe Funktion, dasselbe Ergebnis.
+- **Compiler-Schutz für die `FilterSelect`-Props** (installierte TypeScript-Version, Test-Datei **außerhalb** des
+  Projekts):
+  ```
+  error TS2345: … Property 'onChange' is missing in type '{ id: string; value: string; }' but required in type 'Controlled'.
+  error TS2345: … Types of property 'value' are incompatible. Type 'string' is not assignable to type 'undefined'.
+  ```
+  `value` ohne `onChange` (Demo 2: eine **Laufzeit**-Warnung) und `defaultValue` zusammen mit `value` sind jetzt
+  **Compiler**-Fehler.
+- **Timeline** nach dem Umbau von `FilterSelect`: weiter 2 / 7 / 7 / 12 Optionen, `?person=nova-byte` → 3 Events,
+  Dropdown "nova-byte".
+- **Konsole:** zwischen zwei Markern (Dashboard, Evidence, Workspace, Timeline, People, Detail) keine Meldung.
+- **Dev-Server-Beobachtung (ehrlich):** nach mehreren schnellen Änderungen an derselben Datei lieferte Vite kurz
+  einen **Zwischenstand** (`searchTerm is not defined` in `EvidencePage`, `getBookmarkCount is not defined` in
+  `DashboardPage`), obwohl die Dateien auf der Platte korrekt waren — derselbe Effekt wie in UE4 Demo 7. Behoben durch
+  erneutes Schreiben der Dateien und ein Neuladen; kein Codefehler.
+- **Aufräumen:** `remotion_*`-Keys im `localStorage` wieder entfernt.
+- **Nach dem Umbau ausgeführt:** `npm run typecheck` → 0 Fehler (der Union-Typ der `FilterSelect`-Props, das
+  `switch` über `keyof EvidenceFilters`, die Type Guards und die `Record<SortOrder, …>`-Tabelle kompilieren).
+  `npm run format:check` → sauber (beim ersten Versuch). `npm run build` → grün (151 Module).
+
+  | Stand | `react-*.js` | gzip | Module |
+  |---|---|---|---|
+  | UE5 Demo 3 | 286,17 KB | 88,76 KB | 151 |
+  | **UE5 Demo 4** | **287,64 KB** | **89,25 KB** | **151** |
+  | Unterschied | **+1,5 KB** | **+0,5 KB** | 0 (`dashboard/bookmarks.ts` weg, `shared/bookmarks.ts` neu) |
+
+### 🎤 Live-Demo — was du im Unterricht herzeigst
+
+**1. Die Kette zeigen:** `EvidencePage.tsx`, die Zeile
+```tsx
+const visibleEvidence = sortEvidence(filterEvidence(evidence, filters, people), sort);
+```
+Sag: "die Liste, die man sieht, steht **nirgends** im State — sie wird bei jedem Rendern aus Eingaben ausgerechnet."
+
+**2. Das live beweisen:** `#/evidence`, Status-Filter auf "Unreviewed" (17 Karten). Karte E03 öffnen, im Detail
+"Review status" auf **Reviewed** → die Karte **verschwindet von selbst**. Sag: "ich habe nirgends 'Liste neu filtern'
+aufgerufen. Es gibt keine zweite Liste, die ich nachführen müsste."
+
+**3. Den vanilla-Bug zeigen (stark):** in der Konsole (`F12`) in **beiden** Apps:
+```js
+localStorage.setItem("remotion_bookmarks", JSON.stringify(["E12", "ZZ99"]))
+```
+dann Dashboard und Workspace ansehen. **vanilla:** "2 Bookmarked", aber 1 Eintrag in der Liste. **React:** beides 1.
+Sag: "vanilla hat dieselbe Tatsache zweimal gespeichert; React leitet beides aus derselben Funktion ab."
+
+**4. Den Typ-Schutz zeigen:** in `EvidenceToolbar.tsx` bei einem `FilterSelect` die Zeile `onChange=…` löschen,
+```bash
+npm run typecheck
+```
+→ Fehler "Property 'onChange' is missing … required in type 'Controlled'". Zeile wieder einsetzen.
+
+**5. "Clear filters":** Suche + Filter setzen, Sortierung auf "Title (A–Z)", Clear → Filter leer, Sortierung bleibt.
 
 ---

@@ -301,7 +301,7 @@ bleibt in vanilla möglich, weil `state` ein veränderbares globales Objekt ist,
 
 | # | Was | vanilla | React (`EvidencePage` & Helfer) |
 |---|---|---|---|
-| 1 | **Gibt es eine zweite Liste, die aliasen könnte?** | ja: `state.filteredEvidence` wird **gespeichert** und zeigte zuerst auf dasselbe Array | **nein**: es gibt keine gespeicherte gefilterte/sortierte Liste. Sie wird in jedem Render **abgeleitet** (`sortNewestFirst(evidence)`). Ohne gespeicherte zweite Liste kann sie nicht auf die erste zeigen (Demo 4) |
+| 1 | **Gibt es eine zweite Liste, die aliasen könnte?** | ja: `state.filteredEvidence` wird **gespeichert** und zeigte zuerst auf dasselbe Array | **nein**: es gibt keine gespeicherte gefilterte/sortierte Liste. Sie wird in jedem Render **abgeleitet** (`sortEvidence(…)`, in Demo 3 noch `sortNewestFirst`). Ohne gespeicherte zweite Liste kann sie nicht auf die erste zeigen (Demo 4) |
 | 2 | **Sortieren** | `list.sort(...)` in place (nach dem Fix auf einer frisch gebauten Kopie) | `[...evidence].sort(...)` — **Kopie vor dem Sortieren**. Live: auf einer **eingefrorenen** Liste läuft die Funktion, ohne zu werfen, und liefert `["new","old"]` |
 | 3 | **Bookmark-Toggle** | `state.bookmarks.push(id)` **und** `ev.bookmarked = true` — zwei Mutationen, dieselbe Tatsache an zwei Orten | `toggleBookmark(bookmarks, id)` liefert ein **neues** Array. Es gibt **kein** `bookmarked`-Feld am Beweisstück; `isBookmarked` wird mit `bookmarks.includes(id)` abgeleitet. Live: mit eingefrorener Eingabe `["E01","E02"]` → neue Arrays, Original unverändert, `frozen.push` zum Vergleich wirft |
 | 4 | **Status ändern** | `ev.status = …` direkt am **geladenen** Objekt | die geladene Liste wird **nie** angefasst: die Änderungen stehen in `reviewEdits`, `applyReviewEdits` baut daraus eine **neue** Liste (geänderte Einträge neue Objekte, unveränderte dieselben). Live: Original-`A` bleibt `"unreviewed"`, die neue Liste hat `"reviewed"` |
@@ -323,5 +323,111 @@ verbieten, (c) falsches Mutieren fällt in React **eher auf** (die Seite aktuali
 still die Daten aller zu verändern. Die Fehlerklasse ist damit **sehr unwahrscheinlich**, nicht **unmöglich** — für
 "strukturell verhindert" (bessere Formulierung für Demo 10) gehört die abgeleitete statt gespeicherte Liste dazu
 (Demo 4).
+
+---
+
+## Demo 4 — Abgeleitete Werte statt gespeicherter
+
+Die sichtbare Evidence-Liste wird in jedem Render aus (geladene Liste + Änderungen + sieben Filterwerte)
+**berechnet** (`applyReviewEdits` → `filterEvidence` → `sortEvidence`) und nirgends gespeichert. Dashboard-Zähler und
+Workspace-Liste leiten beide mit **derselben** Funktion (`bookmarkedEvidence`) aus der Bookmark-ID-Liste ab. Gegen
+vanilla geprüft (22 Filter-Kombinationen identisch; ein veralteter Bookmark-Eintrag lässt in vanilla Zähler und Liste
+auseinanderlaufen, in React nicht). Details und Messtabellen in `UE5_CHANGES.md`.
+
+### F1: Was ist die Regel, ob etwas in `useState` gehört oder beim Rendern inline (oder per `useMemo`) berechnet wird? Wende sie auf die gefilterte Evidence-Liste an und begründe.
+
+**Einfach gesagt:** *"Kann ich es aus etwas ausrechnen, das ich ohnehin schon habe?"* Ja → **nicht** in den State, einfach
+ausrechnen. Nein (nur der Nutzer kann es bestimmen) → `useState`.
+
+**Die Regel als Fragenfolge:**
+
+| Frage | Antwort | Folge |
+|---|---|---|
+| 1. Bleibt der Wert über Renderings hinweg bestehen **und** kommt er vom Nutzer / von außen? | ja | **State** |
+| 2. Lässt er sich aus bestehendem State, Props oder anderen Werten **berechnen**? | ja | **abgeleitet**, nicht speichern |
+| 3. Ist die Berechnung nachweislich **teuer** (gemessen, nicht geraten)? | ja | `useMemo` **um die Berechnung**, trotzdem **kein** State |
+
+**Angewendet auf die gefilterte Liste:**
+
+| Wert | State oder abgeleitet? | Begründung |
+|---|---|---|
+| Suchtext, Typ, Person, Ort, Status, Relevanz, Sortierung | **State** | nur der Nutzer bestimmt sie, sie lassen sich aus nichts anderem berechnen |
+| geladene Beweisstücke | **kommt von außen** (`useCaseData`) | Daten, nicht ableitbar |
+| Änderungen an Status/Relevanz | **State** | neue Information vom Nutzer (Demo 3) |
+| **die sichtbare (gefilterte, sortierte) Liste** | **abgeleitet** | sie ist eine reine Funktion aus den drei Zeilen darüber: `sortEvidence(filterEvidence(...))` |
+| Anzahl der Treffer, Leer-Zustand | **abgeleitet** | `visibleEvidence.length === 0` |
+| Typ-Optionen des Dropdowns | **abgeleitet** | `uniqueTypes(evidence)` aus der vollen Liste |
+| `filters` (die sieben Werte als Objekt) | **abgeleitet** | nur zusammengesteckt, kein neuer Zustand |
+
+**Warum die Liste nicht in den State gehört:** würde man `const [visible, setVisible] = useState(evidence)` anlegen, müsste
+man `setVisible(...)` **bei jeder Änderung von sieben Filtern, den Bookmarks, dem Status und den geladenen Daten**
+aufrufen. Vergisst man **eine** Stelle, zeigt die Seite etwas anderes als die Filter sagen. Der Fehler passiert nicht
+beim Schreiben, sondern bei jeder späteren Änderung. Abgeleitet gibt es nichts nachzuführen.
+
+**Inline oder `useMemo`?** Hier **inline** (`const visibleEvidence = …` im Render):
+
+- 18 Beweisstücke, eine Schleife über wenige Felder: die Berechnung dauert Mikrosekunden.
+- `useMemo` ist **kein** State, sondern ein Cache für eine teure Berechnung (er merkt sich das Ergebnis, solange die
+  Abhängigkeiten gleich bleiben). Er verhindert keine Fehler, er spart nur Arbeit, und er erwartet, dass die Funktion
+  **rein** ist (gleiche Eingaben → gleiches Ergebnis).
+- Voraussetzung dafür ist genau Demo 3: `useMemo` prüft die Abhängigkeiten per **Referenz**. Würden wir mutieren,
+  bekäme `useMemo` die Änderung nie mit und lieferte ein veraltetes Ergebnis.
+- Wann `useMemo`: wenn man **gemessen** hat, dass die Berechnung stört (Tausende Einträge, sichtbares Ruckeln) — nicht
+  vorsorglich.
+
+**Der Test, den ich benutze:** *"Wenn ich diesen Wert löschen und neu berechnen würde — ginge Information verloren?"* Bei der
+gefilterten Liste: **nein** → nicht speichern. Beim Suchtext: **ja** → State.
+
+### F2: Die vanilla-App hatte zwei verwandte Fehler: einen Dashboard-Bookmark-Zähler, der veralten konnte (er wurde nur beim ersten Besuch einer View neu gerendert), und eine Variable `filteredEvidence`, die manchmal buchstäblich dasselbe Array wie die Master-Liste war. Erkläre konkret, warum das Ableiten dieser Werte beim Rendern **beide** Fehlerklassen strukturell unmöglich macht, nicht nur unwahrscheinlicher.
+
+**Einfach gesagt:** beide Fehler brauchen einen **gespeicherten** Wert, der **von Hand** aktuell gehalten werden muss. Wenn es
+keinen gespeicherten Wert gibt, gibt es nichts, was man vergessen oder falsch teilen könnte.
+
+**Fehler 1 — der veraltete Zähler.**
+
+| | vanilla | React |
+|---|---|---|
+| Wo steht der Zähler? | wird von `renderDashboard()` in den DOM **geschrieben**. Ursprünglich lief das **nur beim ersten Besuch** (der Guard `!state.viewRendered.dashboard` in `js/navigation.ts`); der Zähler blieb auf 0, bis man neu lud. UE1 hat das **von Hand** repariert ("Dashboard bei jedem Besuch neu rendern", Kommentar in `navigation.ts`) | wird bei **jedem** Rendern aus der ID-Liste **berechnet** (`bookmarkedEvidence(...).length`) |
+| Was muss man tun, damit er stimmt? | die richtige Stelle muss `renderDashboard()` **aufrufen** (heute in `handleHashChange`, früher fehlend). Dasselbe Muster steckt noch beim Evidence-View: `renderEvidenceList()` muss nach jeder Änderung von Hand aufgerufen werden, und der Guard `!viewRendered.evidence` gilt dort weiter | nichts |
+| Was passiert, wenn man es vergisst? | der Zähler **veraltet** still (so war der Original-Fehler) | geht nicht: es gibt keinen "Aktualisieren"-Schritt, der fehlen könnte |
+
+Strukturell unmöglich ist es, weil der Fehler **die Aktualisierung** voraussetzt, die man vergessen kann. Ein
+abgeleiteter Wert wird nicht "aktualisiert", er wird **bei jedem Rendern neu berechnet**: die einzige Aktualisierung ist
+der Render selbst, und den löst React aus, wenn sich die Eingaben ändern.
+
+**Fehler 2 — `filteredEvidence === allEvidence`.**
+
+| | vanilla | React |
+|---|---|---|
+| Gibt es eine gespeicherte gefilterte Liste? | ja, `state.filteredEvidence`, die zu Beginn `state.allEvidence` **zugewiesen** wurde (dasselbe Array unter zwei Namen) | nein: `visibleEvidence` ist eine **lokale Konstante** im Render, gebaut aus `filter(...)` (liefert **immer** ein neues Array) und `[...].sort(...)` (Kopie) |
+| Wie kann sie auf die Master-Liste zeigen? | durch die Zuweisung | gar nicht: sie wird bei jedem Render **neu aus den Eingaben gebaut** und lebt nur bis zum Ende dieses Renders |
+| Folge in vanilla | `filteredEvidence.sort(...)` sortierte `allEvidence` mit | es gibt keine Variable, die über Renderings hinweg existiert und ein zweiter Name für die Master-Liste sein könnte |
+
+Strukturell unmöglich ist es, weil Aliasing eine **langlebige zweite Referenz** braucht. Ein abgeleiteter Wert hat
+keine: er wird aus den Eingaben **neu gebaut**, nicht an die Eingaben **zugewiesen**.
+
+**Der Gegenbeweis, live gemessen (ein dritter Fall derselben Klasse):** `localStorage.remotion_bookmarks =
+["E12","ZZ99"]` (`ZZ99` gibt es nicht).
+
+| | Dashboard-Zähler | Workspace-Liste |
+|---|---|---|
+| vanilla | **2** (`state.bookmarks.length`, zählt die unbekannte ID mit) | **1** (nur vorhandene Beweisstücke) |
+| React | **1** | **1** |
+
+In vanilla stehen "wie viele" und "welche" an **zwei Stellen** und laufen auseinander. In React kommen beide aus **einer
+Funktion** (`bookmarkedEvidence`) und können es nicht.
+
+**Die ehrlichen Grenzen** (damit "strukturell" nicht übertrieben klingt):
+
+1. **"Strukturell" gilt für den abgeleiteten Wert, nicht für seine Eingaben.** Mutiert jemand die geladene Liste direkt
+   (`evidence.sort()`), ist die Eingabe kaputt — dagegen helfen Demo 3 (unveränderliche Updates) und `readonly`.
+   Beide Demos zusammen erst machen die Fehlerklasse unmöglich.
+2. **"Neu berechnet bei jedem Rendern" setzt voraus, dass gerendert wird.** React rendert, wenn sich **State oder Props**
+   ändern. Der Dashboard-Zähler liest heute den `localStorage` direkt im Render (eine Quelle **außerhalb** von React):
+   das stimmt, weil die Dashboard-Seite beim Navigieren neu eingehängt wird. Ändert jemand den `localStorage` bei
+   offener Seite (zweiter Tab), merkt React nichts. Sobald die Bookmarks als State **in React** liegen (Demo 5), ist die
+   Abhängigkeit explizit, und auch dieser Rest ist weg.
+3. **Zwei Quellen bleiben möglich**, wenn man sie schafft (State in `EvidencePage` **und** `localStorage`, vorerst):
+   die Ableitung ist konsistent, die Quelle noch doppelt. Das räumt Demo 5 auf.
 
 ---

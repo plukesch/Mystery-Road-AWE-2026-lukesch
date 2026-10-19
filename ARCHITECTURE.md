@@ -19,7 +19,9 @@ src/
   shared/                     nur, was von mehreren Stellen benutzt wird
     useCaseData.ts            Daten-Hook (Dashboard, People, Timeline, Evidence, Workspace)
     routes.ts                 ROUTES (alle URL-Pfade), personPath(), timelinePath(), evidencePath()
-    storage.ts                localStorage-Helfer für Bookmarks und Notizen (vom State in app/PageRouter benutzt)
+    storage.ts                localStorage-Helfer für Bookmarks und Notizen (BookmarksProvider, PageRouter)
+    BookmarksContext.tsx      BookmarksProvider + useBookmarks(): die Bookmarks als Context (Dashboard, Evidence,
+                              Workspace lesen sie ohne Props)
     bookmarks.ts              bookmarkedEvidence() (Dashboard-Zähler und Workspace-Liste, dieselbe Funktion) und
                               toggleBookmark() (die Shell ändert die Liste)
     reviewEdits.ts            ReviewEdit + applyReviewEdits(): Status-Änderungen über die geladene Liste legen
@@ -29,7 +31,7 @@ src/
                               (Evidence)
     Badge.tsx                 wiederverwendbarer Badge (Timeline + Dashboard, 3 Stellen)
     StatusBadge.tsx           Status -> Badge-Variante (Dashboard + People-Detailseite)
-  sandbox/                    Wegwerf-Beispiele (key-demo, mutation-demo, callback-demo), nicht Teil der App
+  sandbox/                    Wegwerf-Beispiele (key-, mutation-, callback-, context-demo), nicht Teil der App
 ```
 
 ## Regel: "shared" oder "feature-lokal"?
@@ -89,10 +91,11 @@ Mechanisch prüfbar mit einer Textsuche über die `import`-Zeilen (siehe `ue4/UE
   im Workspace ist ein `<Link>` darauf (`evidencePath(id)`).
 - Zustand: bis UE4 hatten die Komponenten **keinen** eigenen Zustand; der einzige lag in
   `shared/useCaseData.ts`. Ab UE5 kommt Zustand dazu, **schrittweise** (siehe `ue5/UE5_CHANGES.md`). Stand nach
-  Demo 5: **Bookmarks, Notizen und die Änderungen an Status/Relevanz** gehören mehreren Seiten (Dashboard,
-  Evidence, Workspace, People) und leben deshalb im **niedrigsten gemeinsamen Vorfahren**, `app/PageRouter.tsx`
-  (je ein `useState`). Die Seiten bekommen die **Werte als Props** und `EvidencePage` die **Änderungs-Callbacks**
-  (`onToggleBookmark`, `onSaveNote`, `onChangeReview`). Der `localStorage` ist nur noch Speicher (beim Start
+  Demo 5 (Bookmarks seit Demo 8 im `BookmarksProvider`, siehe unten): **Bookmarks, Notizen und die Änderungen an
+  Status/Relevanz** gehören mehreren Seiten (Dashboard, Evidence, Workspace, People) und leben deshalb im
+  **niedrigsten gemeinsamen Vorfahren**, `app/PageRouter.tsx` (je ein `useState`). Die Seiten bekommen die **Werte
+  als Props** und `EvidencePage` die **Änderungs-Callbacks** (`onSaveNote`, `onChangeReview`; früher auch
+  `onToggleBookmark`). Der `localStorage` ist nur noch Speicher (beim Start
   gelesen, bei jeder Änderung geschrieben), kein zweiter Leser mehr. Was nur **eine** Komponente braucht, bleibt
   unten: die **sieben Filterwerte** in `EvidencePage` (seit Demo 7 **ein** `useReducer` mit den Aktionen
   `SET_FILTER`, `SET_SORT`, `CLEAR_FILTERS`; der Reducer ist eine reine Funktion in `filterReducer.ts`) und der
@@ -103,6 +106,11 @@ Mechanisch prüfbar mit einer Textsuche über die `import`-Zeilen (siehe `ue4/UE
   den Setter, sondern einen schmalen, typisierten Callback (z. B. `onToggleBookmark(evidenceId)`); die Regel
   (neue Liste berechnen, State setzen, speichern) steht an **einer** Stelle im Besitzer. Nur wer etwas ändern muss,
   bekommt einen Callback (Workspace und Dashboard nur Werte).
+- Context (UE5 Demo 8): **nur die Bookmarks** laufen über Context (`BookmarksProvider` um die Routen in
+  `PageRouter`, Leser mit `useBookmarks()`: Dashboard, Evidence, Workspace). Das war eine knappe Abwägung (Props
+  hätten für diese Größe auch gereicht, siehe `ue5/UE5_THEORIE_ANTWORTEN.md`). **Notizen und Status-Änderungen
+  bleiben bei Props + Callbacks**, Filter, Formular-Entwurf und das geöffnete Detail bleiben lokal bzw. in der URL.
+  Die presentational Komponenten (`EvidenceCard`, …) lesen **keinen** Context, sie bekommen Props.
 - Unveränderliche Updates (UE5 Demo 3): jede State-Änderung erzeugt ein **neues** Array/Objekt. Die geladenen
   Beweisstücke werden nie verändert; Status-Änderungen stehen separat (`reviewEdits`), `applyReviewEdits` legt sie
   über die geladene Liste. Lesende Helfer nehmen `readonly`-Parameter, damit Mutieren ein Typfehler ist.
@@ -131,9 +139,10 @@ Die React-Seite importiert aus `js/` nur `import type` (Typen) und **reine** Fun
 - Der Lade-/Fehler-Block (`useCaseData` + zwei frühe Returns) steckt jetzt in fünf Feature-Komponenten
   (`DashboardPage`, `TeamLayout`, `TimelinePage`, `EvidencePage`, `WorkspacePage`). Bewusst nicht extrahiert: UE5
   verschiebt das Laden in eine gemeinsame Datenschicht (Demo 5 bis 8), dann verschwinden die Kopien von selbst.
-- `PageRouter` ist seit UE5 Demo 5 nicht mehr nur eine Routen-Tabelle, sondern hält auch den gemeinsamen State und
-  reicht bis zu sechs Props an eine Seite weiter (`EvidencePage`). Ob das schon zu viel ist, prüfen Demo 6 und 8
-  (Context).
+- `PageRouter` ist seit UE5 Demo 5 nicht mehr nur eine Routen-Tabelle, sondern hält auch den gemeinsamen State
+  (Notizen, Status-Änderungen) und reicht Props an die Seiten weiter (seit Demo 8 höchstens vier an `EvidencePage`,
+  die Bookmarks laufen über Context). Zwei Mechanismen (Context für Bookmarks, Props für den Rest) sind ein
+  bewusst akzeptierter Preis der Abwägung aus Demo 8.
 - Filter und Suchtext von `EvidencePage` sind lokaler State: sie gehen beim Wechsel auf eine andere Seite verloren
   (in vanilla blieb der Text stehen). Status-Änderungen leben nur im Speicher und überleben keinen Neustart (wie in
   vanilla); Bookmarks und Notizen liegen zusätzlich im `localStorage`.

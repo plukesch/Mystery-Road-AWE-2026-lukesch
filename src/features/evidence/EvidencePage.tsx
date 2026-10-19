@@ -21,6 +21,7 @@
 import { useReducer } from "react";
 import { useSearchParams } from "react-router";
 import { useCaseData } from "../../shared/useCaseData";
+import { useBookmarks } from "../../shared/BookmarksContext";
 import { applyReviewEdits, type ReviewEdit } from "../../shared/reviewEdits";
 import { EvidenceCard } from "./EvidenceCard";
 import { EvidenceDetail } from "./EvidenceDetail";
@@ -37,23 +38,25 @@ import {
 import { INITIAL_FILTERS, filterReducer } from "./filterReducer";
 
 interface EvidencePageProps {
-  bookmarks: readonly string[];
   notes: Readonly<Record<string, string>>;
   reviewEdits: Readonly<Record<string, ReviewEdit>>;
-  onToggleBookmark: (evidenceId: string) => void;
   onSaveNote: (evidenceId: string, text: string) => void;
   onChangeReview: (evidenceId: string, edit: ReviewEdit) => void;
 }
 
 export function EvidencePage({
-  bookmarks,
   notes,
   reviewEdits,
-  onToggleBookmark,
   onSaveNote,
   onChangeReview,
 }: EvidencePageProps) {
   const caseDataState = useCaseData();
+  // ue5 demo 8: die bookmarks (Wert UND Aenderungs-funktion) kommen aus dem
+  // CONTEXT, nicht mehr als Props "bookmarks"/"onToggleBookmark" von PageRouter.
+  // die KARTE bleibt trotzdem eine reine darstellung: sie bekommt weiter
+  // isBookmarked/onToggleBookmark als Props - diese seite liest den context und
+  // reicht an die karte weiter (siehe THEORIE_ANTWORTEN demo 8 F2).
+  const { bookmarks, toggle } = useBookmarks();
   // ue5 demo 7: ALLE sieben filter-werte in EINEM useReducer. `filters` ist der
   // aktuelle zustand (das objekt, das vorher aus sieben useStates zusammengesetzt
   // wurde), `dispatch` schickt eine AKTION an den reducer (filterReducer.ts), der
@@ -151,7 +154,7 @@ export function EvidencePage({
               key={item.id}
               evidence={item}
               isBookmarked={bookmarks.includes(item.id)}
-              onToggleBookmark={onToggleBookmark}
+              onToggleBookmark={toggle}
               onOpen={handleOpen}
             />
           ))

@@ -744,3 +744,104 @@ Aktion "ersetze" **ist** `useState`). Die Wahl ist **eine Frage der Lesbarkeit**
 aus F1 eine Faustregel, kein Gesetz.
 
 ---
+
+## Demo 8 — Context, und wann man ihn nicht benutzt
+
+Die Bookmarks laufen jetzt über einen `BookmarksProvider` (um die Routen in `PageRouter`) und werden von Dashboard,
+Evidence und Workspace mit `useBookmarks()` gelesen; Props `bookmarks`/`onToggleBookmark` gibt es nicht mehr (insgesamt
+11 → 7 Props von `PageRouter` nach unten). Notizen und Status-Änderungen bleiben bei Props. Die Entscheidung "ist Context hier richtig?"
+steht mit Zahlen in `UE5_CHANGES.md` (Task 2): **knapp, nur für die Bookmarks**.
+
+### F1: Welches Problem löst Context tatsächlich? Was löst er *nicht* (viele erwarten, dass er wie globale Zustandsverwaltung funktioniert; wo bricht diese Erwartung zusammen)?
+
+**Einfach gesagt:** Context löst **Weiterreichen**: einen Wert vom Besitzer zu **tief liegenden** Komponenten bringen, ohne dass
+jede dazwischen ihn als Prop weiterreicht. Er ist **kein** Zustandsspeicher und **keine** Zustandsverwaltung.
+
+**Was Context löst:**
+
+| Problem | Wie Context hilft |
+|---|---|
+| Prop-Drilling: Komponenten **dazwischen** reichen etwas nur weiter | Leser holen sich den Wert direkt (`useBookmarks()`); die Zwischen-Komponenten wissen nichts davon |
+| **Querschnitts**-Daten (Thema, Sprache, aktueller Nutzer, hier: Bookmarks), die viele Stellen brauchen | **ein** Provider, viele Leser |
+| Wert für **Komponenten in anderen Ästen** des Baums (z. B. Header **und** Seite) | der Provider sitzt über beiden |
+
+**Was Context nicht löst — wo die "globaler Store"-Erwartung bricht** (jede Zeile mit Beleg):
+
+| Erwartung | Realität | Beleg |
+|---|---|---|
+| "Context **hält** den State" | Context **transportiert** nur. Der State steht in `useState`/`useReducer` des Providers. Ohne Provider-Komponente gibt es keinen Zustand | `BookmarksProvider` besitzt `useState(loadBookmarks)`; `createContext` allein speichert nichts |
+| "Ich lese nur **einen Teil**, also rendere ich nur bei Änderung dieses Teils neu" | **Nein.** Ändert sich der Wert (die Referenz), rendern **alle** Leser neu. Es gibt **keine Auswahl** ("Selektor") | Sandbox: **B liest nur `b`** und rendert bei jedem `a + 1` mit (2×, 3×, 4× …) |
+| "`memo()` verhindert das" | **Nein.** Ein geänderter Context-Wert ist keine Prop, `memo` greift nicht | Sandbox: "A in `memo()`" zählt jede Änderung mit |
+| "Es ist **überall** verfügbar" | **Nur unter dem Provider.** Außerhalb: kein Wert | Sandbox: `Outside` bekommt `null`; in der App: ohne Provider **bricht die Seite ab** (`useBookmarks() must be used inside <BookmarksProvider>`) |
+| "Es kümmert sich um **Persistenz**, Caching, Laden" | **Nein.** Das macht der Provider selbst (bei uns `saveBookmarks` im Handler) | `BookmarksContext.tsx` ruft `loadBookmarks`/`saveBookmarks` selbst auf |
+| "Ich kann aus **jeder** Stelle ändern" | nur, wenn der Provider eine **Änderungs-Funktion** mit in den Wert legt (bei uns `toggle`). Ein Context ist von sich aus **nur-lesen** | der Wert `{ bookmarks, toggle }` |
+| "Ich sehe, **wer** was liest" | Die Abhängigkeit **steht nicht** in der Signatur der Komponente | `DashboardPage(reviewEdits)`: man sieht nicht, dass sie Bookmarks liest |
+
+**Eine praktische Folge:** der Wert muss **stabil** bleiben (`useMemo` im Provider), sonst rendern alle Leser **jedes Mal**
+mit, wenn der Provider neu rendert, auch wenn sich nichts geändert hat. Für **viele, oft wechselnde** Werte reicht ein Context
+nicht (dort nimmt man Bibliotheken mit Selektoren oder mehrere kleine Contexts).
+
+**Context ist auch kein Fremdkörper:** `Routes` und `RenderedRoute` aus React Router "lesen Context" (live im Baum gesehen). Router,
+Thema, Formular-Bibliotheken nutzen ihn intern.
+
+### F2: Geh noch einmal zur Callback-Tiefe aus Demo 6. War Prop-Drilling dort tatsächlich ein Problem (lästig, fehleranfällig, lösenswert) oder ein handhabbares? Was ist deine Schwelle, ab der du zu Context greifst, statt noch eine Ebene weiterzureichen?
+
+**Einfach gesagt:** In Demo 6 war es **handhabbar**, kein echtes Problem. Meine Schwelle: **Context erst, wenn das Durchreichen
+anfängt, die Zwischen-Komponenten zu belasten** — nicht wegen der Tiefe allein.
+
+**Was Demo 6 gemessen hat:** 3 Komponenten (`PageRouter → EvidencePage → EvidenceCard`), 2 Props-Ebenen, 3 nur
+durchgereichte Callbacks, `EvidencePage` mit **6** Props.
+
+**Meine Schwelle** (ich greife zu Context, wenn **mindestens eines** zutrifft):
+
+| Zeichen | Warum es zählt | In dieser App? |
+|---|---|---|
+| **≥ 3 Ebenen**, auf denen eine Komponente eine Prop **nur** weiterreicht | Rohrleitungs-Komponenten, die sich ändern müssen, obwohl sie die Prop nicht interessiert | **nein**, eine |
+| Dieselbe Prop an **vielen** (≳ 4) weit auseinanderliegenden Stellen | man schreibt dieselbe Prop immer wieder | **nein**, 3, alle direkt unter dem Router |
+| Eine Komponente **außerhalb** des Teilbaums braucht den Wert (z. B. Zähler in der Kopfzeile) | mit Props müsste der State über das **gemeinsame** Elternteil mehrerer Äste, die Props-Kette wächst in **zwei** Richtungen | **noch nicht** |
+| Die Props-Liste einer Komponente ist so lang, dass sie unlesbar wird (≳ 6) | Lesbarkeit | `EvidencePage` hatte genau 6 → Grenzfall |
+
+**War es dort ein Problem?** **Nein**, aus den Gründen in Demo 6 F2: kleine Tiefe, geprüfte Typen (ein
+geänderter Callback meldet TypeScript an **allen** Stellen), und `EvidencePage` ist keine reine Rohrleitung.
+
+**Warum ich die Schwelle trotzdem nicht strenger angewendet habe:** ein Grenzfall (6 Props) plus die Tatsache, dass die Bookmarks
+der **einzige app-weite** State sind, haben für **diesen einen** Fall gereicht (Entscheidung in `UE5_CHANGES.md`, Task 2:
+"knapp"). Für Notizen und Status-Änderungen **nicht**: ihre Leser sind weniger oder nicht "Leser", sondern Daten-Layer.
+
+**Faustregel in einem Satz:** *eine Ebene mehr durchreichen kostet fast nichts, ein Context kostet unsichtbare Abhängigkeiten, deshalb
+erst bei einem **klaren** Schmerz* (Rohrleitungs-Komponenten, Leser außerhalb des Teilbaums, unlesbare Prop-Listen).
+
+### F3: "Unnötiger globaler Zustand" wird ausdrücklich als häufiges Problem genannt. Könnte der Einsatz von Context hier ein Beispiel dafür sein, obwohl Context technisch nicht dasselbe ist wie eine globale Variable?
+
+**Einfach gesagt:** **Ja, kann es** — wenn man ihn für Dinge benutzt, die nur **eine** Stelle braucht, oder aus Bequemlichkeit
+("dann muss ich nichts durchreichen"). Technisch ist Context **besser** als eine globale Variable, aber **die Gefahr ist dieselbe**:
+alles ist von überall lesbar, und man sieht nicht mehr, wer was braucht.
+
+**Was Context von einer globalen Variable unterscheidet (die Vorteile):**
+
+| | globale Variable (vanilla `state`) | Context |
+|---|---|---|
+| Wer kann es **ändern**? | jedes Modul, das es importiert | nur über die **Funktion**, die der Provider in den Wert legt (`toggle`) |
+| Wird React **benachrichtigt**? | nein, man muss von Hand neu rendern (UE1-Fehler) | ja, Leser rendern bei Änderung neu |
+| **Geltungsbereich** | ganze App | nur der **Teilbaum** unter dem Provider; verschiedene Teilbäume können **verschiedene** Werte haben |
+| **Austauschbar**? | schwer | ja: in einer Sandbox/im Test einen anderen Provider-Wert geben |
+
+**Was sie gemeinsam haben (die Nachteile, die "unnötiger globaler Zustand" meint):**
+
+| Problem | Bei Context | Bei uns |
+|---|---|---|
+| **Unsichtbare Abhängigkeit**: man sieht an der Signatur nicht, was die Komponente liest | ja | `DashboardPage(reviewEdits)` liest Bookmarks, ohne dass es in den Props steht |
+| **Zu großer Radius**: der Wert ist für **alle** darunter erreichbar, auch für die, die ihn nicht brauchen | ja | `BookmarksProvider` umschließt **alle** Routen; auch `TimelinePage`, People & Co. **könnten** Bookmarks lesen (tun es nicht) |
+| **Wiederverwendbarkeit leidet**: eine Komponente, die `useBookmarks()` ruft, braucht einen Provider und kann nicht einfach "irgendwo" stehen | ja | `useBookmarks()` **wirft** ohne Provider; deshalb liest die **Karte** den Context **nicht** selbst, sondern bekommt Props |
+| **Verleitet dazu, zu viel hineinzulegen** ("wenn schon ein Context, dann auch …") | ja | wir haben **bewusst nicht** Filter, Formular-Entwurf, Notizen oder Status hineingelegt |
+
+**Was ich bewusst lokal gelassen habe** (damit der Context keine "Müllhalde" wird): die **sieben Filterwerte** (nur `EvidencePage`), der
+**Hypothesen-Entwurf** (nur das Formular), das **geöffnete Detail** (die URL). Hätte ich die in einen App-weiten Context gelegt, **wäre** das
+"unnötiger globaler Zustand" gewesen: niemand außerhalb der Seite braucht sie, und jede Änderung hätte alle Leser neu gerendert.
+
+**Ist der Bookmark-Context selbst ein Beispiel für unnötigen globalen Zustand?** **Grenzfall, nicht eindeutig.** Dagegen spricht: die
+Bookmarks werden von **drei** Seiten gelesen und sind **fachlich app-weit** (wie Thema oder Nutzer). Dafür spricht: heute reichen auch **Props**
+(F2), der Radius ist größer als nötig (alle Routen), und die Abhängigkeit ist unsichtbar. Deshalb steht in `UE5_CHANGES.md`:
+"knapp, und nur für die Bookmarks" — und die Rückfall-Option (zurück zu Props) ist ein Handgriff.
+
+---

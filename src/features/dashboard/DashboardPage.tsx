@@ -5,24 +5,25 @@
 // daten an DashboardView weiter, die nur noch darstellt. frueher stand beides in
 // dieser einen datei (siehe UE4_CHANGES demo 5).
 //
-// ue5 demo 5: die bookmarks und die status-aenderungen kommen als PROPS vom
-// gemeinsamen vorfahren (PageRouter). die seite liest NICHTS mehr selbst aus dem
-// localStorage (vorher: ein zugriff auf die aussenwelt mitten im render) -
-// und sieht deshalb eine bookmark- oder status-aenderung aus der evidence-seite
+// ue5 demo 5: die status-aenderungen kommen als PROP vom gemeinsamen vorfahren
+// (PageRouter); die seite liest NICHTS aus dem localStorage.
+// ue5 demo 8: die bookmarks kommen nicht mehr als Prop, sondern aus dem CONTEXT
+// (useBookmarks). die seite sieht eine bookmark-aenderung aus der evidence-seite
 // SOFORT, beim naechsten rendern.
 // ---------------------------------------------------------------------
 import { useCaseData } from "../../shared/useCaseData";
+import { useBookmarks } from "../../shared/BookmarksContext";
 import { bookmarkedEvidence } from "../../shared/bookmarks";
 import { applyReviewEdits, type ReviewEdit } from "../../shared/reviewEdits";
 import { DashboardView } from "./DashboardView";
 
 interface DashboardPageProps {
-  bookmarks: readonly string[];
   reviewEdits: Readonly<Record<string, ReviewEdit>>;
 }
 
-export function DashboardPage({ bookmarks, reviewEdits }: DashboardPageProps) {
+export function DashboardPage({ reviewEdits }: DashboardPageProps) {
   const caseDataState = useCaseData();
+  const { bookmarks } = useBookmarks();
 
   if (caseDataState.status === "loading") {
     return (

@@ -1168,3 +1168,161 @@ npm run typecheck
 vergessen werden."
 
 ---
+
+## Demo 8 — Context, und wann man ihn nicht benutzt
+
+### 🔰 Einfach erklärt — worum geht's hier überhaupt?
+
+Bisher gab `PageRouter` den Bookmark-State per **Props** nach unten: Seite für Seite, jede bekam `bookmarks` (und
+`EvidencePage` zusätzlich den Callback). **Context** ist eine Art **Durchsage-Anlage**: der Besitzer spricht **einmal**
+hinein (`<BookmarksProvider>`), und **jede Komponente darunter** kann mithören (`useBookmarks()`), ohne dass jemand
+dazwischen den Zettel weiterreicht.
+
+*Analogie:* **Staffelstab** (Props: jeder gibt dem nächsten die Hand) gegen **Lautsprecherdurchsage im Gebäude** (Context: wer
+im Gebäude ist, hört sie). Praktisch, wenn viele Leute in vielen Stockwerken dasselbe wissen müssen — aber auch ein
+Lautsprecher, den **jeder** hört, ob er will oder nicht, und wer hört, merkt man nicht an der Tür (der Signatur) der Komponente.
+
+**Wichtig:** Context **speichert nichts**. Der State steht weiter in einem ganz normalen `useState`; Context ist nur der
+**Transportweg** vom Besitzer zu den Lesern.
+
+### Task 1 — die Bookmarks über Context, die Props-Version ersetzt
+
+| Datei | Änderung |
+|---|---|
+| `shared/BookmarksContext.tsx` (neu, 30 Codezeilen) | `BookmarksProvider` (besitzt den `useState`, die Regel zum Umschalten und Speichern) und `useBookmarks()` (liest den Wert, wirft einen klaren Fehler außerhalb des Providers) |
+| `app/PageRouter.tsx` | der Bookmark-State, der Handler und die Imports sind **weg**; die Routen sind in `<BookmarksProvider>` gewickelt; Props `bookmarks` und `onToggleBookmark` fallen weg |
+| `DashboardPage`, `WorkspacePage`, `EvidencePage` | lesen `const { bookmarks } = useBookmarks()` (Evidence zusätzlich `toggle`) |
+| `EvidenceCard` | **unverändert**: bekommt weiter `isBookmarked`/`onToggleBookmark` als Props (bleibt reine Darstellung, siehe F2) |
+
+```tsx
+// shared/BookmarksContext.tsx (Kern)
+const [bookmarks, setBookmarks] = useState<string[]>(loadBookmarks);
+const value = useMemo(() => ({ bookmarks, toggle: (id) => { /* neue Liste, State, speichern */ } }), [bookmarks]);
+return <BookmarksContext value={value}>{children}</BookmarksContext>;
+
+// in jeder Seite:
+const { bookmarks } = useBookmarks();
+```
+
+**Was sich an den Props geändert hat** (live aus dem React-Baum gemessen):
+
+| Seite | Props vorher (Demo 7) | Props jetzt |
+|---|---|---|
+| `DashboardPage` | `bookmarks`, `reviewEdits` (2) | `reviewEdits` (**1**) |
+| `EvidencePage` | `bookmarks`, `notes`, `reviewEdits`, `onToggleBookmark`, `onSaveNote`, `onChangeReview` (6) | `notes`, `reviewEdits`, `onSaveNote`, `onChangeReview` (**4**) |
+| `WorkspacePage` | `bookmarks`, `notes` (2) | `notes` (**1**) |
+| `TeamLayout` | `reviewEdits` (1) | `reviewEdits` (1) |
+| **zusammen von `PageRouter` nach unten** | **11** | **7** (−4) |
+
+Der Weg des Bookmark-Callbacks: vorher `PageRouter → EvidencePage → EvidenceCard` (2 Props-Ebenen), jetzt liest
+`EvidencePage` die Funktion **selbst** aus dem Context und gibt sie an die Karte (**1** Ebene). Der Baum zeigt es:
+`EvidenceCard → EvidencePage [liest Context] → … → BookmarksProvider → PageRouter`.
+
+**Bewusst bei Props geblieben:** Notizen und Status-Änderungen (siehe die Entscheidung unten).
+
+### Task 2 — die ehrliche Entscheidung: ist Context hier richtig?
+
+**Kurz:** **knapp, und nur für die Bookmarks.** Für diese App in ihrer heutigen Größe wären Lifting + Props **auch gut
+genug** gewesen. Ich behalte den Context für die Bookmarks, weil der Wechsel billig ist und sie der einzige State sind, den
+**alle drei Daten-Seiten** lesen. Ich würde ihn **nicht** auf Notizen und Status-Änderungen ausweiten.
+
+**Die Abwägung mit Zahlen** (gemessen):
+
+| | Für Context | Gegen Context |
+|---|---|---|
+| Props | **−4** (11 → 7), `EvidencePage` von 6 auf 4 | — |
+| Callback-Weg | 2 Ebenen → 1 | — |
+| Code | `PageRouter` −12 Zeilen | **+30** neue Datei, Seiten +1 +1 −2 → netto **+18** Codezeilen |
+| Lesbarkeit | `PageRouter` ist wieder schlanker | **Abhängigkeit unsichtbar**: an `DashboardPage(reviewEdits)` sieht man nicht mehr, dass sie Bookmarks liest |
+| Robustheit | — | `useBookmarks()` **wirft**, wenn der Provider fehlt; jeder Test braucht einen Provider-Rahmen |
+| Konsistenz | — | **zwei Mechanismen** für dasselbe Muster: Bookmarks per Context, Notizen/Status per Props |
+| Neurendern | — | **alle** Leser rendern bei **jeder** Änderung des Werts neu (kein "Auswählen", siehe Sandbox) |
+
+**Meine Schwellen aus Demo 6, noch einmal angelegt:**
+
+| Zeichen | Hier? |
+|---|---|
+| ≥ 3 Ebenen, auf denen eine Komponente eine Prop **nur** weiterreicht | **nein** (eine) |
+| dieselbe Prop an **vielen** weit entfernten Stellen | **nein** (alle drei Leser hängen direkt unter `PageRouter`) |
+| Komponenten außerhalb des Routers brauchen den Wert (z. B. ein Zähler in der Kopfzeile) | **noch nicht** |
+| Props-Liste so lang, dass man den Überblick verliert | **an der Grenze** (6 bei `EvidencePage`) |
+
+Strenge Anwendung der Schwellen: **Lifting + Props reicht**. Dass ich den Context trotzdem behalte, hat drei Gründe: (1) er löst
+**genau** den einen Punkt, den Demo 6 als Kandidaten für Entlastung nannte (die Prop-Menge), (2) die Bookmarks sind der
+einzige State, der **von allen drei Daten-Seiten** gelesen wird und **app-weit** ist (wie Thema oder Sprache), (3) mit mehr
+Lesern (etwa ein Zähler im Header, der **außerhalb** des Routers hängt) würde die Props-Variante deutlich teurer.
+
+**Warum nicht auch Notizen und Status?** Notizen lesen nur **zwei** Seiten (Evidence, Workspace). Die Status-Änderungen werden
+nicht "gelesen", sondern über die Daten **gelegt** (`applyReviewEdits`) und beeinflussen die **Daten selbst** — das gehört
+besser in eine Datenschicht (die UE5 nicht verlangt). Und: **jeder weitere Context** bringt wieder Indirektion mit.
+
+**Die Rückfall-Option:** wer das anders sieht, macht es mit einem Handgriff rückgängig: `BookmarksProvider` entfernen, die
+drei Props und den State zurück in `PageRouter` (so stand es in Demo 7).
+
+### Wegwerf-Sandbox: was Context nicht ist
+
+Wie in den früheren Demos eine Sandbox **außerhalb** der App (`context-demo.html`, `src/sandbox/ContextDemo.tsx`; nicht
+in `vite.config.js` → nie gebaut; bewusst **ohne** `StrictMode`, weil `StrictMode` jede Komponente zweimal aufruft und die
+Zähler verdoppeln würde). Der Context-Wert ist **ein** Objekt `{ a, b }`; zwei Leser lesen je **nur ein** Feld.
+
+| Klick | A (liest nur `a`) | B (liest nur `b`) | A in `memo()` |
+|---|---|---|---|
+| Start | gerendert 1× | 1× | 1× |
+| `a + 1` | `a = 1`, **2×** | `b = 0`, **2×** | **2×** |
+| `a + 1` | `a = 2`, 3× | `b = 0`, **3×** | 3× |
+| `b + 1` | `a = 2`, 4× | `b = 1`, 4× | **4×** |
+
+**B liest nur `b` und rendert trotzdem bei jeder Änderung von `a` neu**, und `memo()` hilft nicht (ein geänderter
+Context-Wert ist keine Prop). Dazu: eine Komponente **außerhalb** des Providers bekommt `null` ("kein Wert").
+
+### Verifikation
+
+- **Verhalten unverändert** (gleicher Ablauf wie in Demo 5, ohne Neuladen): zwei Sterne gesetzt (`["E14","E03"]`), E03 auf
+  "reviewed", Notiz gespeichert → **Dashboard** "2 Bookmarked / 2 Reviewed", **Workspace** E03, E14 samt Notiz, zurück zu
+  **Evidence** (2 Sterne, E03 `reviewed`); ein Stern zurück → Dashboard "1 Bookmarked", `localStorage` `["E03"]`.
+- **Props und Leser live aus dem Baum gelesen:** `DashboardPage` `["reviewEdits"]`, `EvidencePage`
+  `["notes","reviewEdits","onSaveNote","onChangeReview"]`, `WorkspacePage` `["notes"]`; alle drei sind als "liest Context"
+  markiert. Kette vom Stern: `EvidenceCard → EvidencePage → (Router-Interna) → BookmarksProvider → PageRouter`.
+  (Auch `Routes` und `RenderedRoute` aus React Router "lesen Context": React Router selbst ist auf Context gebaut.)
+- **Code gezählt** (Codezeilen ohne Kommentare/Leerzeilen): `BookmarksContext.tsx` 30; `PageRouter` 74 → 62; `DashboardPage`
+  31 → 32; `WorkspacePage` 49 → 50; `EvidencePage` 114 → 112.
+- **Sandbox** mit den Klicks aus der Tabelle durchgespielt, Werte exakt wie dort.
+- **Der Fehlerfall ohne Provider** (testweise `<BookmarksProvider>` aus `PageRouter` entfernt, danach wiederhergestellt):
+  die Seite bleibt **leer**, die Konsole meldet `Uncaught Error: useBookmarks() must be used inside <BookmarksProvider>` mit
+  dem Stack `useBookmarks → EvidencePage`. Es gibt keinen Error Boundary in der App, der Fehler stoppt also das Rendern.
+  Nach dem Wiederherstellen: 18 Karten, alles wie vorher.
+- **Konsole:** zwischen zwei Markern (alle Seiten, Personen-Detail, Evidence-Detail) keine Meldung.
+- **Aufräumen:** `remotion_*`-Keys wieder entfernt.
+- **Nach dem Umbau ausgeführt:** `npm run typecheck` → 0 Fehler (der Context-Typ mit `null`, `useMemo<…>` und der Provider
+  `<BookmarksContext value=…>` aus React 19 kompilieren). `npm run format:check` → sauber (beim ersten Versuch, auch
+  `context-demo.html`). `npm run build` → grün (154 Module).
+
+  | Stand | `react-*.js` | gzip | Module |
+  |---|---|---|---|
+  | UE5 Demo 7 | 287,90 KB | 89,37 KB | 153 |
+  | **UE5 Demo 8** | **288,16 KB** | **89,42 KB** | **154** |
+  | Unterschied | **+0,26 KB** | **+0,05 KB** | +1 (`BookmarksContext.tsx`) |
+
+  Der Context kostet praktisch nichts im Bundle; die Kosten liegen bei Lesbarkeit und unsichtbarer Abhängigkeit (siehe oben).
+  Die Sandbox taucht in `dist/` nicht auf.
+
+### 🎤 Live-Demo — was du im Unterricht herzeigst
+
+**1. Den Provider zeigen:** `PageRouter.tsx` — `<BookmarksProvider>` um die Routen; dann `BookmarksContext.tsx` (30 Zeilen). Sag: "der
+State ist ein ganz normales `useState`. Context ist nur der Transportweg."
+
+**2. Die Leser zeigen:** in `DashboardPage`, `WorkspacePage`, `EvidencePage` die Zeile `const { bookmarks } = useBookmarks()`. Sag:
+"keine Zwischen-Komponente reicht `bookmarks` mehr durch."
+
+**3. Die Sandbox zeigen (beste Demo für F1):** `http://localhost:5173/Mystery-Road-AWE-2026-lukesch/context-demo.html`. Auf `a + 1`
+klicken: **B** (liest nur `b`) zählt trotzdem hoch, `memo()` hilft nicht. Sag: "Context hat keine Auswahl. Wer ihn liest,
+wird bei **jeder** Änderung neu gerendert."
+
+**4. Die Entscheidung vortragen (Task 2):** "knapp. Props hätten gereicht (Tiefe 2, drei Leser direkt unter dem Router). Ich
+behalte Context für die **Bookmarks**, weil er die Prop-Menge entlastet (6 → 4) und sie der einzige app-weite State sind. Notizen
+und Status bleiben bei Props. Preis: +18 Codezeilen, unsichtbare Abhängigkeit, zwei Mechanismen."
+
+**5. Den Fehlerfall zeigen:** in `PageRouter.tsx` `<BookmarksProvider>` und `</BookmarksProvider>` testweise entfernen → die Seite bricht
+mit `useBookmarks() must be used inside <BookmarksProvider>` ab. Wieder einsetzen.
+
+---

@@ -5,12 +5,13 @@
 // ue5 demo 4: die seite haelt KEINE kopie der bookmarks; die liste wird bei
 // jedem Rendern aus der id-liste ABGELEITET (bookmarkedEvidence), mit derselben
 // funktion wie der dashboard-zaehler.
-// ue5 demo 5: die id-liste und die notizen kommen als PROPS vom gemeinsamen
-// vorfahren (PageRouter). die seite liest den localStorage nicht mehr selbst -
-// sie zeigt, was die evidence-seite geaendert hat, sofort. nur das
-// hypothesen-formular besitzt noch eigenen state (kein anderer braucht ihn).
+// ue5 demo 5: die notizen kommen als PROP vom gemeinsamen vorfahren (PageRouter).
+// ue5 demo 8: die bookmarks kommen aus dem CONTEXT (useBookmarks), nicht mehr als
+// Prop. nur das hypothesen-formular besitzt noch eigenen state (kein anderer
+// braucht ihn).
 // ---------------------------------------------------------------------
 import { useCaseData } from "../../shared/useCaseData";
+import { useBookmarks } from "../../shared/BookmarksContext";
 import { bookmarkedEvidence } from "../../shared/bookmarks";
 import { BookmarksList } from "./BookmarksList";
 import { HypothesisForm } from "./HypothesisForm";
@@ -18,12 +19,12 @@ import { NotesList } from "./NotesList";
 import { noteEntries } from "./workspaceHelpers";
 
 interface WorkspacePageProps {
-  bookmarks: readonly string[];
   notes: Readonly<Record<string, string>>;
 }
 
-export function WorkspacePage({ bookmarks, notes }: WorkspacePageProps) {
+export function WorkspacePage({ notes }: WorkspacePageProps) {
   const caseDataState = useCaseData();
+  const { bookmarks } = useBookmarks();
 
   if (caseDataState.status === "loading") {
     return (

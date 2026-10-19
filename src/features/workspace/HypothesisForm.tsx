@@ -28,6 +28,10 @@ export function HypothesisForm({ people, evidence }: HypothesisFormProps) {
   // eine FUNKTION als startwert: der localStorage wird nur beim ersten rendern gelesen
   const [values, setValues] = useState<HypothesisFields>(loadHypothesis);
   const [showSaved, setShowSaved] = useState(false);
+  // ue5 demo 10: ein Speicherfehler ist jetzt STATE und wird gerendert. vorher rief
+  // die Komponente alert() auf (vanilla: dasselbe) - ein blockierender Dialog des
+  // Browsers, an React vorbei.
+  const [saveFailed, setSaveFailed] = useState(false);
   // ue5 demo 9: die ID des laufenden "Saved"-Timers. ein useRef ist ein Wert, der
   // Neurendern UEBERLEBT, aber beim Aendern KEIN Neurendern ausloest (genau
   // richtig fuer eine Timer-ID, die nie angezeigt wird). vorher gab es keine
@@ -52,8 +56,10 @@ export function HypothesisForm({ people, evidence }: HypothesisFormProps) {
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!saveHypothesis(values)) {
-      alert("Your hypothesis could not be saved to local storage.");
+    const saved = saveHypothesis(values);
+    setSaveFailed(!saved);
+    if (!saved) {
+      setShowSaved(false);
       return;
     }
     setShowSaved(true);
@@ -159,6 +165,11 @@ export function HypothesisForm({ people, evidence }: HypothesisFormProps) {
           </button>
           {showSaved && <span className="saved-msg">Saved</span>}
         </div>
+        {saveFailed && (
+          <div className="warning-banner" role="alert">
+            Your hypothesis could not be saved to local storage.
+          </div>
+        )}
       </form>
     </div>
   );

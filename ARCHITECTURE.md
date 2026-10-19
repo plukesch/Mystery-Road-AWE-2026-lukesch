@@ -131,6 +131,14 @@ Mechanisch prüfbar mit einer Textsuche über die `import`-Zeilen (siehe `ue4/UE
 Die React-Seite importiert aus `js/` nur `import type` (Typen) und **reine** Funktionen (`js/utils.ts`). Nie
 `js/state.ts` (hat ein eigenes Zustands-Objekt) oder Code, der `window` oder Event-Listener anfasst.
 
+## Regel: kein manuelles DOM in `src/` (UE5 Demo 10)
+
+Kein `innerHTML`, `classList`, `querySelector`, `getElementById`, `createElement`, `addEventListener`, `alert` in der
+React-App. Die **einzigen** Stellen: `main.tsx` (der Einhängepunkt von React) und `EvidenceDetail.tsx` (ein `ref`-Callback, der
+`scrollIntoView` aufruft: ändert kein DOM, React kann Scrollen nicht deklarativ ausdrücken). Belegt per Textsuche und per
+Laufzeit-Spion (aus unserem Code 2 Aufrufe, aus React DOM 2348; vanilla im gleichen Ablauf 231). Die vanilla-App (`index.html` + `js/`)
+ist ein getrennter Einstiegspunkt und davon nicht betroffen.
+
 ## Bekannte Schwächen
 
 - Relative Pfade wie `../../../js/types` werden tief. Ein Pfad-Alias (`@js/…`) wäre eine spätere Verbesserung.

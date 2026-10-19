@@ -1462,3 +1462,176 @@ Klick. In `HypothesisForm.tsx` die Zeile `clearTimeout(savedTimer.current);` zei
 teilweise (Drilling), zwei nicht (Mutieren, unnötig global). Ich habe drei Fälle behoben."
 
 ---
+
+## Demo 10 — Letzte direkte DOM-Zugriffe entfernen und Abschluss
+
+### 🔰 Einfach erklärt — worum geht's hier überhaupt?
+
+React geht davon aus, dass **es allein** das DOM schreibt (UE4 Demo 1 F4). Jeder Code, der **an React vorbei** in die Seite
+greift (`innerHTML`, `classList`, `getElementById`, `createElement` …), kann dessen Buch durcheinanderbringen. Diese Demo ist der
+**Abschluss-Kassensturz**: durch die **ganze** React-App gehen, nachsehen, ob noch jemand hinter Reacts Rücken am DOM schraubt,
+und das Ergebnis belegen.
+
+*Analogie:* der **Schlussrundgang** nach einem Umbau. Man geht in jeden Raum, schaut, ob noch ein provisorisches Kabel hängt,
+und schreibt auf, was man gefunden hat — nicht nur "sieht gut aus", sondern mit Messgerät.
+
+### Task 1 — der Abschluss-Sweep
+
+Zwei Prüfungen, die sich ergänzen: **statisch** (Textsuche im Quellcode) und **zur Laufzeit** (ein Spion in den DOM-Funktionen).
+
+**a) Statisch** — Textsuche über **ganz `src/`** (ohne Sandbox) nach: `document.`, `window.`, `innerHTML`, `outerHTML`,
+`insertAdjacent`, `createElement(`, `appendChild`, `removeChild`, `.classList`, `querySelector`, `getElementById`, `getElementsBy`,
+`addEventListener`, `dangerouslySetInnerHTML`, `.style.`, `.focus(`, `scrollIntoView`, `.textContent =`, `.value =`, `ref=`, `useRef`,
+`alert(`, `confirm(`, `prompt(`:
+
+| Fundstelle | Was es ist | Urteil |
+|---|---|---|
+| `main.tsx:20` `document.getElementById("react-root")` | der **Einhängepunkt**: React braucht ein Element, in das es seinen Baum setzt (`createRoot`) | **legitim**, keine Manipulation von Inhalt, steht nicht in einer Komponente |
+| `EvidenceDetail.tsx` `scrollIntoView` (Ref-Callback) | scrollt das aufgeklappte Detail ins Bild | **die eine bewusste Ausnahme**, siehe unten |
+| `HypothesisForm.tsx` `alert(…)` | blockierender Browser-Dialog bei einem Speicherfehler | **entfernt**, ersetzt durch gerenderten State (siehe unten) |
+| `HypothesisForm.tsx` `useRef` | Timer-ID (Demo 9), **kein** DOM-Element | kein Fund |
+| Kommentare, die vanilla-Code beschreiben | z. B. "vanilla schrieb es per `innerHTML`" | kein Fund |
+| `FilterSelect.tsx:54` (Treffer von `.value =`) | `props.value === undefined`, ein **Vergleich** | Fehltreffer |
+| Sandbox-Dateien (`*-main.tsx`) | nur `getElementById(…)` als Einhängepunkt | gehören nicht zur App |
+
+**Keine** Treffer für `innerHTML`, `outerHTML`, `insertAdjacent*`, `createElement(`, `appendChild`, `removeChild`, `.classList`,
+`querySelector*`, `addEventListener`, `dangerouslySetInnerHTML`, `.style.`, `.focus(`, `.textContent =` im Code. Auch `react.html` hat **kein**
+Inline-Skript außer dem Einstieg.
+
+**b) Zur Laufzeit** — der entscheidende Beweis. Ich habe die DOM-Funktionen **umhüllt** (`innerHTML`-Setter, `insertAdjacentHTML`,
+`classList.add/remove/toggle`, `document.getElementById/querySelector*/createElement`, `Element.querySelector*`, `scrollIntoView`,
+`appendChild`/`removeChild`, `alert`) und bei **jedem** Aufruf die **aufrufende Datei** aus dem Stack gelesen. Dann **alle fünf Views
+durchgespielt und bedient**: Dashboard, Evidence (Suche, Filter, Clear, Stern, Detail öffnen, Status ändern, Notiz speichern), People &
+Locations (Liste, Personen-Detail), Timeline, Workspace (Hypothesen-Formular speichern):
+
+| | React (`src/`) | vanilla (`js/`, derselbe Ablauf) |
+|---|---|---|
+| Aufrufe **aus unserem Code** (zusammen) | **2** | **231** |
+| davon `innerHTML`-Setter | **0** | **42** |
+| `document.getElementById` | **0** | **102** |
+| `classList.add/remove` | **0** | **72** (18 + 54) |
+| `querySelectorAll` | **0** | **14** |
+| `scrollIntoView` | **2** (`EvidenceDetail.tsx`) | 1 |
+| `alert` | **0** | 0 (nicht ausgelöst) |
+| Aufrufe aus **Bibliotheken** (React DOM selbst) | 2348 | 13 |
+
+React DOM führt **2348** DOM-Aufrufe aus — **das ist der Punkt**: das DOM wird laufend geschrieben, aber **nur von React**.
+Aus **unserem** Code kommen genau zwei, beide dieselbe Zeile (`scrollIntoView`; **zwei**, weil `StrictMode` den Ref-Callback in der
+Entwicklung doppelt aufruft).
+
+**Das einzige, was entfernt wurde: `alert()` → gerenderter State**
+
+| | vorher | nachher |
+|---|---|---|
+| Speicher voll/gesperrt | `alert("Your hypothesis could not be saved …")`: blockierender Browser-Dialog, an React vorbei | `saveFailed` (`useState`), gerendert als `<div className="warning-banner" role="alert">…</div>` |
+| nach erfolgreichem Speichern | — | die Meldung verschwindet von selbst (`setSaveFailed(false)`), "Saved" erscheint |
+
+**Live getestet** (`Storage.prototype.setItem` wirft einen `QuotaExceededError`): Meldung im Formular **sichtbar**, `alert` **0×** aufgerufen,
+"Saved" **nicht** angezeigt. Danach wieder normal: Meldung weg, "Saved" da.
+
+**Die eine bewusste Ausnahme: `scrollIntoView` per Ref-Callback**
+
+| Frage | Antwort |
+|---|---|
+| Was macht es? | scrollt das Detail-Panel ins Bild, sobald es im DOM hängt (vanilla: `section.scrollIntoView()` im Öffnen-Code) |
+| **Manipuliert** es das DOM? | **Nein.** Es ändert weder Inhalt noch Struktur noch Klassen; es **liest** die Lage und bewegt den Bildlauf |
+| Warum nicht deklarativ? | React kann "scrolle dorthin" nicht als Markup ausdrücken. Dafür gibt es den dokumentierten **Ausweg**: einen `ref` (wie bei `focus()`) |
+| Warum steht es in einer **stabilen** Funktion? | ein Inline-Callback wäre bei jedem Render neu und würde bei jedem Render erneut scrollen (z. B. nach "Save note") |
+| Streng "null"? | wer **wörtlich null** verlangt, entfernt die Zeile (die Seite funktioniert, nur ohne automatisches Scrollen) oder legt das Panel **über** die Liste. Ich habe beides bewusst nicht gemacht: es wäre ein **Verhaltensverlust** gegenüber vanilla |
+
+**Sonstiges, was nicht zählt** (damit die Aussage genau bleibt): `new FormData(event.currentTarget)` **liest** den Wert eines
+Formulars über das Event (kein Schreiben); der `localStorage` und `setTimeout` sind Browser-**APIs**, aber **kein DOM**.
+
+### Task 2 — die ganze App läuft auf React-State und Props
+
+**Alle fünf Views sind React**, jede über eine echte, speicherbare URL (`react.html#…`):
+
+| View | URL | Gebaut in |
+|---|---|---|
+| Dashboard | `#/` | UE3 |
+| People & Locations | `#/team/people`, `#/team/people/:personId`, `#/team/locations` | UE4 |
+| Timeline | `#/timeline?person=…` | UE4 |
+| Evidence Catalogue | `#/evidence?open=…` | **UE5** |
+| Workspace | `#/workspace` | **UE5** |
+
+**Das vollständige Zustands-Inventar** (alle Hooks in `src/`, ohne Sandbox; per Textsuche):
+
+| Wo | Was | Art |
+|---|---|---|
+| `app/PageRouter.tsx` | `useCaseData()` (**ein** Aufruf), `notes`, `reviewEdits` | geladene Daten, 2× `useState` |
+| `shared/BookmarksContext.tsx` | `bookmarks` (`useState`), `useMemo`, `createContext`/`useContext` | Context-Besitzer |
+| `shared/useCaseData.ts` | `useState` + `useEffect` | der **einzige** `useEffect` der App (Laden) |
+| `features/evidence/EvidencePage.tsx` | `useReducer` (Filter), `useSearchParams` (`?open=`) | lokaler State + URL |
+| `features/workspace/HypothesisForm.tsx` | `values`, `showSaved`, `saveFailed` (`useState`), `useRef` (Timer) | lokaler State |
+| `features/timeline/TimelinePage.tsx` | `useSearchParams` (nur lesen) | URL |
+| `features/people-locations/*` | `useParams`, `useOutletContext` | lesen vom Router |
+| Dashboard, Workspace | `useBookmarks()` | lesen den Context |
+
+Alles andere (`EvidenceCard`, `EvidenceToolbar`, `Badge`, `StatCard` …) ist **reine Darstellung**: Props rein, Markup raus.
+
+**Die vanilla-App ist weiter da, aber getrennt:** `index.html` + `js/` sind ein **eigener Einstiegspunkt**, den React nie anfasst
+(UE3-Entscheidung: beide Apps laufen parallel; React importiert aus `js/` nur Typen und reine Funktionen). In `js/` stehen
+**115** Zeilen mit DOM-Aufrufen (Textsuche; `main.ts` 18, `evidence.ts` 29, `timeline.ts` 22, `workspace.ts` 17 …). Das ist **nicht** die React-App;
+sie bleibt als Vergleich unverändert.
+
+### Verifikation
+
+- **Statische Suche** und **Laufzeit-Spion** (Tabellen oben): aus unserem Code **2** Aufrufe (`scrollIntoView`), aus React DOM **2348**;
+  vanilla im gleichen Ablauf **231** aus unserem Code.
+- **`alert` → State** live: Fehlerfall, Wiederherstellung (siehe oben).
+- **Regressionslauf nach dem Umbau** (derselbe Ablauf wie in Demo 9, ohne Neuladen): zwei Sterne, E03 auf "reviewed", Notiz →
+  **Dashboard** "2 Bookmarked / 2 Reviewed"; **Workspace** E03, E14 samt Notiz; **Personen-Detail** `patch-vector` zeigt E03 `reviewed`;
+  **Timeline** `?person=nova-byte` 3 Events; Evidence-Filter "reviewed" → `E03,E12`. **Konsole** zwischen zwei Markern: keine Meldung.
+- **Aufräumen:** `remotion_*`-Keys wieder entfernt; `Storage.prototype.setItem` und `window.alert` nach dem Test zurückgesetzt.
+- **Nach dem Umbau ausgeführt:** `npm run typecheck` → 0 Fehler. `npm run format:check` → sauber (beim ersten Versuch).
+  `npm run build` → grün (154 Module).
+
+  | Stand | `react-*.js` | gzip | Module |
+  |---|---|---|---|
+  | UE5 Demo 9 | 286,49 KB | 89,33 KB | 154 |
+  | **UE5 Demo 10** | **286,60 KB** | **89,36 KB** | **154** |
+  | Unterschied | **+0,11 KB** | **+0,03 KB** | 0 (der `saveFailed`-Zustand und die Meldung ersetzen `alert`) |
+
+  **Über ganz UE5** (Ende UE4 → Ende UE5): `react-*.js` 272,31 → **286,60 KB** (**+14,3 KB**), gzip 85,79 → **89,36 KB** (**+3,6 KB**), Module
+  139 → **154** (+15). Dafür sind jetzt **alle fünf Views** React (Evidence und Workspace kamen dazu); die vanilla-App bleibt bei 20,11 KB.
+
+### 🎤 Live-Demo — was du im Unterricht herzeigst
+
+**1. Den Kassensturz per Suche:** im Editor (oder Terminal) in `src/` nach `innerHTML` suchen → keine Treffer im Code; nach `classList` → keine; nach
+`querySelector` → keine; nach `getElementById` → nur `main.tsx`. Sag: "der Einhängepunkt von React. Ohne diese Zeile gibt es keinen React-Baum."
+
+**2. Den Beweis zur Laufzeit zeigen (stark):** in der Konsole **in beiden Apps** (`react.html` und `index.html`) einen Zähler einhängen:
+```js
+let n = 0; const o = Object.getOwnPropertyDescriptor(Element.prototype, "innerHTML");
+Object.defineProperty(Element.prototype, "innerHTML", { ...o, set(v) { if ((new Error().stack || "").includes("/js/")) n++; return o.set.call(this, v); } });
+```
+dann durch die Views klicken und `n` ansehen: **vanilla** zählt hoch, **React** bleibt bei 0 (`/js/` kommt in React-Aufrufen nie vor). Sag: "React schreibt
+selbst ununterbrochen ins DOM, aber unser Code nie."
+
+**3. Die Ausnahme ehrlich benennen:** `EvidenceDetail.tsx`, `scrollIntoViewOnMount`. Sag: "das **ändert** das DOM nicht, es scrollt. React
+kann das nicht als Markup ausdrücken, deshalb der dokumentierte Ausweg `ref`. Wer wörtlich null will, löscht die Zeile."
+
+**4. Den `alert`-Ersatz zeigen:** im Workspace in der Konsole `Storage.prototype.setItem = () => { throw new Error("voll"); }`, dann "Save hypothesis draft" →
+rote Meldung **im** Formular, kein Dialog.
+
+**5. Das Inventar zeigen:** Tabelle oben. Sag: "ein `useEffect` in der ganzen App (das Laden), ein Context, ein Reducer, der Rest sind `useState` und
+reine Darstellung."
+
+---
+
+## Abschluss UE5 — das Ganze auf einen Blick
+
+| Demo | Kern | Schlüsselzahl / -beleg |
+|---|---|---|
+| 1 | Handler direkt am Element; Event-Delegation nicht mehr von Hand | `onclick`-Attribute **14 → 0**, XSS-Notiz nur noch Text |
+| 2 | kontrollierte Felder, `useState` | ein Feld ohne `onChange` bleibt leer, React meldet es |
+| 3 | unveränderliche Updates | gleiche Referenz = React sieht nichts (Sandbox), `readonly` als Compiler-Schutz |
+| 4 | abgeleitet statt gespeichert | 22 Filter-Kombinationen identisch zu vanilla; Zähler **und** Liste aus **einer** Funktion |
+| 5 | State nach oben | Dashboard sofort "2 Reviewed", `localStorage`-Lesezugriffe beim Navigieren **0** |
+| 6 | Callbacks nach unten | 2 Prop-Ebenen; Sandbox: Setter durchreichen vs. Callback |
+| 7 | `useReducer` | 49 → 36 Zeilen, `CLEAR_FILTERS` als eine Aktion; `useState` ist ein Spezialfall |
+| 8 | Context, ehrlich abgewogen | Props 11 → 7, aber +18 Zeilen: "knapp, nur Bookmarks" |
+| 9 | State-Probleme finden | Daten-Anfragen **60 → 10**, Timer-Fehler behoben |
+| 10 | kein DOM mehr von uns | Aufrufe aus unserem Code **2** (React) gegen **231** (vanilla) |
+
+---

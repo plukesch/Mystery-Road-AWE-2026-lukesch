@@ -909,3 +909,88 @@ beschreibt **einen Mechanismus** (zwei Namen für dasselbe Array); aber **die Ur
 Die React-Antwort ist durchgehend dieselbe: **eine Quelle, alles andere wird abgeleitet** (Demo 4, 5, 9).
 
 ---
+
+## Demo 10 — Letzte direkte DOM-Zugriffe entfernen und Abschluss
+
+Abschluss-Sweep über die ganze React-App: statische Textsuche und ein Laufzeit-Spion in den DOM-Funktionen, dazu alle fünf Views durchgespielt.
+Ergebnis: aus **unserem** Code **2** DOM-Aufrufe (beide `scrollIntoView`, eine bewusst benannte Ausnahme), aus React DOM **2348**; vanilla im gleichen Ablauf **231**
+aus eigenem Code. Entfernt wurde das letzte `alert()` (jetzt gerenderter State). Details und Messtabellen in `UE5_CHANGES.md`.
+
+### F1: Zeig eine Zustands-Entscheidung aus dieser Übung (Besitzer des States, `useState` gegen `useReducer`, Prop-Drilling gegen Context oder etwas anderes), bei der du dir nicht 100 % sicher bist, ob sie richtig war. Erkläre die Abwägung ehrlich, in beide Richtungen.
+
+**Einfach gesagt:** Ich bin mir bei **zwei** Entscheidungen nicht sicher. Die größere: **Filter und Suchtext leben als lokaler State in `EvidencePage`** und
+gehen deshalb beim Seitenwechsel verloren. Die zweite: **Bookmarks über Context, Notizen und Status über Props** (Demo 8).
+
+**Entscheidung 1 — wo wohnt der Filter-Zustand?**
+
+Ich habe den Zustand **dort gelassen, wo ihn nur eine Seite braucht** (`EvidencePage`, `useReducer`). Live gemessen (Demo 5): Suche `calibration` (7 Treffer) → Dashboard → zurück: das
+Feld ist **leer**, 18 Karten. In **vanilla** blieb der Text stehen (das DOM wurde nur versteckt).
+
+| | Für **lokalen** State (so gebaut) | Für **höher / in die URL** |
+|---|---|---|
+| Regel | Demo 5: State lebt beim **niedrigsten** Besitzer, der ihn braucht. Nur diese Seite liest ihn | der Nutzer erlebt es als **Rückschritt** gegenüber vanilla |
+| Einfachheit | kein Prop, kein Context, `EvidencePage` bleibt in sich geschlossen; der Reducer ist ein einziges `useReducer` | ein Wechsel in die URL (`?type=…&sort=…`) braucht **sieben** Query-Parameter lesen/schreiben (`useSearchParams`) |
+| Reset | Wechsel auf eine andere Seite = sauberer **Neustart** (oft gewollt) | Filter bleiben "kleben", auch wenn man sie vergessen hat |
+| Teilen / Zurück | — | ein Link `…#/evidence?status=reviewed` wäre **teilbar** und "Zurück" ginge einen Filterschritt zurück: **dasselbe Muster wie `?person=` in der Timeline** (UE4 Demo 10) |
+| Konsistenz | — | `?open=` und `?person=` liegen schon in der URL, die Filter **nicht**: das ist ein **Bruch** im eigenen Muster |
+| Kosten | 0 zusätzliche Zeilen | grob: `useSearchParams`-Lesen/Schreiben statt `useReducer`, alle Eingaben schreiben die URL (jeder Tastendruck im Suchfeld ein History-Eintrag, wenn man nicht `replace` benutzt) |
+
+**Wo ich unsicher bin:** die Regel aus Demo 5 sagt "lokal", die **Gewohnheit** der App (URL für alles, was man teilen will) sagt "URL". Beides ist
+verteidigbar. Ich habe "lokal" gewählt, weil UE5 **ausdrücklich** `useReducer`-Zustand verlangt (Demo 7: "7+ zusammengehörige Werte") und die URL-Variante ihn ersetzen würde.
+**Mit mehr Zeit:** Filter in die URL, aber **nur** die gesetzten (kein `type=` ohne Wert), die Suche **mit** `replace`. Dann bliebe der Reducer
+als **Auswerter** der URL erhalten.
+
+**Entscheidung 2 — Bookmarks per Context, Notizen/Status per Props.** Abwägung in `UE5_CHANGES.md`, Demo 8 (Task 2): "knapp, nur Bookmarks". Das Unsichere daran:
+**zwei Mechanismen** für dasselbe Muster (+18 Codezeilen, unsichtbare Abhängigkeit) gegen die entlastete Prop-Liste. Die Rückfall-Option ist ein Handgriff.
+
+### F2: Nenne eine Fehlerklasse aus der Fehlerliste der **ursprünglichen** vanilla-App (Übung 1), die in deiner React-Version (Übungen 3 bis 5) jetzt **per Konstruktion** nicht mehr möglich ist, nicht nur behoben, sondern **strukturell verhindert**. Erkläre, warum die React-Architektur sie ausschließt.
+
+**Einfach gesagt:** **"Die Ansicht zeigt einen alten Wert, weil niemand sie neu gezeichnet hat."** In vanilla musste jemand daran **denken**, jede View nach jeder Änderung
+von Hand neu zu rendern. In React gibt es diesen Schritt **nicht**, und was es nicht gibt, kann man nicht vergessen.
+
+**Die Fehlerklasse:** *veraltete Ansicht durch vergessenes Neurendern* (der Dashboard-Zähler aus UE1 Demo 5; "Bookmark gesetzt, zurück aufs Dashboard: Zähler blieb auf 0").
+
+**Warum vanilla sie hatte** (gemessen):
+
+| | vanilla (`js/`) |
+|---|---|
+| **Manuelle Render-Aufrufe** (`renderDashboard()`, `renderEvidenceList()`, `renderWorkspace()`, `populateAllDropdowns()` …) | **29** Aufrufe in 6 Dateien |
+| **Merk-Flags**, damit nicht zu oft gerendert wird (`state.viewRendered.*`) | **12** Zugriffe |
+| Ein neuer Datenpfad (z. B. ein Bookmark) braucht | **an jeder** Änderungsstelle den **richtigen** Render-Aufruf. Vergessen = alter Wert |
+| Beleg im Code | `navigation.ts`: der Kommentar zum UE1-Fix: "vorher hat der `!viewRendered.dashboard`-Guard das nach dem ersten Mal eingefroren" |
+
+**Warum React sie ausschließt** (der Mechanismus, nicht nur "React macht das"):
+
+1. **Die Oberfläche ist eine Funktion des States:** `UI = f(State, Props)`. Es gibt **keinen** Befehl "zeichne die Dashboard-View neu". Ein
+   `setState` (oder eine geänderte Prop) **ist** der Auslöser; React rendert **alle betroffenen** Komponenten neu.
+2. **Was angezeigt wird, wird berechnet, nicht gespeichert** (Demo 4): `bookmarkedEvidence(evidence, bookmarks).length` bei **jedem** Rendern. Es gibt keine gemerkte Zahl im
+   DOM, die nachgeführt werden müsste.
+3. **Nur ein Besitzer** (Demo 5/8): jede Seite liest denselben State. Es gibt keine "zweite Kopie", die veralten kann.
+
+**Belege aus dieser Übung:**
+
+| Beleg | Ergebnis |
+|---|---|
+| Manuelle `render*()`-Aufrufe im React-Quellcode | **0** (Textsuche; die einzigen Treffer sind Kommentare, die auf vanilla verweisen) |
+| `viewRendered`-ähnliche Merk-Flags | **0** |
+| Demo 5, live: Stern und Status in Evidence setzen, **ohne Neuladen** zum Dashboard | "2 Bookmarked / 2 Reviewed" **sofort**, ohne dass irgendein Code "Dashboard neu rendern" aufruft |
+| Demo 4: veralteter Bookmark-Eintrag (`ZZ99`) | vanilla: Zähler 2, Liste 1 (zwei Darstellungen); React: beides 1 (eine Funktion) |
+
+**Eine zweite Klasse mit demselben Muster:** **XSS durch `innerHTML`** (UE2 Demo 8, in UE5 Demo 1 live bewiesen). vanilla: **33** Zeilen mit `innerHTML` in `js/`,
+und eine Notiz mit `<img onerror=…>` wurde **ausgeführt** (`window.__xss` = 1). React: `{note}` im JSX wird **immer als Text** gesetzt, `dangerouslySetInnerHTML` kommt im Code
+**0×** vor, und der Laufzeit-Spion zählt **0** `innerHTML`-Zuweisungen aus unserem Code. Der Weg zurück zu HTML ist ein **ausdrücklich so benannter** Ausweg
+(`dangerouslySetInnerHTML`), kein Versehen.
+
+**Die ehrlichen Grenzen** ("strukturell" heißt nicht "nie wieder irgendein Zustandsfehler"):
+
+| Grenze | Beleg |
+|---|---|
+| React verhindert **diese** Klasse (vergessenes Neurendern), **nicht jede** Art von veraltetem Wert | **Demo 9, Fall 3:** der "Saved"-Timer blendete die Meldung zu früh aus: ein **überholter Timer**, mit React so gut möglich wie ohne |
+| Werte **außerhalb** von React werden nicht beobachtet | `localStorage` in einem zweiten Tab, `Date.now()` |
+| Mutieren eines States bleibt **möglich**, wenn man es tut | Demo 3: nur Konvention, `readonly` und die Sandbox zeigen es |
+| Die Garantie hängt an der Disziplin "**abgeleitet, nicht gespeichert**" | speichert man doch eine Kopie (`useState(props.x)`), ist die Klasse wieder da (Demo 4/9) |
+
+**Kurz:** React macht aus "man muss nach jeder Änderung daran denken, die Ansicht zu aktualisieren" ein "die Ansicht **ist** der State". Diese **Aufgabe**
+verschwindet, deshalb kann man sie auch nicht mehr vergessen.
+
+---

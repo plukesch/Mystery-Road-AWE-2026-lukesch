@@ -116,3 +116,116 @@ tausende Closures stören) oder wenn man mit Elementen arbeitet, die **React nic
 außen). Für 18 Karten ist es unnötig; wir haben es bewusst nicht gebaut.
 
 ---
+
+## Demo 2 — `useState` und kontrollierte Formulare
+
+Das Evidence-Suchfeld und alle sechs Felder des Hypothesen-Formulars sind kontrolliert (`value` + `onChange`,
+Zustand per `useState`); "Save hypothesis draft" liest den Zustand und speichert im `localStorage` (gleiche
+Form wie vanilla). Die zwei Fragen live belegt: ein Feld ohne `onChange` bleibt leer, und React meldet das.
+Details und Messtabellen in `UE5_CHANGES.md`.
+
+### F1: Was macht ein Eingabefeld "kontrolliert" im Gegensatz zu "unkontrolliert"? Zeig, was passiert, wenn du in eines deiner kontrollierten Felder tippst, ohne `onChange` zu verdrahten, und erkläre es im Sinne von Reacts Render-Zyklus, *warum* das passiert.
+
+**Einfach gesagt:** **Kontrolliert** heißt: **React** besitzt den Wert (er steht in `useState`), das Feld zeigt ihn nur an.
+**Unkontrolliert** heißt: der **Browser** besitzt den Wert, React fragt nur bei Bedarf nach. Ohne `onChange` kann ein
+kontrolliertes Feld seinen Wert nie ändern: React zeichnet es nach jeder Taste wieder mit dem alten Wert, es wirkt
+"eingefroren".
+
+**Die zwei Arten nebeneinander:**
+
+| | Unkontrolliert | Kontrolliert |
+|---|---|---|
+| Wer besitzt den aktuellen Wert? | der **Browser** (das DOM-Element) | **React** (`useState`) |
+| Prop am Element | `defaultValue` (nur der **Startwert**) | `value` (der **aktuelle** Wert) + `onChange` |
+| Wie liest man den Wert? | bei Bedarf aus dem DOM (Formular abschicken → `FormData`, oder `ref`) | steht schon im State — jederzeit lesbar |
+| Aus unserem Code | Notiz-Textarea (`defaultValue={note}`, gelesen per `FormData`), Timeline-Dropdowns | Suchfeld (`value={searchTerm}`), alle 6 Felder des Hypothesen-Formulars |
+| Gut für | einfache Formulare, die man nur beim Abschicken liest | Eingaben, auf die die Seite **sofort** reagieren muss (Live-Filter, Validierung, abhängige Felder, Zurücksetzen) |
+
+**Der Kreislauf eines kontrollierten Feldes (bei jeder Taste):**
+
+```
+Taste → onChange feuert → setSearchTerm(neuerText) → React rendert EvidencePage neu
+      → <input value={searchTerm}> bekommt den neuen Text → das Feld zeigt ihn
+```
+
+**Was passiert ohne `onChange`?** Live ausprobiert: in `EvidenceToolbar.tsx` die Zeile
+`onChange={(event) => onSearchChange(event.target.value)}` testweise gelöscht, "abc" mit echten Tasten getippt:
+
+| Beobachtung | Wert |
+|---|---|
+| Wert des Feldes nach dem Tippen | **`""`** — nichts erscheint |
+| Konsole | React-Fehlermeldung (sinngemäß): "You provided a value prop to a form field without an onChange handler. This will render a read-only field. If the field should be mutable use defaultValue. Otherwise, set either onChange or readOnly." |
+| Nach `onChange` wieder einsetzen | "abc" lässt sich tippen |
+
+**Warum das so ist — im Sinne des Render-Zyklus:**
+
+1. Der Nutzer drückt "a". **Der Browser trägt das "a" kurz in das Feld ein** (das ist sein Standardverhalten).
+2. Das `input`-Event kommt bei React an. **Es gibt aber keinen Handler** → React ruft **keinen Setter** auf →
+   der **State bleibt `""`**.
+3. React vergleicht nach dem Event den DOM-Wert des Feldes mit dem Wert, den es **laut State** haben müsste
+   (`value={searchTerm}` = `""`). Sie sind verschieden → React **setzt das Feld auf `""` zurück** (React stellt den
+   "Soll-Wert" wieder her).
+4. Ergebnis: das "a" ist sofort wieder weg. Für den Nutzer sieht das Feld **schreibgeschützt** aus.
+
+Das Kernprinzip: bei einem kontrollierten Feld ist **der State die einzige Wahrheit**, das DOM-Element ist nur
+ein Spiegel. Ein Wert kommt **nur über den State** ins Feld. Wer den State nicht ändert, ändert das Feld nicht.
+
+**Zwei Ausnahmen, die man kennen sollte:**
+- `readOnly` am Feld sagt React ausdrücklich "ja, das soll nicht änderbar sein" — dann gibt es keine Warnung.
+- `value={undefined}` (oder gar kein `value`) macht das Feld **unkontrolliert**. Wechselt ein Feld zwischen den zwei
+  Zuständen (`value` erst `undefined`, dann ein String), warnt React ebenfalls. Deshalb haben alle unsere
+  Startwerte einen String (`""`), nie `undefined`.
+
+### F2: Das Hypothesen-Formular hat mehrere Eingabetypen (Select, Multi-Select, Range, Textarea). Hast du pro Feld ein `useState` benutzt oder ein einziges Objekt? Begründe deine Wahl. (Notiere dir die Frage für Demo 7 — `useReducer` — wo du sie für ein anderes Formular neu überdenken sollst.)
+
+**Einfach gesagt:** **Ein Objekt.** Die sechs Felder gehören zusammen: sie werden **zusammen geladen, zusammen
+gespeichert und (später) zusammen zurückgesetzt**. Ein Objekt macht aus "sechs Dingen, die immer gemeinsam
+behandelt werden" **eine** Sache.
+
+**Der Vergleich:**
+
+| | Ein `useState` pro Feld | Ein Objekt (gewählt) |
+|---|---|---|
+| Code | 6× `const [x, setX] = useState(...)` | 1× `useState<HypothesisFields>(loadHypothesis)` + **ein** `setField` |
+| **Speichern** | 6 Werte einzeln einsammeln: `{ suspectId, nature, evidenceIds, … }` | `saveHypothesis(values)` — der Entwurf ist **schon** das Objekt |
+| **Laden** | 6 Setter nacheinander aufrufen (und für jeden den Startwert einzeln wissen) | **ein** Startwert: `useState(loadHypothesis)` |
+| **Zurücksetzen** (z. B. "Clear") | 6 Setter aufrufen — einen vergessen und das Formular ist halb geleert | **ein** `setValues(empty)` |
+| Neues Feld hinzufügen | neues `useState` + neuer Handler + an `save`/`load` denken | ein Feld im Typ `HypothesisFields`, der Compiler zeigt, wo es noch fehlt |
+| Typisierung | jedes einzeln | `HypothesisFields` ist **dieselbe Form** wie der gespeicherte `HypothesisDraft` (`Omit<…, "savedAt">`) |
+| Nachteil | — | man muss beim Ändern **kopieren**: `{ ...previous, [field]: value }` statt nur den einen Wert zu setzen |
+
+**Der Handler ist bewusst generisch:**
+
+```tsx
+function setField<K extends keyof HypothesisFields>(field: K, value: HypothesisFields[K]) {
+  setValues((previous) => ({ ...previous, [field]: value }));
+}
+```
+
+Das `K extends keyof HypothesisFields` verhindert Typfehler schon beim Schreiben: `setField("evidenceIds", "x")`
+(ein String statt eines Arrays) ist ein **Compiler-Fehler**, ebenso `setField("typo", …)`.
+
+**Zwei Dinge, die ich beim Kopieren beachte:**
+1. `{ ...previous, … }` baut ein **neues** Objekt, das alte bleibt unverändert. Das ist ein **unveränderliches
+   Update** (Thema von Demo 3): React erkennt eine Änderung daran, dass es ein **anderes** Objekt bekommt.
+2. `setValues((previous) => …)` benutzt die **Funktionsform** des Setters. `previous` ist der **neueste** Stand,
+   auch wenn mehrere Updates im selben Event zusammenkommen. (`setValues({ ...values, … })` würde den Stand von
+   *diesem Render* kopieren — das ist bei einem einzelnen Event gleich, aber bei zwei schnell aufeinander folgenden
+   Updates ein Fehler.)
+
+**Warum nicht pro Feld — und wann doch?** Pro Feld wäre vollkommen in Ordnung, wenn die Felder **nichts
+miteinander zu tun hätten** (zwei getrennte Schalter in der Kopfzeile). Das **Suchfeld** der Evidence-Seite ist
+deshalb ein **einzelnes** `useState("")` — es hat noch keine Geschwister. Sobald Suche, Typ, Person, Ort, Status,
+Relevanz und Sortierung zusammenkommen (**sieben** Werte, die oft gemeinsam geändert und gemeinsam zurückgesetzt
+werden), reicht auch ein Objekt nicht mehr bequem; dort fragt Demo 7, ob ein `useReducer` besser passt.
+
+**Ausblick auf Demo 7 (die Frage dort neu stellen):** das Hypothesen-Formular hat **nur eine Art** Änderung
+("Feld X auf Wert Y setzen"), deshalb reicht ein Objekt und ein `setField`. Die Evidence-Filter haben **mehrere
+Arten** (ein Filter ändern, die Sortierung ändern, alle zurücksetzen), und genau dort wird ein Reducer mit
+benannten Aktionen lesbarer. Merksatz: *eine Art von Änderung → Objekt; mehrere Arten → Reducer.*
+
+**Wo der Zustand wohnt:** der Entwurf liegt **in `HypothesisForm` selbst**, nicht in `WorkspacePage`. Kein anderer Teil
+der App braucht ihn (Regel aus Demo 5: Zustand lebt beim **niedrigsten gemeinsamen Besitzer**). Dadurch ist
+`HypothesisForm` keine reine Darstellung mehr, sondern eine zustandsbehaftete Komponente.
+
+---

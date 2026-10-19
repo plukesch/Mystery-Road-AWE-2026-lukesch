@@ -182,3 +182,173 @@ Sag: "React setzt `{note}` als Text, vanilla schrieb es per `innerHTML`."
 Listener, `navigateTo` und einen `setTimeout`. Hier ist es ein Link."
 
 ---
+
+## Demo 2 — `useState` und kontrollierte Formulare
+
+### 🔰 Einfach erklärt — worum geht's hier überhaupt?
+
+Ein Eingabefeld hat **zwei mögliche "Chefs"**:
+
+- **Unkontrolliert:** der **Browser** ist der Chef. Er merkt sich, was im Feld steht; React fragt nur bei Bedarf nach
+  (so war das Notiz-Feld in Demo 1 und so war *alles* in vanilla: `getElementById(...).value`).
+- **Kontrolliert:** **React** ist der Chef. Der Text steht in einer Variable (`useState`), das Feld **zeigt** sie nur
+  an, und jede Taste sagt React Bescheid ("hier ist ein neuer Text"). React speichert ihn, rendert neu und gibt dem
+  Feld den neuen Wert zurück.
+
+*Analogie:* ein **Gästebuch**. Unkontrolliert: die Gäste schreiben direkt ins Buch, du blätterst nur nach, wenn du
+etwas wissen willst. Kontrolliert: ein **Empfangschef** schreibt jeden Eintrag selbst ins Buch, jeder Gast diktiert
+ihm. Du weißt immer sofort, was drinsteht — aber ohne Diktat (`onChange`) schreibt der Empfangschef nichts, und das
+Buch bleibt leer.
+
+`useState` ist dabei das Gedächtnis des Empfangschefs: `const [text, setText] = useState("")` heißt "ein Wert `text`,
+anfangs leer, und eine Funktion `setText`, mit der man ihn ändert **und React zum Neurendern auffordert**".
+
+### Task 1 — das Evidence-Suchfeld ist kontrolliert
+
+| Datei | Änderung |
+|---|---|
+| `evidence/EvidencePage.tsx` | `const [searchTerm, setSearchTerm] = useState("")` — der **Zustand** |
+| `evidence/EvidenceToolbar.tsx` | neue Props `searchTerm` und `onSearchChange`; am `<input>`: `value={searchTerm}` und `onChange={(event) => onSearchChange(event.target.value)}` |
+
+**Der Kreislauf bei jeder Taste:**
+
+| Schritt | Was passiert |
+|---|---|
+| 1 | Nutzer tippt "a" |
+| 2 | `onChange` feuert, `event.target.value` ist `"a"` |
+| 3 | `onSearchChange("a")` → `setSearchTerm("a")` |
+| 4 | React merkt: Zustand hat sich geändert → `EvidencePage` rendert **neu** |
+| 5 | `<input value={searchTerm}>` bekommt `"a"` → das Feld zeigt `"a"` |
+
+Die Toolbar **hält nichts selbst**: sie bekommt Text und Funktion als Props (Presentational, siehe UE4 Demo 5).
+
+**Wichtig, ehrlich:** die Suche **filtert noch nicht**. Der Text wird gespeichert, aber die Liste benutzt ihn
+erst in Demo 4 (abgeleitete Liste). Die Angabe verlangt hier nur das kontrollierte Feld.
+
+### Task 2 — das ganze Hypothesen-Formular ist kontrolliert
+
+Alle sechs Felder (+ die Zahl neben dem Regler) lesen aus **einem** Zustandsobjekt:
+
+| Feld | Element | Wert im State | `onChange` liest |
+|---|---|---|---|
+| Verdächtige Person | `<select>` | `values.suspectId` (string) | `event.target.value` |
+| Art des Vorfalls | `<select>` | `values.nature` (string) | `event.target.value` |
+| Beweisstücke | `<select multiple>` | `values.evidenceIds` (**string[]**) | `Array.from(event.target.selectedOptions, o => o.value)` |
+| Confidence | `<input type="range">` | `values.confidence` (string `"0"`–`"100"`) | `event.target.value` |
+| Erklärung | `<textarea>` | `values.explanation` (string) | `event.target.value` |
+| Alternative | `<textarea>` | `values.alternative` (string) | `event.target.value` |
+| Zahl neben dem Regler | `<output>` | zeigt **denselben** `values.confidence` | — (kein Handler nötig) |
+
+**Ein State-Objekt statt sechs `useState`** (Begründung: Theorie F2):
+
+```tsx
+const [values, setValues] = useState<HypothesisFields>(loadHypothesis);
+
+function setField<K extends keyof HypothesisFields>(field: K, value: HypothesisFields[K]) {
+  setValues((previous) => ({ ...previous, [field]: value }));
+}
+```
+
+| Baustein | Bedeutung |
+|---|---|
+| `useState(loadHypothesis)` | eine **Funktion** als Startwert: React ruft sie nur beim **ersten** Rendern auf ("lazy initial state"). So wird der `localStorage` einmal gelesen, nicht bei jedem Rendern |
+| `setField("nature", "deliberate")` | ein Setter für alle Felder |
+| `<K extends keyof HypothesisFields>` | der **Typ passt zum Feld**: `setField("evidenceIds", "x")` ist ein Compiler-Fehler (es muss `string[]` sein) |
+| `{ ...previous, [field]: value }` | neues Objekt: alles vom alten **kopiert**, nur dieses eine Feld ersetzt (mehr dazu in Demo 3) |
+
+**Die zwei Dateien:**
+
+| Datei | Rolle |
+|---|---|
+| `workspace/HypothesisForm.tsx` | besitzt jetzt den Zustand. Ist **keine reine Darstellung** mehr (siehe unten) |
+| `workspace/hypothesisStorage.ts` (neu) | `loadHypothesis()` und `saveHypothesis()`: dieselbe `localStorage`-Key (`remotion_hypothesis`) und dieselbe Form wie vanilla |
+
+**Warum dieselbe Form wie vanilla?** Ein in einer App gespeicherter Entwurf lädt in der anderen. Live bestätigt (s. u.).
+
+### Task 3 — "Save hypothesis draft" liest den Zustand und speichert
+
+| | vanilla (`saveHypothesis()` in `js/views/workspace.ts`) | React |
+|---|---|---|
+| Wie kommen die Werte zusammen? | 6× `requireElement(...).value` — jedes Feld wird **einzeln aus dem DOM gelesen** | `saveHypothesis(values)` — der Entwurf **ist schon ein Objekt** |
+| Auslöser | `onclick="saveHypothesis()"` im HTML (global) | `<form onSubmit={handleSubmit}>` + `event.preventDefault()` |
+| Fehlerfall | `alert(...)` + `return` | dasselbe (`saveHypothesis` liefert `false`, die Komponente zeigt `alert`) |
+| "Saved"-Hinweis | `classList.remove("hidden")` + `setTimeout(() => classList.add("hidden"), 2000)` | `showSaved` (`useState(false)`), `{showSaved && <span className="saved-msg">Saved</span>}`, nach 2 s `setShowSaved(false)` |
+| Zahl neben dem Regler | **extra** `input`-Listener in `js/main.ts`, der `hypConfidenceValue.textContent` von Hand nachführt (zwei Orte für dieselbe Tatsache) | `{values.confidence}` im JSX — derselbe Zustand wie der Regler |
+| Laden | `loadHypothesisFromStorage()`: schreibt jedes Feld per `.value = …` zurück in den DOM | der Startwert von `useState(loadHypothesis)` — React rendert die Felder damit |
+
+### Was bewusst anders / noch offen ist
+
+| Punkt | Zustand | Warum |
+|---|---|---|
+| **`HypothesisForm` ist jetzt Stateful** | statt Presentational (UE4 Demo 5) | Der Entwurf wird von **keiner anderen Stelle** gebraucht → niedrigster gemeinsamer Besitzer ist das Formular selbst (Regel für Demo 5). Die Einordnung steht in `ARCHITECTURE.md` |
+| **Suchtext geht beim Seitenwechsel verloren** | React: nach "Dashboard → Evidence" ist das Feld **leer**. vanilla: bleibt **"abc"** | In vanilla wird der DOM nur versteckt/gezeigt, in React wird die Komponente beim Verlassen **entmountet** und ihr State verworfen. Liegt der State später weiter oben (Demo 5/7), bleibt er erhalten |
+| **Suche filtert nicht** | React: 18 Karten bleiben. vanilla (live): "abc" → 0 Karten | kommt in Demo 4 |
+| **"Saved" nach 2 s per `setTimeout`** | wie vanilla | Zwei schnelle Klicks starten zwei Timer; der erste blendet früher aus. Das hat vanilla auch; bewusst nicht gelöst (wäre ein `useRef` für die Timer-ID) |
+| **Zahl `"80"` ist ein String** | wie vanilla (`range.value`) | gleiches Speicherformat, `HypothesisDraft.confidence` ist ein `string` |
+
+### Verifikation
+
+- **Alle sechs Felder live bedient** (echte Eingaben ins Formular):
+  Person "Nova Byte", Art "Deliberate", Regler auf 80, Erklärung "Erklaerung A", Beweisstücke per Strg-Klick
+  (zwei markiert). Die Zahl neben dem Regler folgt dem Regler (`80`).
+- **Speichern:** URL bleibt `#/workspace` (`preventDefault` verhindert den Seiten-Reload), der Hinweis "Saved"
+  erscheint und ist nach 2 s **weg**. `localStorage.remotion_hypothesis`:
+  ```json
+  { "suspectId": "nova-byte", "nature": "deliberate", "evidenceIds": ["E05", "E07"],
+    "confidence": "80", "explanation": "Erklaerung A", "alternative": "", "savedAt": "2026-10-19T…Z" }
+  ```
+  — **dieselben sieben Felder und Typen** wie der vanilla-Entwurf (`HypothesisDraft`).
+- **Neu laden:** alle Felder kommen wieder (Person, Art, Regler 80 samt Zahl, Erklärung, beide Beweisstücke).
+- **Kompatibilität mit vanilla:** der in React gespeicherte Entwurf lädt in der vanilla-App (Person, Art, Regler 80,
+  Erklärung). **Nebenbefund, kein React-Fehler:** beim **Direktaufruf** von `index.html#workspace` blieb die
+  Mehrfach-Auswahl der Beweisstücke in vanilla **leer**, nach Wechsel Dashboard → Workspace waren `E05`/`E07`
+  markiert. Ursache (aus dem Code abgeleitet, nicht einzeln nachgemessen): `loadEvidenceData()`/`loadTimelineData()` in `js/data.ts` laufen **nicht awaited** im
+  Hintergrund und rufen am Ende `populateAllDropdowns()` auf, das die Beweis-Optionen **neu aufbaut** (und die
+  Auswahl damit löscht), nachdem `renderWorkspace()` sie schon gesetzt hat. Ein echter **Stale-State**-Fall der
+  vanilla-App (relevant für Demo 9).
+- **Suchfeld getippt** (echte Tasten): "abc" erscheint, 18 Karten bleiben (filtert noch nicht). Ein Klick auf einen
+  Stern ändert den Text nicht (State bleibt beim Neurendern).
+- **Das Feld OHNE `onChange`** (testweise entfernt, Grundlage für Theorie F1): "abc" getippt → das Feld bleibt
+  **leer** (`value === ""`), und die Konsole meldet:
+  ```
+  You provided a `value` prop to a form field without an `onChange` handler. This will render a read-only field.
+  If the field should be mutable use `defaultValue`. Otherwise, set either `onChange` or `readOnly`.
+  ```
+  Danach `onChange` wieder eingesetzt, "abc" lässt sich wieder tippen.
+- **Aufräumen:** `remotion_bookmarks`, `remotion_notes`, `remotion_hypothesis` aus dem `localStorage` entfernt.
+- **Nach dem Umbau ausgeführt:** `npm run typecheck` → 0 Fehler (auch `setField` mit dem generischen `K` und
+  `{ ...previous, [field]: value }` kompilieren). `npm run format:check` → sauber (beim ersten Versuch).
+  `npm run build` → grün (151 Module).
+
+  | Stand | `react-*.js` | gzip | Module |
+  |---|---|---|---|
+  | UE5 Demo 1 | 283,88 KB | 88,06 KB | 150 |
+  | **UE5 Demo 2** | **285,67 KB** | **88,63 KB** | **151** |
+  | Unterschied | **+1,8 KB** | **+0,6 KB** | +1 (`hypothesisStorage.ts`) |
+
+### 🎤 Live-Demo — was du im Unterricht herzeigst
+
+**1. Das kontrollierte Suchfeld zeigen:** `react.html#/evidence`, etwas ins Suchfeld tippen. In `EvidenceToolbar.tsx` auf
+`value={searchTerm}` und `onChange=…` zeigen. Sag: "das Feld **zeigt** nur den State; jede Taste geht erst durch
+React und kommt als Wert zurück."
+
+**2. Den Chef-Wechsel beweisen (Theorie F1):** in `EvidenceToolbar.tsx` die Zeile `onChange=…` löschen, speichern,
+Seite neu laden, tippen → **nichts passiert**, in der Konsole steht die rote Warnung. Sag: "ohne `onChange` kommt
+kein neuer Wert in den State, React rendert das Feld jedes Mal mit dem **alten** `""` zurück — es ist
+schreibgeschützt." Zeile wieder einsetzen.
+
+**3. Das Formular zeigen:** `#/workspace`, alle Felder ausfüllen, Regler bewegen (die Zahl folgt), **Save**, "Saved"
+erscheint. Seite neu laden → alles ist wieder da.
+
+**4. In die Konsole schauen (Beweis, dass State und Anzeige zusammenhängen):**
+```js
+JSON.parse(localStorage.getItem("remotion_hypothesis"))
+```
+→ das Objekt mit den sieben Feldern.
+
+**5. Den Entwurf in vanilla öffnen:** `index.html#workspace` → dieselben Werte stehen in den Feldern (gleiche
+`localStorage`-Form).
+
+**6. Die Frage "ein Objekt oder sechs `useState`?" beantworten (F2):** `HypothesisForm.tsx` öffnen, `setField` zeigen.
+
+---

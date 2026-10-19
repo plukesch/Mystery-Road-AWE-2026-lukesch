@@ -2,9 +2,10 @@
 // EVIDENCE CATALOGUE (ue5 demo 1) - FEATURE/CONTAINER
 // ersetzt den platzhalter aus UE3. spiegelbild von js/views/evidence.ts:
 // toolbar, karten-raster, detail-panel. diese seite besorgt die daten und haelt
-// die drei dinge, die sich durch klicks aendern:
+// die dinge, die sich durch klicks und eingaben aendern:
 //  - bookmarks   (useState, aus dem localStorage gestartet)
 //  - notizen     (useState, aus dem localStorage gestartet)
+//  - suchtext    (useState, demo 2: das suchfeld ist kontrolliert)
 //  - welches beweisstueck geoeffnet ist -> NICHT als useState, sondern in der
 //    URL (?open=E04), wie die timeline ihre person (UE4 demo 10). so ist ein
 //    geoeffnetes detail verlinkbar, "zurueck" schliesst es, und der
@@ -34,6 +35,9 @@ export function EvidencePage() {
   // localStorage bei JEDEM rendern gelesen und das ergebnis verworfen.
   const [bookmarks, setBookmarks] = useState<string[]>(loadBookmarks);
   const [notes, setNotes] = useState<Record<string, string>>(loadNotes);
+  // ue5 demo 2: der text im suchfeld. ein `useState` FUER das suchfeld - das
+  // feld ist kontrolliert (siehe EvidenceToolbar). die liste benutzt ihn ab demo 4.
+  const [searchTerm, setSearchTerm] = useState("");
   const [searchParams, setSearchParams] = useSearchParams();
 
   if (caseDataState.status === "loading") {
@@ -93,7 +97,13 @@ export function EvidencePage() {
   return (
     <section>
       <h2>Evidence Catalogue</h2>
-      <EvidenceToolbar people={people} locations={locations} types={uniqueTypes(evidence)} />
+      <EvidenceToolbar
+        people={people}
+        locations={locations}
+        types={uniqueTypes(evidence)}
+        searchTerm={searchTerm}
+        onSearchChange={setSearchTerm}
+      />
       <div className="evidence-grid">
         {sortNewestFirst(evidence).map((item) => (
           <EvidenceCard

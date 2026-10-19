@@ -5,16 +5,25 @@ interface EvidenceToolbarProps {
   people: Person[];
   locations: Location[];
   types: string[];
+  searchTerm: string;
+  onSearchChange: (searchTerm: string) => void;
 }
 
 // spiegelbild von #evidenceToolbar aus index.html + populateEvidenceDropdowns()
 // (js/views/evidence.ts). PRESENTATIONAL: bekommt alles per props.
-// ue5 demo 1: nur die STRUKTUR - alle sieben elemente sind sichtbar, aber noch
-// nicht verdrahtet (kein onChange/onClick). die suche wird in demo 2
-// kontrolliert, die filter laufen ab demo 4/7 ueber einen gemeinsamen zustand.
-// das suchfeld ist ohne "value" ein UNKONTROLLIERTES eingabefeld: der browser
-// haelt den getippten text, react weiss nichts davon (siehe demo 2).
-export function EvidenceToolbar({ people, locations, types }: EvidenceToolbarProps) {
+// ue5 demo 1: nur die STRUKTUR - alle sieben elemente sichtbar, nicht verdrahtet.
+// ue5 demo 2: das SUCHFELD ist jetzt KONTROLLIERT. sein angezeigter text kommt
+// aus dem prop `searchTerm` (value), jede taste meldet sich ueber onChange nach
+// oben (onSearchChange), dort steht der useState (EvidencePage). die komponente
+// selbst haelt nichts - sie zeigt, was sie bekommt. die filter-dropdowns folgen
+// ab demo 4/7; die suche FILTERT in demo 2 noch nicht (das ist demo 4).
+export function EvidenceToolbar({
+  people,
+  locations,
+  types,
+  searchTerm,
+  onSearchChange,
+}: EvidenceToolbarProps) {
   return (
     <div className="toolbar" id="evidenceToolbar">
       <div className="toolbar-row">
@@ -26,6 +35,8 @@ export function EvidenceToolbar({ people, locations, types }: EvidenceToolbarPro
           id="evidenceSearch"
           placeholder="Search evidence by title, summary, or tag…"
           autoComplete="off"
+          value={searchTerm}
+          onChange={(event) => onSearchChange(event.target.value)}
         />
         <FilterSelect
           id="filterType"

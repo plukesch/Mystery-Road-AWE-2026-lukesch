@@ -14,7 +14,8 @@ src/
     timeline/                 TimelinePage, TimelineToolbar, TimelineEventItem, CertaintyBadge, timelineHelpers.ts
     evidence/                 EvidencePage, EvidenceToolbar, EvidenceCard, EvidenceDetail, RelevanceBadge,
                               evidenceHelpers.ts
-    workspace/                WorkspacePage, BookmarksList, NotesList, HypothesisForm, workspaceHelpers.ts
+    workspace/                WorkspacePage, BookmarksList, NotesList, HypothesisForm, workspaceHelpers.ts,
+                              hypothesisStorage.ts
   shared/                     nur, was von mehreren Stellen benutzt wird
     useCaseData.ts            Daten-Hook (Dashboard, People, Timeline, Evidence, Workspace)
     routes.ts                 ROUTES (alle URL-Pfade), personPath(), timelinePath(), evidencePath()
@@ -77,8 +78,10 @@ Mechanisch prüfbar mit einer Textsuche über die `import`-Zeilen (siehe `ue4/UE
   im Workspace ist ein `<Link>` darauf (`evidencePath(id)`).
 - Zustand: bis UE4 hatten die Komponenten **keinen** eigenen Zustand; der einzige lag in
   `shared/useCaseData.ts`. Ab UE5 kommt Zustand dazu, **schrittweise** (siehe `ue5/UE5_CHANGES.md`). Stand nach
-  Demo 1: `EvidencePage` hält Bookmarks und Notizen (`useState`, provisorisch, wird in Demo 5 nach oben
-  gezogen). Dashboard, People und Timeline sind weiter zustandslos. Das geöffnete Detail steht in der URL.
+  Demo 2: `EvidencePage` hält Bookmarks, Notizen und den Suchtext (`useState`, provisorisch, wird ab Demo 5
+  nach oben gezogen bzw. in Demo 7 zu einem Reducer); `HypothesisForm` besitzt seinen Entwurf selbst (ein
+  `useState`-Objekt, niedrigster gemeinsamer Besitzer). Dashboard, People und Timeline sind weiter
+  zustandslos. Das geöffnete Detail steht in der URL.
 - Unbekannte URLs leiten per `<Navigate replace>` auf das Dashboard um.
 
 ## Innerhalb eines Features
@@ -86,6 +89,8 @@ Mechanisch prüfbar mit einer Textsuche über die `import`-Zeilen (siehe `ue4/UE
 - Die `*Page.tsx` bzw. `*Layout.tsx` ist die **Feature-Komponente**: holt Daten, behandelt Lade-/Fehlerzustand.
 - Die übrigen Komponenten sind **presentational**: Props rein, Markup raus. Ausnahme: die Tab-Inhalte
   (`PeopleTab`, `LocationsTab`) lesen vom Router (`useOutletContext`) und zählen deshalb zur Feature-Seite.
+  Seit UE5 Demo 2 gilt das auch für `HypothesisForm`: es besitzt den Formular-Entwurf und liest/schreibt den
+  `localStorage`, weil kein anderer Teil der App ihn braucht.
 - Feature-lokale Helfer (reine Funktionen) liegen daneben, z. B. `timelineHelpers.ts`.
 
 ## Grenze zum Vanilla-Code (`js/`)

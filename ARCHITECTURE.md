@@ -12,11 +12,14 @@ src/
     people-locations/         TeamLayout, PeopleTab, PersonDetail, LocationsTab, PersonCard, LocationCard, Card,
                               BulletList, personEvidence.ts
     timeline/                 TimelinePage, TimelineToolbar, TimelineEventItem, CertaintyBadge, timelineHelpers.ts
-    evidence/                 Platzhalter (Migration in UE5)
-    workspace/                Platzhalter (Migration in UE5)
+    evidence/                 EvidencePage, EvidenceToolbar, EvidenceCard, EvidenceDetail, RelevanceBadge,
+                              evidenceHelpers.ts
+    workspace/                WorkspacePage, BookmarksList, NotesList, HypothesisForm, workspaceHelpers.ts
   shared/                     nur, was von mehreren Stellen benutzt wird
-    useCaseData.ts            Daten-Hook (Dashboard, People, Timeline)
-    routes.ts                 ROUTES (alle URL-Pfade), personPath(), timelinePath() (Shell + Dashboard + People)
+    useCaseData.ts            Daten-Hook (Dashboard, People, Timeline, Evidence, Workspace)
+    routes.ts                 ROUTES (alle URL-Pfade), personPath(), timelinePath(), evidencePath()
+    storage.ts                localStorage-Helfer für Bookmarks und Notizen (Evidence + Workspace)
+    FilterSelect.tsx          Dropdown mit versteckter Label (Timeline-Toolbar + Evidence-Toolbar)
     Badge.tsx                 wiederverwendbarer Badge (Timeline + Dashboard, 3 Stellen)
     StatusBadge.tsx           Status -> Badge-Variante (Dashboard + People-Detailseite)
   sandbox/                    Wegwerf-Beispiele (key-demo.html), nicht Teil der App
@@ -70,9 +73,12 @@ Mechanisch prüfbar mit einer Textsuche über die `import`-Zeilen (siehe `ue4/UE
 - Query-Parameter: `/timeline?person=<id>`. `TimelinePage` liest ihn mit `useSearchParams()` (nur lesend) und
   leitet die angezeigte Liste daraus ab; eine unbekannte oder leere Person wird ignoriert. Faustregel: **Pfad =
   was** (Identität, Pflicht), **Query = wie** (Einstellung, optional). Link darauf: `timelinePath(id)`.
-- Zustand: die migrierten Komponenten haben **keinen** eigenen Zustand (`useState`/`useReducer`); der einzige
-  Zustand liegt in `shared/useCaseData.ts` (Lade-Zustand der Daten). Die URL ist die Quelle der Wahrheit für
-  alles andere. Interaktivität (kontrollierte Formulare, Filter) folgt in UE5.
+- Query-Parameter: `/evidence?open=<id>` öffnet das Detail eines Beweisstücks (`EvidencePage`). Der "Open"-Link
+  im Workspace ist ein `<Link>` darauf (`evidencePath(id)`).
+- Zustand: bis UE4 hatten die Komponenten **keinen** eigenen Zustand; der einzige lag in
+  `shared/useCaseData.ts`. Ab UE5 kommt Zustand dazu, **schrittweise** (siehe `ue5/UE5_CHANGES.md`). Stand nach
+  Demo 1: `EvidencePage` hält Bookmarks und Notizen (`useState`, provisorisch, wird in Demo 5 nach oben
+  gezogen). Dashboard, People und Timeline sind weiter zustandslos. Das geöffnete Detail steht in der URL.
 - Unbekannte URLs leiten per `<Navigate replace>` auf das Dashboard um.
 
 ## Innerhalb eines Features
@@ -93,9 +99,12 @@ Die React-Seite importiert aus `js/` nur `import type` (Typen) und **reine** Fun
 - Die Doku zu UE3 und UE4 Demo 1 bis 5 nennt noch die alten Pfade (`src/components/…`, `src/pages/…`) und das
   frühere handgebaute Hash-Routing (`useHashRoute`). Sie beschreibt den damaligen Stand und wurde nicht
   nachträglich geändert.
-- Der Lade-/Fehler-Block (`useCaseData` + zwei frühe Returns) steckt noch in drei Feature-Komponenten
-  (`DashboardPage`, `TeamLayout`, `TimelinePage`). Bewusst nicht extrahiert: UE5 verschiebt das Laden in eine
-  gemeinsame Datenschicht, dann verschwinden die Kopien von selbst.
+- Der Lade-/Fehler-Block (`useCaseData` + zwei frühe Returns) steckt jetzt in fünf Feature-Komponenten
+  (`DashboardPage`, `TeamLayout`, `TimelinePage`, `EvidencePage`, `WorkspacePage`). Bewusst nicht extrahiert: UE5
+  verschiebt das Laden in eine gemeinsame Datenschicht (Demo 5 bis 8), dann verschwinden die Kopien von selbst.
+- Bookmarks und Notizen werden von `EvidencePage` (State) und `WorkspacePage` (liest den `localStorage` beim
+  Einblenden) getrennt gehalten, und `features/dashboard/bookmarks.ts` liest den Bookmark-Key ein drittes Mal.
+  Drei Leser derselben Tatsache: genau das räumen UE5 Demo 4, 5 und 9 auf.
 - Die Zeile "ID — Titel — Status-Badge" für ein Beweisstück steht zweimal (`RecentEvidenceList`,
   `PersonDetail`). Erst bei einem dritten Nutzer (Workspace, UE5) extrahieren.
 - Der Leer-Zustand der Timeline ("No timeline events match …") ist mit den heutigen Daten nicht erreichbar

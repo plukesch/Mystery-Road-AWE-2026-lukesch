@@ -32,3 +32,12 @@ export function personPath(personId: string): string {
 export function timelinePath(personId?: string): string {
   return personId ? `${ROUTES.timeline}?person=${encodeURIComponent(personId)}` : ROUTES.timeline;
 }
+
+// ue5 demo 1: link auf den evidence-katalog, optional mit geoeffnetem detail
+// (/evidence?open=E04). wie bei der timeline (?person=) ist "open" eine
+// EINSTELLUNG der seite, keine eigene seite: der katalog ist auch ohne gueltig.
+// ersetzt in vanilla den "Open"-button im workspace, der navigateTo("evidence")
+// aufrief und das detail per setTimeout(..., 0) hinterher oeffnete.
+export function evidencePath(evidenceId?: string): string {
+  return evidenceId ? `${ROUTES.evidence}?open=${encodeURIComponent(evidenceId)}` : ROUTES.evidence;
+}

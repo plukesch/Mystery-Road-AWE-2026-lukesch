@@ -1,9 +1,121 @@
-// migration erst ue4/ue5 (siehe UE3 demo 7, komponenten-hierarchie).
+// ---------------------------------------------------------------------
+// EVIDENCE CATALOGUE (ue5 demo 1) - FEATURE/CONTAINER
+// ersetzt den platzhalter aus UE3. spiegelbild von js/views/evidence.ts:
+// toolbar, karten-raster, detail-panel. diese seite besorgt die daten und haelt
+// die drei dinge, die sich durch klicks aendern:
+//  - bookmarks   (useState, aus dem localStorage gestartet)
+//  - notizen     (useState, aus dem localStorage gestartet)
+//  - welches beweisstueck geoeffnet ist -> NICHT als useState, sondern in der
+//    URL (?open=E04), wie die timeline ihre person (UE4 demo 10). so ist ein
+//    geoeffnetes detail verlinkbar, "zurueck" schliesst es, und der
+//    "Open"-button im workspace ist einfach ein <Link>.
+// provisorisch: bookmarks und notizen leben vorerst HIER, der workspace liest
+// sie separat aus dem localStorage. das wird in demo 5 (state nach oben
+// ziehen) sauber gemacht.
+// ---------------------------------------------------------------------
+import { useState } from "react";
+import { useSearchParams } from "react-router";
+import { useCaseData } from "../../shared/useCaseData";
+import { loadBookmarks, loadNotes, saveBookmarks, saveNotes } from "../../shared/storage";
+import { EvidenceCard } from "./EvidenceCard";
+import { EvidenceDetail } from "./EvidenceDetail";
+import { EvidenceToolbar } from "./EvidenceToolbar";
+import {
+  resolveLocationLabels,
+  resolvePersonNames,
+  sortNewestFirst,
+  uniqueTypes,
+} from "./evidenceHelpers";
+
 export function EvidencePage() {
+  const caseDataState = useCaseData();
+  // eine FUNKTION (ohne Klammern) als startwert: react ruft sie nur beim ERSTEN
+  // rendern auf ("lazy initial state"). mit loadBookmarks() wuerde der
+  // localStorage bei JEDEM rendern gelesen und das ergebnis verworfen.
+  const [bookmarks, setBookmarks] = useState<string[]>(loadBookmarks);
+  const [notes, setNotes] = useState<Record<string, string>>(loadNotes);
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  if (caseDataState.status === "loading") {
+    return (
+      <section>
+        <h2>Evidence Catalogue</h2>
+        <p>Loading case file&hellip;</p>
+      </section>
+    );
+  }
+
+  if (caseDataState.status === "error") {
+    return (
+      <section>
+        <h2>Evidence Catalogue</h2>
+        <p>Could not load the case data. Please reload the page.</p>
+      </section>
+    );
+  }
+
+  const { people, locations, evidence } = caseDataState.data;
+
+  // ---- die event-handler (hier steht der echte state-setter) ----
+
+  function handleToggleBookmark(evidenceId: string) {
+    const next = bookmarks.includes(evidenceId)
+      ? bookmarks.filter((id) => id !== evidenceId)
+      : [...bookmarks, evidenceId];
+    setBookmarks(next);
+    saveBookmarks(next);
+  }
+
+  function handleOpen(evidenceId: string) {
+    setSearchParams({ open: evidenceId });
+  }
+
+  function handleClose() {
+    setSearchParams({});
+  }
+
+  function handleSaveNote(evidenceId: string, text: string) {
+    const next = { ...notes, [evidenceId]: text };
+    setNotes(next);
+    saveNotes(next);
+  }
+
+  // ---- abgeleitete werte (jeden render neu berechnet, nirgends gespeichert) ----
+
+  const openId = searchParams.get("open");
+  // unbekannte oder leere id -> undefined -> kein panel (wie bei ?person= in UE4)
+  const selected = evidence.find((item) => item.id === openId);
+
+  // unten: key={selected.id} am EvidenceDetail. ein anderes beweisstueck = ein
+  // NEUES panel (siehe ue4 demo 3 F1) - sonst wuerde die notiz-textarea
+  // (defaultValue gilt nur beim ersten rendern) den text des vorherigen
+  // beweisstuecks behalten.
   return (
-    <section className="stub-page">
+    <section>
       <h2>Evidence Catalogue</h2>
-      <p>Platzhalter &ndash; wird in UE4/UE5 migriert.</p>
+      <EvidenceToolbar people={people} locations={locations} types={uniqueTypes(evidence)} />
+      <div className="evidence-grid">
+        {sortNewestFirst(evidence).map((item) => (
+          <EvidenceCard
+            key={item.id}
+            evidence={item}
+            isBookmarked={bookmarks.includes(item.id)}
+            onToggleBookmark={handleToggleBookmark}
+            onOpen={handleOpen}
+          />
+        ))}
+      </div>
+      {selected && (
+        <EvidenceDetail
+          key={selected.id}
+          evidence={selected}
+          personNames={resolvePersonNames(selected.personIds, people)}
+          locationLabels={resolveLocationLabels(selected.locationIds, locations)}
+          note={notes[selected.id] ?? ""}
+          onClose={handleClose}
+          onSaveNote={handleSaveNote}
+        />
+      )}
     </section>
   );
 }

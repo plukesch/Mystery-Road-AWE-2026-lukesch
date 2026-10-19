@@ -1,38 +1,5 @@
 import type { Location, Person } from "../../../js/types";
-
-interface SelectOption {
-  value: string;
-  label: string;
-}
-
-interface FilterSelectProps {
-  id: string;
-  label: string;
-  options: SelectOption[];
-  defaultValue: string;
-}
-
-// ein dropdown samt (visuell versteckter) label. defaultValue statt value:
-// das dropdown ist UNKONTROLLIERT - es startet mit dem uebergebenen wert, der
-// browser verwaltet danach die auswahl selbst. genau das verlangt UE4: die
-// leiste ist "visuell komplett", aber noch NICHT an die liste gekoppelt (kein
-// onChange). mit "value" ohne onChange waere das dropdown dagegen schreibgeschuetzt.
-function FilterSelect({ id, label, options, defaultValue }: FilterSelectProps) {
-  return (
-    <>
-      <label htmlFor={id} className="visually-hidden">
-        {label}
-      </label>
-      <select id={id} defaultValue={defaultValue}>
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-    </>
-  );
-}
+import { FilterSelect } from "../../shared/FilterSelect";
 
 interface TimelineToolbarProps {
   people: Person[];

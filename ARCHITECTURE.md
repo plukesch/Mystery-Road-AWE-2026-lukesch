@@ -23,7 +23,7 @@ src/
     FilterSelect.tsx          Dropdown mit versteckter Label (Timeline-Toolbar + Evidence-Toolbar)
     Badge.tsx                 wiederverwendbarer Badge (Timeline + Dashboard, 3 Stellen)
     StatusBadge.tsx           Status -> Badge-Variante (Dashboard + People-Detailseite)
-  sandbox/                    Wegwerf-Beispiele (key-demo.html), nicht Teil der App
+  sandbox/                    Wegwerf-Beispiele (key-demo.html, mutation-demo.html), nicht Teil der App
 ```
 
 ## Regel: "shared" oder "feature-lokal"?
@@ -78,10 +78,13 @@ Mechanisch prüfbar mit einer Textsuche über die `import`-Zeilen (siehe `ue4/UE
   im Workspace ist ein `<Link>` darauf (`evidencePath(id)`).
 - Zustand: bis UE4 hatten die Komponenten **keinen** eigenen Zustand; der einzige lag in
   `shared/useCaseData.ts`. Ab UE5 kommt Zustand dazu, **schrittweise** (siehe `ue5/UE5_CHANGES.md`). Stand nach
-  Demo 2: `EvidencePage` hält Bookmarks, Notizen und den Suchtext (`useState`, provisorisch, wird ab Demo 5
-  nach oben gezogen bzw. in Demo 7 zu einem Reducer); `HypothesisForm` besitzt seinen Entwurf selbst (ein
-  `useState`-Objekt, niedrigster gemeinsamer Besitzer). Dashboard, People und Timeline sind weiter
-  zustandslos. Das geöffnete Detail steht in der URL.
+  Demo 3: `EvidencePage` hält Bookmarks, Notizen, den Suchtext und die **Änderungen** an Status/Relevanz
+  (`useState`, provisorisch, wird ab Demo 5 nach oben gezogen bzw. in Demo 7 zu einem Reducer);
+  `HypothesisForm` besitzt seinen Entwurf selbst (ein `useState`-Objekt, niedrigster gemeinsamer Besitzer).
+  Dashboard, People und Timeline sind weiter zustandslos. Das geöffnete Detail steht in der URL.
+- Unveränderliche Updates (UE5 Demo 3): jede State-Änderung erzeugt ein **neues** Array/Objekt. Die geladenen
+  Beweisstücke werden nie verändert; Status-Änderungen stehen separat (`reviewEdits`), `applyReviewEdits` legt sie
+  über die geladene Liste. Lesende Helfer nehmen `readonly`-Parameter, damit Mutieren ein Typfehler ist.
 - Unbekannte URLs leiten per `<Navigate replace>` auf das Dashboard um.
 
 ## Innerhalb eines Features

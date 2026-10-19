@@ -229,3 +229,99 @@ der App braucht ihn (Regel aus Demo 5: Zustand lebt beim **niedrigsten gemeinsam
 `HypothesisForm` keine reine Darstellung mehr, sondern eine zustandsbehaftete Komponente.
 
 ---
+
+## Demo 3 — Unveränderliche Updates
+
+Alle State-Änderungen der Evidence-/Workspace-Seiten erzeugen ein **neues** Array bzw. Objekt (`toggleBookmark`,
+`applyReviewEdits`, `{ ...previous, … }`, `[...evidence].sort`). Neu: Review-Status und Relevanz sind im Detail
+änderbar, ohne ein geladenes Beweisstück anzufassen. Belegt mit einer Mutations-Sandbox, einem Test mit
+**eingefrorenen** Eingaben und echten Compiler-Fehlern für `readonly`. Details und Messtabellen in `UE5_CHANGES.md`.
+
+### F1: Warum scheint direktes Mutieren von State in React auf dem Bildschirm manchmal trotzdem zu "funktionieren", verursacht aber echte (schwer zu findende) Fehler an anderer Stelle? Was vergleicht React tatsächlich, wenn es entscheidet, ob neu gerendert wird?
+
+**Einfach gesagt:** React vergleicht beim State nur **die Referenz** ("ist das **dasselbe Objekt** wie vorher?"), nicht den
+**Inhalt**. Mutiert man ein Array und gibt dasselbe Array zurück, sieht React "nichts geändert". Auf dem Bildschirm
+taucht die Änderung nur **zufällig** auf — nämlich wenn aus einem anderen Grund neu gerendert wird.
+
+**Was React vergleicht:**
+
+| Stelle | Vergleich |
+|---|---|
+| `setState(neu)` | `Object.is(alterState, neu)` — ist es **dasselbe** Objekt? Wenn ja: **kein** Neurendern, Kinder werden übersprungen |
+| Props einer `React.memo`-Komponente | pro Prop `Object.is(alt, neu)` — ein neues Array/Objekt zählt als geändert, dasselbe nicht |
+| `useMemo` / `useCallback` / `useEffect` Abhängigkeiten | `Object.is` pro Eintrag |
+| Der Inhalt eines Arrays/Objekts | **wird nie verglichen** (zu teuer, React schaut nicht hinein) |
+
+**Warum es "manchmal funktioniert"** — live in der Sandbox (`mutation-demo.html`) gezeigt:
+
+| Schritt (links: `push` + `setState(dieselbe Referenz)`) | Sichtbar |
+|---|---|
+| 2× "Bookmark hinzufügen" | **nichts**: Liste leer, Summary 0 — `Object.is` sagt "dieselbe Referenz", React rendert nicht |
+| "Unabhängiges Neurendern" (ändert nur einen anderen Zähler) | Liste zeigt plötzlich `E01, E02`: die Seite wurde aus **anderem Grund** neu gerendert und liest dabei das **mutierte** Array |
+| dasselbe: die `memo`-Summary | **bleibt bei 0**: ihr Prop ist weiterhin dieselbe Referenz → `memo` überspringt sie |
+
+Für den Entwickler sieht das aus wie "geht manchmal, manchmal nicht" — das macht diese Fehler so schwer zu finden. Im
+Test klickt man irgendwann etwas anderes, die Liste aktualisiert sich, und der Fehler ist "weg".
+
+**Was an anderen Stellen kaputtgeht**, wenn ein State mutiert wird:
+
+1. **Alles, was auf Referenz-Gleichheit setzt**: `memo`-Komponenten, `useMemo`-Ergebnisse, `useEffect`-Abhängigkeiten
+   sehen die Änderung nie (Sandbox: die Summary). Ein Effekt, der auf `bookmarks` hört, läuft nicht.
+2. **Geteilte Referenzen (Aliasing):** zeigen zwei Variablen auf dasselbe Array, ändert sich das eine **mit** (der
+   vanilla-Bug aus F2).
+3. **Alte Zustände sind verloren:** wer "vorher" und "nachher" vergleichen will (Rückgängig, Verlauf), hat nur noch
+   **ein** Objekt, in dem beides überschrieben wurde.
+4. **React-Entwicklungsmodus:** `StrictMode` ruft Updater-Funktionen `setX(previous => …)` absichtlich zweimal auf.
+   Mutiert der Updater, passiert die Änderung doppelt (laut React-Dokumentation; hier nicht gesondert getestet).
+
+**Zur Schreibweise:** `[...bookmarks, id]` baut ein **neues** Array (flache Kopie plus neues Element). `filter` liefert
+**immer** ein neues. `{ ...obj, feld: wert }` kopiert das Objekt und überschreibt nur ein Feld. Verschachtelte
+Strukturen müssen **auf jeder Ebene** neu sein, die sich ändert — bei `reviewEdits` zwei Ebenen:
+`{ ...previous, [id]: { ...previous[id], ...edit } }`.
+
+### F2: Die originale vanilla-App hatte einen echten Fehler: Sortieren der Evidence mutierte das Master-Array über eine geteilte Referenz und verlor dauerhaft die ursprüngliche Reihenfolge. Zeig, wie dein React-State-Update für die entsprechende Aktion (Bookmark-Toggle oder Sortieren) genau diese Fehlerklasse vermeidet. Sei konkret, was anders ist — nicht nur "React macht das".
+
+**Einfach gesagt:** React **verhindert** das nicht von selbst. Der Schutz kommt aus **vier Entscheidungen in unserem Code**:
+(1) es gibt keine gespeicherte zweite Liste, die auf die Master-Liste zeigen könnte, (2) jede Änderung baut eine Kopie,
+(3) die geladenen Daten werden nie angefasst, (4) der Compiler verbietet das Mutieren (`readonly`).
+
+**Der vanilla-Fehler im Detail** (UE1 Demo 2, Kommentar in `js/data.ts`):
+
+```js
+state.filteredEvidence = state.allEvidence;      // KEINE Kopie: zwei Namen für DASSELBE Array
+...
+state.filteredEvidence.sort(...);                // sortiert in place -> allEvidence ist mit umsortiert
+```
+
+Folgen: die **ursprüngliche Reihenfolge war dauerhaft weg**, und das Dashboard ("Recent evidence" liest `allEvidence`)
+zeigte danach Müll. Behoben mit `.slice()` (flache Kopie). Aber: die **Fehlerklasse** (Aliasing + In-Place-Operation)
+bleibt in vanilla möglich, weil `state` ein veränderbares globales Objekt ist, das jeder importiert.
+
+**Was in der React-Version anders ist** — konkret, jeweils belegt:
+
+| # | Was | vanilla | React (`EvidencePage` & Helfer) |
+|---|---|---|---|
+| 1 | **Gibt es eine zweite Liste, die aliasen könnte?** | ja: `state.filteredEvidence` wird **gespeichert** und zeigte zuerst auf dasselbe Array | **nein**: es gibt keine gespeicherte gefilterte/sortierte Liste. Sie wird in jedem Render **abgeleitet** (`sortNewestFirst(evidence)`). Ohne gespeicherte zweite Liste kann sie nicht auf die erste zeigen (Demo 4) |
+| 2 | **Sortieren** | `list.sort(...)` in place (nach dem Fix auf einer frisch gebauten Kopie) | `[...evidence].sort(...)` — **Kopie vor dem Sortieren**. Live: auf einer **eingefrorenen** Liste läuft die Funktion, ohne zu werfen, und liefert `["new","old"]` |
+| 3 | **Bookmark-Toggle** | `state.bookmarks.push(id)` **und** `ev.bookmarked = true` — zwei Mutationen, dieselbe Tatsache an zwei Orten | `toggleBookmark(bookmarks, id)` liefert ein **neues** Array. Es gibt **kein** `bookmarked`-Feld am Beweisstück; `isBookmarked` wird mit `bookmarks.includes(id)` abgeleitet. Live: mit eingefrorener Eingabe `["E01","E02"]` → neue Arrays, Original unverändert, `frozen.push` zum Vergleich wirft |
+| 4 | **Status ändern** | `ev.status = …` direkt am **geladenen** Objekt | die geladene Liste wird **nie** angefasst: die Änderungen stehen in `reviewEdits`, `applyReviewEdits` baut daraus eine **neue** Liste (geänderte Einträge neue Objekte, unveränderte dieselben). Live: Original-`A` bleibt `"unreviewed"`, die neue Liste hat `"reviewed"` |
+| 5 | **Compiler-Schutz** | keiner | `readonly Evidence[]` an den Helfern: Mutieren ist ein **Typfehler** (siehe unten) |
+| 6 | **Wer kann den State anfassen?** | jede Datei, die `state` importiert (globales Singleton) | State liegt in einer Komponente; Kinder bekommen **Werte** als Props und rufen **Callbacks** auf (Demo 6). Kein Weg, an der Komponente vorbei "mal eben" zu mutieren |
+
+**Echte Compiler-Fehler für Punkt 5** (installierte TypeScript-Version, Test-Datei außerhalb des Projekts):
+
+```
+error TS2339: Property 'sort' does not exist on type 'readonly Evidence[]'.
+error TS2339: Property 'push' does not exist on type 'readonly string[]'.
+error TS2540: Cannot assign to 'status' because it is a read-only property.
+```
+
+**Ehrliche Einschränkung:** das alles sind **unsere** Entscheidungen, keine Magie. React verhindert nicht, dass jemand
+`evidence.sort()` schreibt, wenn der Typ nicht `readonly` ist. Der Unterschied zu vanilla: (a) die **Architektur** macht
+den Fehler schwerer (keine geteilte, gespeicherte Zweitliste, kein globales `state`), (b) **TypeScript** kann ihn
+verbieten, (c) falsches Mutieren fällt in React **eher auf** (die Seite aktualisiert sich nicht — Sandbox), statt
+still die Daten aller zu verändern. Die Fehlerklasse ist damit **sehr unwahrscheinlich**, nicht **unmöglich** — für
+"strukturell verhindert" (bessere Formulierung für Demo 10) gehört die abgeleitete statt gespeicherte Liste dazu
+(Demo 4).
+
+---

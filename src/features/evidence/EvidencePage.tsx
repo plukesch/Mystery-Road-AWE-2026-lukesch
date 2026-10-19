@@ -6,6 +6,7 @@
 //  - bookmarks   (useState, aus dem localStorage gestartet)
 //  - notizen     (useState, aus dem localStorage gestartet)
 //  - suchtext    (useState, demo 2: das suchfeld ist kontrolliert)
+//  - aenderungen an status/relevanz (useState, demo 3: unveraenderliche updates)
 //  - welches beweisstueck geoeffnet ist -> NICHT als useState, sondern in der
 //    URL (?open=E04), wie die timeline ihre person (UE4 demo 10). so ist ein
 //    geoeffnetes detail verlinkbar, "zurueck" schliesst es, und der
@@ -22,10 +23,13 @@ import { EvidenceCard } from "./EvidenceCard";
 import { EvidenceDetail } from "./EvidenceDetail";
 import { EvidenceToolbar } from "./EvidenceToolbar";
 import {
+  applyReviewEdits,
   resolveLocationLabels,
   resolvePersonNames,
   sortNewestFirst,
+  toggleBookmark,
   uniqueTypes,
+  type ReviewEdit,
 } from "./evidenceHelpers";
 
 export function EvidencePage() {
@@ -38,6 +42,11 @@ export function EvidencePage() {
   // ue5 demo 2: der text im suchfeld. ein `useState` FUER das suchfeld - das
   // feld ist kontrolliert (siehe EvidenceToolbar). die liste benutzt ihn ab demo 4.
   const [searchTerm, setSearchTerm] = useState("");
+  // ue5 demo 3: die AENDERUNGEN an status/relevanz, nicht eine kopie der liste:
+  // { E03: { status: "reviewed" } }. die geladenen beweisstuecke bleiben
+  // unberuehrt, die angezeigte liste wird jedes mal daraus abgeleitet (siehe
+  // applyReviewEdits und UE5_THEORIE_ANTWORTEN demo 3/4).
+  const [reviewEdits, setReviewEdits] = useState<Record<string, ReviewEdit>>({});
   const [searchParams, setSearchParams] = useSearchParams();
 
   if (caseDataState.status === "loading") {
@@ -58,16 +67,32 @@ export function EvidencePage() {
     );
   }
 
-  const { people, locations, evidence } = caseDataState.data;
+  const { people, locations } = caseDataState.data;
+  // die angezeigte liste = die geladene liste + die aenderungen des nutzers.
+  // berechnet bei JEDEM rendern, nirgends gespeichert (siehe demo 4).
+  const evidence = applyReviewEdits(caseDataState.data.evidence, reviewEdits);
 
   // ---- die event-handler (hier steht der echte state-setter) ----
 
+  // jede der drei aenderungen unten erzeugt ein NEUES array bzw. objekt und
+  // uebergibt es dem setter - nie wird ein bestehender state veraendert.
   function handleToggleBookmark(evidenceId: string) {
-    const next = bookmarks.includes(evidenceId)
-      ? bookmarks.filter((id) => id !== evidenceId)
-      : [...bookmarks, evidenceId];
+    const next = toggleBookmark(bookmarks, evidenceId);
     setBookmarks(next);
     saveBookmarks(next);
+  }
+
+  // verschachteltes unveraenderliches update, zwei ebenen:
+  //  1. { ...previous, [evidenceId]: ... }  neues aussen-objekt
+  //  2. { ...previous[evidenceId], ...edit } neues innen-objekt
+  // beide ebenen muessen neu sein; sonst saehe react ein "gleiches" objekt.
+  // die FUNKTIONS-form des setters (previous => ...) arbeitet immer mit dem
+  // neuesten stand, auch wenn zwei aenderungen schnell aufeinander folgen.
+  function handleChangeReview(evidenceId: string, edit: ReviewEdit) {
+    setReviewEdits((previous) => ({
+      ...previous,
+      [evidenceId]: { ...previous[evidenceId], ...edit },
+    }));
   }
 
   function handleOpen(evidenceId: string) {
@@ -124,6 +149,7 @@ export function EvidencePage() {
           note={notes[selected.id] ?? ""}
           onClose={handleClose}
           onSaveNote={handleSaveNote}
+          onChangeReview={handleChangeReview}
         />
       )}
     </section>

@@ -352,3 +352,174 @@ JSON.parse(localStorage.getItem("remotion_hypothesis"))
 **6. Die Frage "ein Objekt oder sechs `useState`?" beantworten (F2):** `HypothesisForm.tsx` öffnen, `setField` zeigen.
 
 ---
+
+## Demo 3 — Unveränderliche Updates
+
+### 🔰 Einfach erklärt — worum geht's hier überhaupt?
+
+React erkennt "da hat sich etwas geändert" **nicht**, indem es in den Inhalt schaut. Es fragt nur: **ist das ein
+anderes Objekt als vorher?** (Genauer: `Object.is(alt, neu)`, also dieselbe **Referenz** oder nicht.)
+
+Daraus folgt eine Regel: einen State **nie umbauen**, immer **ein neues Exemplar** an React geben.
+
+*Analogie:* ein **Etikett am Aktenordner**. React schaut nur aufs Etikett (die Ordner-Nummer). Wenn du Blätter in
+den **alten** Ordner legst, bleibt die Nummer gleich — React denkt "derselbe Ordner, nichts passiert" und schaut
+nicht hinein. Legst du die Blätter in einen **neuen** Ordner mit neuer Nummer, merkt React es sofort.
+
+| | Mutieren (falsch) | Ersetzen (richtig) |
+|---|---|---|
+| Array | `list.push(x)` | `[...list, x]` |
+| Entfernen | `list.splice(i, 1)` | `list.filter(...)` |
+| Objekt-Feld | `obj.status = "reviewed"` | `{ ...obj, status: "reviewed" }` |
+| Sortieren | `list.sort(...)` | `[...list].sort(...)` |
+
+### Task 1 — Stellen, an denen der erste Instinkt mutieren würde
+
+Gefunden und unveränderlich geschrieben (Zeile "erster Instinkt" = wie es in vanilla stand bzw. wie man es
+spontan schreiben würde):
+
+| # | Stelle | Erster Instinkt (falsch) | Jetzt (richtig) |
+|---|---|---|---|
+| 1 | **Bookmark an/aus** (`toggleBookmark`) | `bookmarks.push(id); setBookmarks(bookmarks)` bzw. `ev.bookmarked = true` (vanilla `handleBookmarkClick`: `state.bookmarks.push(...)` **und** `ev.bookmarked = true`) | `bookmarks.includes(id) ? bookmarks.filter(...) : [...bookmarks, id]` — beide Zweige liefern ein **neues** Array |
+| 2 | **Review-Status ändern** (neu in dieser Demo, `handleChangeReview`) | `evidence.status = "reviewed"` (vanilla: `ev.status = …` mit dem Kommentar "direct mutation of the loaded evidence object") | `setReviewEdits(previous => ({ ...previous, [id]: { ...previous[id], ...edit } }))` — **zwei Ebenen**, beide neu |
+| 3 | **Sortieren** (`sortNewestFirst`) | `evidence.sort(...)` (vanilla UE1 Demo 2: sortierte die Master-Liste mit) | `[...evidence].sort(...)` — Kopie |
+| 4 | **Hypothesen-Feld** (`setField`, Demo 2) | `values.nature = "x"; setValues(values)` | `setValues(previous => ({ ...previous, [field]: value }))` |
+| 5 | **Notiz speichern** (`handleSaveNote`, Demo 1) | `notes[id] = text; setNotes(notes)` | `{ ...notes, [id]: text }` |
+
+### Task 2 — der Bookmark-Fall, der das gezielt prüft
+
+**Die reine Funktion** (`features/evidence/evidenceHelpers.ts`):
+
+```ts
+export function toggleBookmark(bookmarks: readonly string[], evidenceId: string): string[] {
+  return bookmarks.includes(evidenceId)
+    ? bookmarks.filter((id) => id !== evidenceId)
+    : [...bookmarks, evidenceId];
+}
+```
+
+Der **Fall**, der prüft, dass sie nichts mutiert: **die Eingabe einfrieren** (`Object.freeze`). Ein eingefrorenes
+Array lässt kein `push`, `splice` oder Zuweisen zu — eine mutierende Implementierung würde sofort einen
+`TypeError` werfen. Live in der Konsole ausgeführt (die Funktion per `import()` aus dem Dev-Server geladen):
+
+| Aufruf | Ergebnis |
+|---|---|
+| `toggleBookmark(Object.freeze(["E01","E02"]), "E03")` | `["E01","E02","E03"]` — **ein neues Array** (`!== original`) |
+| `toggleBookmark(Object.freeze(["E01","E02"]), "E01")` | `["E02"]` — **ein neues Array** (`!== original`) |
+| das Original danach | unverändert `["E01","E02"]` |
+| zum Vergleich `frozen.push("E99")` | wirft `TypeError: Cannot add property 2, object is not extensible` |
+| `applyReviewEdits(eingefrorene Liste mit eingefrorenen Objekten, { A: { status: "reviewed" } })` | neue Liste; `A` ist ein **neues** Objekt (`status: "reviewed"`), das Original-`A` bleibt `"unreviewed"`; `B` ist **dasselbe** Objekt wie vorher (was sich nicht ändert, wird nicht kopiert) |
+| `sortNewestFirst(eingefrorene Liste)` | sortiert, wirft nicht (arbeitet auf einer Kopie) |
+
+### Der Review-Status: wie die Änderung gespeichert wird
+
+Der Status eines Beweisstücks ist in den **geladenen Daten** (`useCaseData`) und gehört dort nicht verändert. Statt
+die ganze Liste in einen eigenen State zu **kopieren**, speichert `EvidencePage` nur die **Änderungen**:
+
+```ts
+const [reviewEdits, setReviewEdits] = useState<Record<string, ReviewEdit>>({});   // { E03: { status: "reviewed" } }
+const evidence = applyReviewEdits(caseDataState.data.evidence, reviewEdits);         // jeden Render neu berechnet
+```
+
+| Baustein | Aufgabe |
+|---|---|
+| `reviewEdits` (State) | nur das, was der Nutzer **geändert** hat |
+| `applyReviewEdits(...)` (reine Funktion) | legt die Änderungen über die geladene Liste → **neue** Liste; unveränderte Einträge bleiben dieselben Objekte, geänderte sind neu (`{ ...item, ...edit }`) |
+| `EvidenceDetail` | Dropdowns sind kontrolliert (`value` + `onChange`) und melden `onChangeReview(id, { status })` nach oben. Die Komponente ändert nie das Beweisstück selbst |
+| `isReviewStatus(value)` / `isRelevance(value)` | **Type Guards**: ein `<select>` liefert immer `string`; die Prüfung macht daraus einen `ReviewStatus`. vanilla schrieb `as ReviewStatus` (blind zugesichert) |
+
+**Warum Änderungen statt Listen-Kopie?** Eine Kopie der geladenen Liste im State wäre "dieselbe Tatsache an zwei
+Stellen" (geladene Liste **und** Kopie davon); sobald die Daten neu geladen würden, stimmten beide nicht mehr
+überein. Die Änderungen sind **neue** Information, die es sonst nirgends gibt. Mehr dazu in Demo 4 (abgeleitete
+Werte statt gespeicherter).
+
+**`readonly` als Compiler-Schutz.** Die lesenden Helfer (`sortNewestFirst`, `toggleBookmark`, `applyReviewEdits`,
+`uniqueTypes`) nehmen `readonly Evidence[]` bzw. `readonly string[]`. Auf einem `readonly`-Array **gibt es kein
+`push`, `sort`, `splice`** — ein versehentliches Mutieren ist ein Typfehler, bevor die Seite läuft. Echt vom Compiler
+(mit der installierten TypeScript-Version, an einer Test-Datei **außerhalb** des Projekts):
+
+```
+scratch.ts(8,19):  error TS2339: Property 'sort' does not exist on type 'readonly Evidence[]'.
+scratch.ts(12,13): error TS2339: Property 'push' does not exist on type 'readonly string[]'.
+scratch.ts(17,8):  error TS2540: Cannot assign to 'status' because it is a read-only property.
+```
+
+### Die Wegwerf-Sandbox: was React wirklich vergleicht
+
+Wie in UE4 Demo 4 eine Sandbox **außerhalb** der App (`mutation-demo.html`, `src/sandbox/MutationDemo.tsx`; nicht in
+`vite.config.js` → nie gebaut). Dieselbe Aktion "Bookmark hinzufügen" zweimal nebeneinander, dazu eine
+`memo`-Komponente ("Summary") und ein Knopf "Unabhängiges Neurendern" (ändert nur einen fremden Zähler).
+
+| Aktion | Links: `push` + `setState(dieselbe Referenz)` | Rechts: `[...alt, neu]` |
+|---|---|---|
+| Hinzufügen, 2× | **Liste leer, Summary 0** — es passiert sichtbar **nichts** (React sieht dieselbe Referenz, rendert nicht) | sofort `E01`, Summary "1 Bookmark(s) - E01" |
+| Danach "Unabhängiges Neurendern" | Liste zeigt plötzlich `E01, E02` ("es funktioniert"), **aber Summary bleibt bei 0** | — |
+
+Das ist die ganze Antwort auf F1 in einem Bild: das Mutieren "funktioniert" **manchmal** (sobald irgendetwas anderes
+neu rendert, liest die Liste das mutierte Array), aber alles, was auf **Referenz-Gleichheit** setzt (`memo`,
+`useMemo`, `useEffect`-Abhängigkeiten, Reacts eigener State-Vergleich), sieht die Änderung **nie**.
+
+### Was bewusst anders / noch offen ist (ehrlich)
+
+| Punkt | Zustand | Warum |
+|---|---|---|
+| **Status-Änderungen gehen beim Seitenwechsel verloren** | live gemessen: E03 auf "reviewed" → Dashboard → zurück zu Evidence: wieder "unreviewed" (nur noch 1 reviewed-Karte statt 2) | `reviewEdits` lebt in `EvidencePage`; beim Verlassen wird die Seite entmountet, ihr State verworfen. In vanilla blieb die Änderung im Speicher (`ev.status` am geladenen Objekt) — allerdings **ohne** Dashboard-Aktualisierung. Wird in Demo 5 behoben (State nach oben) |
+| **Dashboard zeigt die Änderung nicht** | live: nach der Änderung zeigt das Dashboard weiter `1 Reviewed` (E12) | `DashboardPage` lädt **eigene** Daten (`useCaseData`); die Änderungen existieren nur in `EvidencePage`. Genau das Problem aus der Einleitung der Angabe ("ein Dashboard-Zähler, der veralten kann"); Demo 4/5 |
+| **Status-Änderungen werden nicht gespeichert** | nur im Speicher, nach `F5` weg | wie vanilla (dort ebenfalls nur im Speicher). Bookmarks/Notizen landen im `localStorage`, Status nicht |
+| `toggleBookmark` ist feature-lokal | in `evidenceHelpers.ts` | heute nur `EvidencePage` benutzt es; zieht in Demo 5 um, falls der State nach oben wandert |
+
+### Verifikation
+
+- **Review-Status live bedient** (echte Dropdown-Eingaben im Detail von E03): "Reviewed" → die Karte im Raster
+  zeigt sofort `badge-reviewed`, das Panel bleibt offen; Relevanz "Relevant" → Karte zeigt `badge-relevant`. Beide
+  Dropdowns bleiben beim Wechsel zu E12 und zurück zu E03 erhalten (`reviewed` / `relevant`).
+- **E12** (in den Daten `"Reviewed"` mit großem R): das Dropdown zeigt trotzdem `reviewed` (der Wert wird mit
+  `toLowerCase()` angeglichen).
+- **Sandbox** (`mutation-demo.html`) mit den Klicks aus der Tabelle oben durchgespielt, Werte exakt wie dort.
+- **Unveränderlichkeit** per eingefrorener Eingabe (Tabelle in Task 2).
+- **Compiler** für `readonly` (Block oben).
+- **Konsole:** keine Fehler. **Aufräumen:** `remotion_*`-Keys wieder entfernt.
+- **Nach dem Umbau ausgeführt:** `npm run typecheck` → 0 Fehler (die Type Guards, das verschachtelte
+  `{ ...previous[id], ...edit }` und die `readonly`-Parameter kompilieren). `npm run format:check` → sauber (beim
+  ersten Versuch). `npm run build` → grün (151 Module; die Sandbox ist nicht in `rollupOptions.input`, taucht also
+  weder in den Modulen noch in `dist/` auf).
+
+  | Stand | `react-*.js` | gzip | Module |
+  |---|---|---|---|
+  | UE5 Demo 2 | 285,67 KB | 88,63 KB | 151 |
+  | **UE5 Demo 3** | **286,17 KB** | **88,76 KB** | **151** |
+  | Unterschied | **+0,5 KB** | **+0,1 KB** | 0 (Helfer, Handler und Guards in bestehenden Dateien) |
+
+### 🎤 Live-Demo — was du im Unterricht herzeigst
+
+**1. Die Sandbox zeigen (beste Demo):** `http://localhost:5173/Mystery-Road-AWE-2026-lukesch/mutation-demo.html`.
+Links **2×** "Bookmark hinzufügen (push)" klicken → **nichts** passiert. Dann "Unabhängiges Neurendern" → links
+erscheinen plötzlich beide Einträge, **die Summary bleibt bei 0**. Rechts klicken → sofort richtig. Sag: "React
+vergleicht nur die **Referenz**. Dasselbe Array = nichts zu tun."
+
+**2. Den Bookmark-Fall zeigen:** `evidenceHelpers.ts`, `toggleBookmark` (4 Zeilen). In der Konsole:
+```js
+const m = await import("/Mystery-Road-AWE-2026-lukesch/src/features/evidence/evidenceHelpers.ts");
+const original = Object.freeze(["E01", "E02"]);
+const next = m.toggleBookmark(original, "E03");
+[next, next !== original, original]
+```
+→ `["E01","E02","E03"]`, `true`, das Original unverändert. Sag: "eingefroren — hätte die Funktion mutiert, wäre hier ein
+Fehler geflogen."
+
+**3. Den Status ändern:** `#/evidence?open=E03`, im Detail "Review status" auf **Reviewed**. Die Karte oben im Raster
+wird sofort grün. Sag: "das Beweisstück selbst habe ich **nie** verändert — nur die Änderung gespeichert und die
+Liste daraus abgeleitet."
+
+**4. Den Compiler-Schutz zeigen:** in `evidenceHelpers.ts` in `sortNewestFirst` `[...evidence].sort(` testweise zu
+`evidence.sort(` ändern,
+```bash
+npm run typecheck
+```
+→ `Property 'sort' does not exist on type 'readonly Evidence[]'`. Sag: "`readonly` macht das Mutieren zu einem
+Compilerfehler." Zeile wieder zurücksetzen.
+
+**5. Die ehrliche Schwäche zeigen:** Status ändern, zum Dashboard, zurück: die Änderung ist weg. Sag: "der State
+liegt noch in der Seite — das löst Demo 5."
+
+---

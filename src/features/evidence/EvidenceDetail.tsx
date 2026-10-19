@@ -1,6 +1,7 @@
-import type { FormEvent } from "react";
+import type { ChangeEvent, FormEvent } from "react";
 import type { Evidence } from "../../../js/types";
 import { formatDate } from "../../../js/utils";
+import { isRelevance, isReviewStatus, type ReviewEdit } from "./evidenceHelpers";
 
 interface EvidenceDetailProps {
   evidence: Evidence;
@@ -9,6 +10,7 @@ interface EvidenceDetailProps {
   note: string;
   onClose: () => void;
   onSaveNote: (evidenceId: string, text: string) => void;
+  onChangeReview: (evidenceId: string, edit: ReviewEdit) => void;
 }
 
 // vanilla ruft section.scrollIntoView() direkt im oeffnen-code auf. hier: ein
@@ -28,9 +30,10 @@ function scrollIntoViewOnMount(element: HTMLElement | null) {
 //  - "Save note": onSubmit am <form> statt onclick="saveCurrentNote()". vanilla
 //    hat die evidence-id mit getAttribute("data-evidence-id") aus dem DOM
 //    zurueckgelesen - hier steht sie einfach in `evidence.id` (closure).
-// die beiden dropdowns (status, relevanz) sind sichtbar, aber noch nicht
-// verdrahtet: sie veraendern ein beweisstueck und brauchen dafuer zustand und
-// ein unveraenderliches update (siehe demo 3).
+// ue5 demo 3: die beiden dropdowns (status, relevanz) sind jetzt KONTROLLIERT
+// (value + onChange) und melden eine aenderung per onChangeReview nach oben.
+// diese komponente aendert das beweisstueck NIE selbst - `evidence` ist
+// nur-lesen; das unveraenderliche update steht in EvidencePage/applyReviewEdits.
 export function EvidenceDetail({
   evidence,
   personNames,
@@ -38,7 +41,20 @@ export function EvidenceDetail({
   note,
   onClose,
   onSaveNote,
+  onChangeReview,
 }: EvidenceDetailProps) {
+  // der string aus dem <select> wird erst durch den type guard zu einem
+  // ReviewStatus bzw. Relevance - ein unbekannter wert wird einfach ignoriert.
+  function handleStatusChange(event: ChangeEvent<HTMLSelectElement>) {
+    const value = event.target.value;
+    if (isReviewStatus(value)) onChangeReview(evidence.id, { status: value });
+  }
+
+  function handleRelevanceChange(event: ChangeEvent<HTMLSelectElement>) {
+    const value = event.target.value;
+    if (isRelevance(value)) onChangeReview(evidence.id, { relevance: value });
+  }
+
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     // ohne preventDefault() wuerde der browser das formular abschicken und die
     // seite neu laden - der submit-event ist die "default action" des formulars.
@@ -89,7 +105,11 @@ export function EvidenceDetail({
 
       <div className="detail-field">
         <strong>Review status</strong>
-        <select id="detailStatusSelect" defaultValue={evidence.status.toLowerCase()}>
+        <select
+          id="detailStatusSelect"
+          value={evidence.status.toLowerCase()}
+          onChange={handleStatusChange}
+        >
           <option value="unreviewed">Unreviewed</option>
           <option value="reviewed">Reviewed</option>
           <option value="flagged">Flagged</option>
@@ -97,7 +117,11 @@ export function EvidenceDetail({
       </div>
       <div className="detail-field">
         <strong>Relevance</strong>
-        <select id="detailRelevanceSelect" defaultValue={evidence.relevance.toLowerCase()}>
+        <select
+          id="detailRelevanceSelect"
+          value={evidence.relevance.toLowerCase()}
+          onChange={handleRelevanceChange}
+        >
           <option value="unknown">Unknown</option>
           <option value="relevant">Relevant</option>
           <option value="irrelevant">Irrelevant</option>

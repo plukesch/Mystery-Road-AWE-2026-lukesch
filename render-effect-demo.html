@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Render-vs-Effekt-Demo (UE6 Demo 1, Wegwerf-Beispiel)</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <!-- wegwerf-sandbox fuer ue6 demo 1. steht bewusst NICHT in vite.config.js
+         (rollupOptions.input) -> nur im dev-server erreichbar, nie im build/deploy.
+         ohne StrictMode: render-effect-demo.html?strict=0 -->
+    <div id="render-effect-demo-root"></div>
+    <script type="module" src="/src/sandbox/render-effect-main.tsx"></script>
+  </body>
+</html>

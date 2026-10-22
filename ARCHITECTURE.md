@@ -31,7 +31,7 @@ src/
                               (Evidence)
     Badge.tsx                 wiederverwendbarer Badge (Timeline + Dashboard, 3 Stellen)
     StatusBadge.tsx           Status -> Badge-Variante (Dashboard + People-Detailseite)
-  sandbox/                    Wegwerf-Beispiele (key-, mutation-, callback-, context-demo), nicht Teil der App
+  sandbox/                    Wegwerf-Beispiele (key-, mutation-, callback-, context-, render-effect-demo), nicht Teil der App
 ```
 
 ## Regel: "shared" oder "feature-lokal"?
